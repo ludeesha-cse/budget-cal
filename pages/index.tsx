@@ -2,11 +2,11 @@ import Head from 'next/head'
 import { mockTransactions, monthlyBudget } from '@/data/mockTransactions'
 import styles from '@/styles/Dashboard.module.css'
 
-function formatCurrency(value) {
+function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-function isCurrentMonth(dateStr) {
+function isCurrentMonth(dateStr: string) {
   const now = new Date()
   const d = new Date(dateStr)
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
@@ -23,7 +23,7 @@ export default function Dashboard() {
   const amountLeft = monthlyBudget - totalExpenses
   const isOverBudget = amountLeft < 0
 
-  const totalsByCategory = currentMonthTransactions.reduce((acc, t) => {
+  const totalsByCategory = currentMonthTransactions.reduce<Record<string, number>>((acc, t) => {
     acc[t.type] = (acc[t.type] || 0) + t.amount
     return acc
   }, {})

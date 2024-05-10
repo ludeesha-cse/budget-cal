@@ -1,12 +1,21 @@
 import Head from 'next/head'
 import { useState } from 'react'
 import { mockTransactions } from '@/data/mockTransactions'
+import { Transaction, TransactionType, PaymentMethod } from '@/types/transaction'
 import styles from '@/styles/AddTransaction.module.css'
 
-const TYPES = ['Food', 'Transport', 'Bills', 'Entertainment', 'Other']
-const PAYMENT_METHODS = ['Cash', 'Card', 'Bank Transfer']
+const TYPES: TransactionType[] = ['Food', 'Transport', 'Bills', 'Entertainment', 'Other']
+const PAYMENT_METHODS: PaymentMethod[] = ['Cash', 'Card', 'Bank Transfer']
 
-const emptyForm = {
+interface FormState {
+  date: string
+  amount: string
+  type: TransactionType
+  description: string
+  paymentMethod: PaymentMethod
+}
+
+const emptyForm: FormState = {
   date: '',
   amount: '',
   type: TYPES[0],
@@ -14,20 +23,20 @@ const emptyForm = {
   paymentMethod: PAYMENT_METHODS[0],
 }
 
-function formatCurrency(value) {
+function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
 export default function AddTransaction() {
-  const [transactions, setTransactions] = useState(mockTransactions)
-  const [form, setForm] = useState(emptyForm)
+  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
+  const [form, setForm] = useState<FormState>(emptyForm)
   const [showSuccess, setShowSuccess] = useState(false)
 
-  function handleChange(field, value) {
+  function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function handleSubmit(e) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
     const newTransaction = {
@@ -86,7 +95,11 @@ export default function AddTransaction() {
 
         <div className={styles.field}>
           <label htmlFor="type">Type</label>
-          <select id="type" value={form.type} onChange={(e) => handleChange('type', e.target.value)}>
+          <select
+            id="type"
+            value={form.type}
+            onChange={(e) => handleChange('type', e.target.value as TransactionType)}
+          >
             {TYPES.map((type) => (
               <option key={type} value={type}>
                 {type}
@@ -111,7 +124,7 @@ export default function AddTransaction() {
           <select
             id="paymentMethod"
             value={form.paymentMethod}
-            onChange={(e) => handleChange('paymentMethod', e.target.value)}
+            onChange={(e) => handleChange('paymentMethod', e.target.value as PaymentMethod)}
           >
             {PAYMENT_METHODS.map((method) => (
               <option key={method} value={method}>

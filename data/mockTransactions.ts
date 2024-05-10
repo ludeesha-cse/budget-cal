@@ -1,9 +1,11 @@
 // Mock transaction data used until the Phase 2 API is available.
 // Shape: { id, date (YYYY-MM-DD), amount, type, description, paymentMethod }
 
+import { Transaction } from '@/types/transaction'
+
 export const monthlyBudget = 50000
 
-export const mockTransactions = [
+export const mockTransactions: Transaction[] = [
   { id: 1, date: '2026-07-02', amount: 2500, type: 'Food', description: 'Groceries - weekly shop', paymentMethod: 'Card' },
   { id: 2, date: '2026-07-03', amount: 1200, type: 'Transport', description: 'Fuel top-up', paymentMethod: 'Card' },
   { id: 3, date: '2026-07-04', amount: 15000, type: 'Bills', description: 'Rent contribution', paymentMethod: 'Bank Transfer' },

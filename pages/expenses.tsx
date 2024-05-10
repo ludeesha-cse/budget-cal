@@ -2,12 +2,12 @@ import Head from 'next/head'
 import { mockTransactions } from '@/data/mockTransactions'
 import styles from '@/styles/Dashboard.module.css'
 
-function formatCurrency(value) {
+function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
 export default function Expenses() {
-  const totalsByCategory = mockTransactions.reduce((acc, t) => {
+  const totalsByCategory = mockTransactions.reduce<Record<string, number>>((acc, t) => {
     acc[t.type] = (acc[t.type] || 0) + t.amount
     return acc
   }, {})

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { mockTransactions } from '@/data/mockTransactions'
 import styles from '@/styles/History.module.css'
 
-function formatCurrency(value) {
+function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
@@ -14,8 +14,8 @@ function formatCurrency(value) {
 const allTransactions = [...mockTransactions].sort((a, b) => (a.date < b.date ? 1 : -1))
 
 export default function History() {
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
 
   const filtered = allTransactions.filter((t) => {
     if (fromDate && t.date < fromDate) return false
