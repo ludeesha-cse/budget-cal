@@ -1,6 +1,10 @@
-import Head from 'next/head'
+import type { Metadata } from 'next'
 import { mockTransactions, monthlyBudget } from '@/data/mockTransactions'
 import styles from '@/styles/Dashboard.module.css'
+
+export const metadata: Metadata = {
+  title: 'Dashboard | Budget Calculator',
+}
 
 function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -18,7 +22,7 @@ function isCurrentMonth(dateStr: string) {
 //   .then((data) => setSummary(data))
 const currentMonthTransactions = mockTransactions.filter((t) => isCurrentMonth(t.date))
 
-export default function Dashboard() {
+export default async function Page() {
   const totalExpenses = currentMonthTransactions.reduce((sum, t) => sum + t.amount, 0)
   const amountLeft = monthlyBudget - totalExpenses
   const isOverBudget = amountLeft < 0
@@ -30,9 +34,6 @@ export default function Dashboard() {
 
   return (
     <>
-      <Head>
-        <title>Dashboard | Budget Calculator</title>
-      </Head>
       <h1 className={styles.title}>Dashboard</h1>
 
       <div className={styles.cards}>

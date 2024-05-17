@@ -1,4 +1,5 @@
-import Head from 'next/head'
+'use client'
+
 import { useState } from 'react'
 import { mockTransactions } from '@/data/mockTransactions'
 import { Transaction, TransactionType, PaymentMethod } from '@/types/transaction'
@@ -27,7 +28,7 @@ function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-export default function AddTransaction() {
+export default function AddTransactionForm() {
   const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [showSuccess, setShowSuccess] = useState(false)
@@ -39,7 +40,7 @@ export default function AddTransaction() {
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
-    const newTransaction = {
+    const newTransaction: Transaction = {
       id: Date.now(),
       date: form.date,
       amount: Number(form.amount),
@@ -61,11 +62,6 @@ export default function AddTransaction() {
 
   return (
     <>
-      <Head>
-        <title>Add Transaction | Budget Calculator</title>
-      </Head>
-      <h1 className={styles.title}>Add Transaction</h1>
-
       {showSuccess && <div className={styles.successMessage}>Transaction added successfully.</div>}
 
       <form className={styles.form} onSubmit={handleSubmit}>

@@ -1,12 +1,16 @@
-import Head from 'next/head'
+import type { Metadata } from 'next'
 import { mockTransactions } from '@/data/mockTransactions'
 import styles from '@/styles/Dashboard.module.css'
+
+export const metadata: Metadata = {
+  title: 'Expenses by Type | Budget Calculator',
+}
 
 function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-export default function Expenses() {
+export default async function Page() {
   const totalsByCategory = mockTransactions.reduce<Record<string, number>>((acc, t) => {
     acc[t.type] = (acc[t.type] || 0) + t.amount
     return acc
@@ -16,9 +20,6 @@ export default function Expenses() {
 
   return (
     <>
-      <Head>
-        <title>Expenses by Type | Budget Calculator</title>
-      </Head>
       <h1 className={styles.title}>Expenses by Type</h1>
 
       <div className={styles.section}>

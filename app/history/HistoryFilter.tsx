@@ -1,23 +1,22 @@
-import Head from 'next/head'
+'use client'
+
 import { useState } from 'react'
-import { mockTransactions } from '@/data/mockTransactions'
+import { Transaction } from '@/types/transaction'
 import styles from '@/styles/History.module.css'
 
 function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-// In Phase 2, the full transaction list would be fetched from the backend instead of imported:
-// fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/transactions`)
-//   .then((res) => res.json())
-//   .then((data) => setTransactions(data))
-const allTransactions = [...mockTransactions].sort((a, b) => (a.date < b.date ? 1 : -1))
+interface HistoryFilterProps {
+  transactions: Transaction[]
+}
 
-export default function History() {
-  const [fromDate, setFromDate] = useState<string>('')
-  const [toDate, setToDate] = useState<string>('')
+export default function HistoryFilter({ transactions }: HistoryFilterProps) {
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
-  const filtered = allTransactions.filter((t) => {
+  const filtered = transactions.filter((t) => {
     if (fromDate && t.date < fromDate) return false
     if (toDate && t.date > toDate) return false
     return true
@@ -25,11 +24,6 @@ export default function History() {
 
   return (
     <>
-      <Head>
-        <title>Payment History | Budget Calculator</title>
-      </Head>
-      <h1 className={styles.title}>Payment History</h1>
-
       <div className={styles.filters}>
         <div className={styles.field}>
           <label htmlFor="fromDate">From</label>
