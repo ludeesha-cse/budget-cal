@@ -1,3 +1,4 @@
+/* Global reset — loaded once in the root layout, ahead of theme.css's color variables. */
 * {
   box-sizing: border-box;
   padding: 0;

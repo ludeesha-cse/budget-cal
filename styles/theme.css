@@ -1,3 +1,5 @@
+/* CSS custom properties (variables) instead of a Sass/JS theme object — plain CSS, so any
+   stylesheet or module.css file can read `var(--color-*)` with no build-time tooling. */
 :root {
   --color-navy-900: #0a1a2f;
   --color-navy-800: #0f2540;

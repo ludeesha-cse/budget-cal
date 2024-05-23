@@ -1,3 +1,4 @@
+// Client Component: needs useState for the date inputs; data arrives as a prop, not fetched here.
 'use client'
 
 import { useState } from 'react'
@@ -13,9 +14,11 @@ interface HistoryFilterProps {
 }
 
 export default function HistoryFilter({ transactions }: HistoryFilterProps) {
+  // Controlled inputs: value comes from state, every keystroke updates it via onChange.
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
 
+  // Derived directly from state on each render — no useEffect needed for a plain sync computation.
   const filtered = transactions.filter((t) => {
     if (fromDate && t.date < fromDate) return false
     if (toDate && t.date > toDate) return false

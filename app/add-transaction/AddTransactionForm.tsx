@@ -1,3 +1,4 @@
+// Client Component: form state (useState) and the submit handler need the browser.
 'use client'
 
 import { useState } from 'react'
@@ -33,6 +34,7 @@ export default function AddTransactionForm() {
   const [form, setForm] = useState<FormState>(emptyForm)
   const [showSuccess, setShowSuccess] = useState(false)
 
+  // Generic keeps one implementation while still typing each field's value correctly.
   function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -91,6 +93,7 @@ export default function AddTransactionForm() {
 
         <div className={styles.field}>
           <label htmlFor="type">Type</label>
+          {/* e.target.value is always `string`; cast is safe since options come from TYPES. */}
           <select
             id="type"
             value={form.type}

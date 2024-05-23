@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: 'Add Transaction | Budget Calculator',
 }
 
+// Thin Server Component shell — all state and interactivity live in AddTransactionForm.
 export default async function Page() {
   return (
     <>

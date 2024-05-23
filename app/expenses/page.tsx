@@ -10,6 +10,7 @@ function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
+// No 'use client' — pure read-and-render, so it stays a Server Component by default.
 export default async function Page() {
   const totalsByCategory = mockTransactions.reduce<Record<string, number>>((acc, t) => {
     acc[t.type] = (acc[t.type] || 0) + t.amount

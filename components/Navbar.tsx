@@ -1,3 +1,4 @@
+// Client Component: usePathname() needs the browser.
 'use client'
 
 import Link from 'next/link'
@@ -12,6 +13,7 @@ const NAV_LINKS = [
 ]
 
 export default function Navbar() {
+  // App Router replacement for the Pages Router's `useRouter().pathname`.
   const pathname = usePathname()
 
   return (

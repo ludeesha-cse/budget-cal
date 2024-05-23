@@ -16,12 +16,9 @@ function isCurrentMonth(dateStr: string) {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
 }
 
-// In Phase 2, this summary would be fetched from the backend instead of computed client-side:
-// fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/transactions/summary`)
-//   .then((res) => res.json())
-//   .then((data) => setSummary(data))
 const currentMonthTransactions = mockTransactions.filter((t) => isCurrentMonth(t.date))
 
+// async by convention — same signature will still work once mock data is replaced by a real query.
 export default async function Page() {
   const totalExpenses = currentMonthTransactions.reduce((sum, t) => sum + t.amount, 0)
   const amountLeft = monthlyBudget - totalExpenses

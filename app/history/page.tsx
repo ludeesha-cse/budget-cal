@@ -13,6 +13,8 @@ export const metadata: Metadata = {
 //   .then((data) => setTransactions(data))
 const allTransactions = [...mockTransactions].sort((a, b) => (a.date < b.date ? 1 : -1))
 
+// Server Component: owns the data (sorts mock transactions server-side), then hands
+// it to HistoryFilter (Client Component) as a prop for the interactive filtering.
 export default async function Page() {
   return (
     <>
