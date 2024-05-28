@@ -19,7 +19,7 @@
 
 # debug
 npm-debug.log*
-backdate.sh
+myscript.sh
 yarn-debug.log*
 yarn-error.log*
 

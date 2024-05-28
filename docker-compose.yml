@@ -1,7 +1,7 @@
 # Gitignored (see .gitignore) — temporary, to be replaced in a later commit.
 services:
   postgres:
-    image: postgres:14
+    image: postgres:17
     container_name: budget-calculator-postgres
     restart: unless-stopped
     environment:

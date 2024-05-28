@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { mockTransactions, monthlyBudget } from '@/data/mockTransactions'
+import { getBaseUrl } from '@/lib/getBaseUrl'
 import styles from '@/styles/Dashboard.module.css'
 
 export const metadata: Metadata = {
@@ -10,24 +10,32 @@ function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-function isCurrentMonth(dateStr: string) {
-  const now = new Date()
-  const d = new Date(dateStr)
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+interface SummaryResponse {
+  monthlyBudget: number
+  totalExpenses: number
+  amountLeft: number
+  totalsByCategory: Record<string, number>
 }
 
-const currentMonthTransactions = mockTransactions.filter((t) => isCurrentMonth(t.date))
+// cache: 'no-store' — budget status must always reflect the latest transaction, even
+// one added a second ago, so this fetch is never served from Next's Data Cache. This
+// also makes the route dynamic (rendered fresh per request) rather than statically
+// prerendered.
+async function getSummary(): Promise<SummaryResponse> {
+  const res = await fetch(`${getBaseUrl()}/api/transactions/summary`, { cache: 'no-store' })
 
-// async by convention — same signature will still work once mock data is replaced by a real query.
+  if (!res.ok) {
+    throw new Error('Failed to load transaction summary')
+  }
+
+  return res.json()
+}
+
+// async by convention — this Server Component now genuinely awaits a real fetch,
+// rather than just computing over an imported array.
 export default async function Page() {
-  const totalExpenses = currentMonthTransactions.reduce((sum, t) => sum + t.amount, 0)
-  const amountLeft = monthlyBudget - totalExpenses
+  const { monthlyBudget, totalExpenses, amountLeft, totalsByCategory } = await getSummary()
   const isOverBudget = amountLeft < 0
-
-  const totalsByCategory = currentMonthTransactions.reduce<Record<string, number>>((acc, t) => {
-    acc[t.type] = (acc[t.type] || 0) + t.amount
-    return acc
-  }, {})
 
   return (
     <>

@@ -63,6 +63,16 @@
   max-width: 480px;
 }
 
+.errorMessage {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+  max-width: 480px;
+}
+
 .recentSection {
   margin-top: 2rem;
   max-width: 480px;

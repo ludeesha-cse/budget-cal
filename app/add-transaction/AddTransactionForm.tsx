@@ -2,7 +2,7 @@
 'use client'
 
 import { useState } from 'react'
-import { mockTransactions } from '@/data/mockTransactions'
+import { useRouter } from 'next/navigation'
 import { Transaction, TransactionType, PaymentMethod } from '@/types/transaction'
 import styles from '@/styles/AddTransaction.module.css'
 
@@ -29,41 +29,74 @@ function formatCurrency(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-export default function AddTransactionForm() {
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
+interface AddTransactionFormProps {
+  initialRecentTransactions: Transaction[]
+}
+
+export default function AddTransactionForm({ initialRecentTransactions }: AddTransactionFormProps) {
+  const router = useRouter()
+  const [transactions, setTransactions] = useState<Transaction[]>(initialRecentTransactions)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Generic keeps one implementation while still typing each field's value correctly.
   function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    setIsSubmitting(true)
+    setError(null)
 
-    const newTransaction: Transaction = {
-      id: Date.now(),
-      date: form.date,
-      amount: Number(form.amount),
-      type: form.type,
-      description: form.description,
-      paymentMethod: form.paymentMethod,
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: form.date,
+          amount: Number(form.amount),
+          type: form.type,
+          description: form.description,
+          paymentMethod: form.paymentMethod,
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to add transaction')
+      }
+
+      // The server assigns the real id (Prisma's cuid) and normalizes the date, so the
+      // list is seeded from what POST actually returns — not a client-fabricated guess.
+      const created: Transaction = await res.json()
+
+      setTransactions((prev) => [created, ...prev].slice(0, 5))
+      setForm(emptyForm)
+      setShowSuccess(true)
+      setTimeout(() => setShowSuccess(false), 3000)
+
+      // The Dashboard's own fetch already uses cache: 'no-store', so it would return
+      // fresh data on its next direct request regardless — but the App Router also
+      // keeps a client-side Router Cache of recently visited routes, which can still
+      // serve a stale view for a short window after navigating away and back.
+      // router.refresh() re-runs this route's Server Components against the server
+      // and clears that staleness, so navigating to Dashboard next shows the new
+      // transaction without a manual page reload.
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setIsSubmitting(false)
     }
-
-    // Phase 2 TODO: POST this payload to /api/transactions
-    console.log(newTransaction)
-
-    setTransactions((prev) => [newTransaction, ...prev])
-    setForm(emptyForm)
-    setShowSuccess(true)
-    setTimeout(() => setShowSuccess(false), 3000)
   }
 
   const recent = transactions.slice(0, 5)
 
   return (
     <>
+      {error && <div className={styles.errorMessage}>{error}</div>}
       {showSuccess && <div className={styles.successMessage}>Transaction added successfully.</div>}
 
       <form className={styles.form} onSubmit={handleSubmit}>
@@ -133,8 +166,8 @@ export default function AddTransactionForm() {
           </select>
         </div>
 
-        <button type="submit" className={styles.submitButton}>
-          Add Transaction
+        <button type="submit" className={styles.submitButton} disabled={isSubmitting}>
+          {isSubmitting ? 'Adding…' : 'Add Transaction'}
         </button>
       </form>
 

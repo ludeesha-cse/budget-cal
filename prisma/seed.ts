@@ -1,11 +1,10 @@
 import { PrismaClient } from '@prisma/client'
-// Relative import: this runs under ts-node, outside Next's module resolution, so the @/* alias isn't available.
+// Relative imports: this runs under ts-node, outside Next's module resolution, so the @/* alias isn't available.
 import { mockTransactions, monthlyBudget } from '../data/mockTransactions'
+import { DEMO_USER_EMAIL } from '../lib/constants'
 
 // Plain PrismaClient, not the lib/prisma.ts singleton — this is a one-shot script, no hot reload to guard against.
 const prisma = new PrismaClient()
-
-const DEMO_USER_EMAIL = 'demo@budgetcalculator.dev'
 
 async function main() {
   // upsert makes this idempotent — reruns update nothing instead of erroring on the unique email.
