@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getBaseUrl } from '@/lib/getBaseUrl'
+import { serverFetch } from '@/lib/serverFetch'
 import styles from '@/styles/Dashboard.module.css'
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ interface SummaryResponse {
 // also makes the route dynamic (rendered fresh per request) rather than statically
 // prerendered.
 async function getSummary(): Promise<SummaryResponse> {
-  const res = await fetch(`${getBaseUrl()}/api/transactions/summary`, { cache: 'no-store' })
+  const res = await serverFetch(`${getBaseUrl()}/api/transactions/summary`, { cache: 'no-store' })
 
   if (!res.ok) {
     throw new Error('Failed to load transaction summary')

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getBaseUrl } from '@/lib/getBaseUrl'
+import { serverFetch } from '@/lib/serverFetch'
 import type { Transaction } from '@/types/transaction'
 import AddTransactionForm from './AddTransactionForm'
 import styles from '@/styles/AddTransaction.module.css'
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 // cache: 'no-store' — mirrors History: the "Recently Added" list must reflect the
 // true current data on load, not a cached snapshot from before the last addition.
 async function getRecentTransactions(): Promise<Transaction[]> {
-  const res = await fetch(`${getBaseUrl()}/api/transactions`, { cache: 'no-store' })
+  const res = await serverFetch(`${getBaseUrl()}/api/transactions`, { cache: 'no-store' })
 
   if (!res.ok) {
     throw new Error('Failed to load recent transactions')

@@ -1,8 +1,9 @@
-// Client Component: usePathname() needs the browser.
+// Client Component: usePathname() and useSession()/signOut() need the browser.
 'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { signOut, useSession } from 'next-auth/react'
 import styles from './Navbar.module.css'
 
 const NAV_LINKS = [
@@ -15,6 +16,12 @@ const NAV_LINKS = [
 export default function Navbar() {
   // App Router replacement for the Pages Router's `useRouter().pathname`.
   const pathname = usePathname()
+  // Navbar only renders inside app/(protected)/layout.tsx, which already redirected
+  // away any request without a session — so by the time this runs, a session exists
+  // server-side. `data` still starts undefined for a moment on the client until
+  // useSession() resolves its own fetch, which is why the button is conditional
+  // rather than assumed present.
+  const { data: session } = useSession()
 
   return (
     <nav className={styles.navbar}>
@@ -32,6 +39,15 @@ export default function Navbar() {
             </li>
           ))}
         </ul>
+        {session && (
+          <button
+            type="button"
+            className={styles.logoutButton}
+            onClick={() => signOut({ callbackUrl: '/login' })}
+          >
+            Log Out
+          </button>
+        )}
       </div>
     </nav>
   )

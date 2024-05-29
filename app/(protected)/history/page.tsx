@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getBaseUrl } from '@/lib/getBaseUrl'
+import { serverFetch } from '@/lib/serverFetch'
 import type { Transaction } from '@/types/transaction'
 import HistoryFilter from './HistoryFilter'
 import styles from '@/styles/History.module.css'
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 // ago. GET /api/transactions already orders by date desc, so no client-side sort
 // is needed here.
 async function getTransactions(): Promise<Transaction[]> {
-  const res = await fetch(`${getBaseUrl()}/api/transactions`, { cache: 'no-store' })
+  const res = await serverFetch(`${getBaseUrl()}/api/transactions`, { cache: 'no-store' })
 
   if (!res.ok) {
     throw new Error('Failed to load transactions')

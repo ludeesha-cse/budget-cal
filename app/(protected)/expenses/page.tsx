@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getBaseUrl } from '@/lib/getBaseUrl'
+import { serverFetch } from '@/lib/serverFetch'
 import type { Transaction } from '@/types/transaction'
 import styles from '@/styles/Dashboard.module.css'
 
@@ -17,7 +18,7 @@ function formatCurrency(value: number) {
 // stale, then revalidating in the background, trades a small staleness window for far
 // fewer DB round trips on a page nothing else here depends on staying instantly current.
 async function getTransactions(): Promise<Transaction[]> {
-  const res = await fetch(`${getBaseUrl()}/api/transactions`, { next: { revalidate: 300 } })
+  const res = await serverFetch(`${getBaseUrl()}/api/transactions`, { next: { revalidate: 300 } })
 
   if (!res.ok) {
     throw new Error('Failed to load transactions')

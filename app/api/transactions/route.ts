@@ -42,6 +42,14 @@ function toTransactionDTO(row: {
 export async function GET() {
   const user = await getCurrentUser();
 
+  // The API is a directly reachable HTTP surface, not just something pages navigate
+  // to — protecting pages with a redirect (the (protected) layout) doesn't stop an
+  // unauthenticated request from hitting this route straight via fetch/curl, so it
+  // needs its own check too.
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const transactions = await prisma.transaction.findMany({
     where: { userId: user.id },
     orderBy: { date: "desc" },
@@ -67,6 +75,10 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await getCurrentUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const transaction = await prisma.transaction.create({
     data: {

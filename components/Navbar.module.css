@@ -45,3 +45,21 @@
   background: var(--color-teal-600);
   color: #ffffff;
 }
+
+.logoutButton {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: 0.75rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.logoutButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}

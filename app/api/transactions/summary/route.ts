@@ -26,6 +26,13 @@ function isCurrentMonth(date: Date) {
 export async function GET() {
   const user = await getCurrentUser()
 
+  // Same reasoning as GET /api/transactions: this endpoint is directly reachable
+  // over HTTP regardless of whether a page redirected an unauthenticated browser
+  // away from the Dashboard, so it enforces the session itself too.
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const transactions = await prisma.transaction.findMany({
     where: { userId: user.id },
   })
