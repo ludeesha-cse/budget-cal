@@ -28,8 +28,11 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
+        // Lowercased to match how /api/register normalizes email on the way in —
+        // otherwise "Foo@Bar.com" at signup and "Foo@Bar.com" at login would
+        // technically be the same address but fail to match a lowercased DB row.
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email.trim().toLowerCase() },
         })
 
         if (!user) {

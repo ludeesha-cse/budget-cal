@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import styles from '@/styles/Login.module.css'
+import Link from 'next/link'
+import styles from '@/styles/AuthForm.module.css'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -69,6 +70,10 @@ export default function LoginForm() {
       <button type="submit" className={styles.submitButton} disabled={isSubmitting}>
         {isSubmitting ? 'Signing in…' : 'Sign In'}
       </button>
+
+      <p className={styles.switchLink}>
+        Don&apos;t have an account? <Link href="/register">Register</Link>
+      </p>
     </form>
   )
 }

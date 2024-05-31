@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/authOptions'
 import LoginForm from './LoginForm'
-import styles from '@/styles/Login.module.css'
+import styles from '@/styles/AuthForm.module.css'
 
 export const metadata: Metadata = {
   title: 'Login | Budget Calculator',
