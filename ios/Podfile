@@ -34,15 +34,17 @@ target 'BudgetTrackerMobile' do
 
     # Work around fmt 11.0.2 using a `consteval` FMT_STRING pattern that
     # newer Clang (Xcode 16.3+/26.x) rejects with "call to consteval
-    # function ... is not a constant expression". Forcing FMT_CONSTEVAL to
-    # be empty falls back to the older constexpr path.
-    installer.pods_project.targets.each do |target|
-      if target.name == 'fmt'
-        target.build_configurations.each do |config|
-          defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
-          defs << 'FMT_CONSTEVAL='
-          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
-        end
+    # function ... is not a constant expression". fmt/base.h unconditionally
+    # redefines FMT_USE_CONSTEVAL from compiler version checks, so a
+    # command-line -D override gets clobbered; patch the header directly to
+    # force the constexpr fallback path instead.
+    fmt_header = File.join(installer.sandbox.pod_dir('fmt').to_s, 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_header)
+      contents = File.read(fmt_header)
+      patched = contents.sub("#if FMT_USE_CONSTEVAL\n", "#if FMT_USE_CONSTEVAL && 0\n")
+      if patched != contents
+        File.chmod(0644, fmt_header)
+        File.write(fmt_header, patched)
       end
     end
   end
