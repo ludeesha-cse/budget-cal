@@ -16,7 +16,7 @@ export const transactions = sqliteTable('transactions', {
   amount: real('amount').notNull(), // positive = income, negative = expense
   category: text('category').notNull(),
   description: text('description'),
-  date: int('date').notNull(),
+  date: text('date').notNull(), // 'YYYY-MM-DD', enables month/year prefix filtering
   createdAt: int('created_at').notNull(),
 });
 
@@ -26,5 +26,6 @@ export const budgets = sqliteTable('budgets', {
   limitAmount: real('limit_amount').notNull(),
   period: text('period').notNull(), // 'weekly' | 'monthly' | 'yearly'
   startDate: int('start_date').notNull(),
+  month: text('month'), // 'YYYY-MM', set for the overall monthly budget
   createdAt: int('created_at').notNull(),
 });

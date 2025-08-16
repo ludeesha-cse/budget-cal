@@ -14,43 +14,91 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { runMigrations } from './db';
-import DbTestScreen from './screens/DbTestScreen';
+import { ensureDefaultAccount } from './db/queries';
+import DashboardScreen from './screens/DashboardScreen';
+import HistoryListScreen from './screens/HistoryListScreen';
+import EditTransactionScreen from './screens/EditTransactionScreen';
+import ExpensesByTypeScreen from './screens/ExpensesByTypeScreen';
+import AddTransactionScreen from './screens/AddTransactionScreen';
+import type {
+  HistoryStackParamList,
+  RootTabParamList,
+} from './navigation/types';
 
-function App() {
+const Tab = createBottomTabNavigator<RootTabParamList>();
+const HistoryStack = createNativeStackNavigator<HistoryStackParamList>();
+
+function HistoryStackNavigator(): React.JSX.Element {
+  return (
+    <HistoryStack.Navigator>
+      <HistoryStack.Screen
+        name="HistoryList"
+        component={HistoryListScreen}
+        options={{ title: 'History' }}
+      />
+      <HistoryStack.Screen
+        name="EditTransaction"
+        component={EditTransactionScreen}
+        options={{ title: 'Edit Transaction' }}
+      />
+    </HistoryStack.Navigator>
+  );
+}
+
+function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
-  const [migrationsReady, setMigrationsReady] = useState(false);
-  const [migrationError, setMigrationError] = useState<Error | null>(null);
+  const [ready, setReady] = useState(false);
+  const [startupError, setStartupError] = useState<Error | null>(null);
 
   useEffect(() => {
     runMigrations()
-      .then(() => setMigrationsReady(true))
-      .catch(setMigrationError);
+      .then(() => ensureDefaultAccount())
+      .then(() => setReady(true))
+      .catch(setStartupError);
   }, []);
 
+  if (startupError) {
+    return (
+      <View style={styles.center}>
+        <Text>Database setup failed: {startupError.message}</Text>
+      </View>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>Setting up database...</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
+    <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      {migrationError ? (
-        <View style={styles.center}>
-          <Text>Database setup failed: {migrationError.message}</Text>
-        </View>
-      ) : migrationsReady ? (
-        <DbTestScreen />
-      ) : (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.loadingText}>Setting up database...</Text>
-        </View>
-      )}
-    </View>
+      <NavigationContainer>
+        <Tab.Navigator>
+          <Tab.Screen name="Dashboard" component={DashboardScreen} />
+          <Tab.Screen
+            name="History"
+            component={HistoryStackNavigator}
+            options={{ headerShown: false }}
+          />
+          <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
+          <Tab.Screen name="Add" component={AddTransactionScreen} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   center: {
     flex: 1,
     alignItems: 'center',

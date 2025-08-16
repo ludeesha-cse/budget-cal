@@ -8,6 +8,13 @@
       "when": 1784456203666,
       "tag": "0000_bored_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784460162217,
+      "tag": "0001_violet_patriot",
+      "breakpoints": true
     }
   ]
 }
