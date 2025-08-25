@@ -10,4 +10,5 @@ export type RootTabParamList = {
   History: NavigatorScreenParams<HistoryStackParamList> | undefined;
   Expenses: undefined;
   Add: undefined;
+  Budget: undefined;
 };

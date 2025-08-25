@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getBudgetForMonth, getMonthlyTotal } from '../db/queries';
+import { getAmountLeft, getAverageLeftPerDay } from '../utils/budgetCalculations';
 import { getCurrentMonthString } from '../utils/date';
 
 function DashboardScreen(): React.JSX.Element {
@@ -9,6 +10,10 @@ function DashboardScreen(): React.JSX.Element {
   const [budget, setBudget] = useState<
     Awaited<ReturnType<typeof getBudgetForMonth>>
   >(null);
+  const [amountLeft, setAmountLeft] = useState<number | null>(null);
+  const [averageLeftPerDay, setAverageLeftPerDay] = useState<number | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -16,20 +21,30 @@ function DashboardScreen(): React.JSX.Element {
       let cancelled = false;
       setLoading(true);
       const month = getCurrentMonthString();
-      Promise.all([getMonthlyTotal(month), getBudgetForMonth(month)]).then(
-        ([monthlyTotal, monthlyBudget]) => {
-          if (!cancelled) {
-            setTotal(monthlyTotal);
-            setBudget(monthlyBudget);
-            setLoading(false);
-          }
-        },
-      );
+      Promise.all([
+        getMonthlyTotal(month),
+        getBudgetForMonth(month),
+        getAmountLeft(month),
+        getAverageLeftPerDay(month),
+      ]).then(([monthlyTotal, monthlyBudget, left, avgLeftPerDay]) => {
+        if (!cancelled) {
+          setTotal(monthlyTotal);
+          setBudget(monthlyBudget);
+          setAmountLeft(left);
+          setAverageLeftPerDay(avgLeftPerDay);
+          setLoading(false);
+        }
+      });
       return () => {
         cancelled = true;
       };
     }, []),
   );
+
+  const percentUsed =
+    budget && budget.limitAmount > 0 ? total / budget.limitAmount : 0;
+  const amountLeftStyle =
+    percentUsed > 1 ? styles.red : percentUsed >= 0.9 ? styles.amber : styles.green;
 
   return (
     <View style={styles.container}>
@@ -41,14 +56,19 @@ function DashboardScreen(): React.JSX.Element {
           <Text style={styles.row}>
             Total spent this month: {total.toFixed(2)}
           </Text>
-          {budget ? (
+          {budget && amountLeft !== null ? (
             <>
               <Text style={styles.row}>
                 Budget allocated: {budget.limitAmount.toFixed(2)}
               </Text>
-              <Text style={styles.row}>
-                Amount left: {(budget.limitAmount - total).toFixed(2)}
+              <Text style={[styles.row, amountLeftStyle]}>
+                Amount left: {amountLeft.toFixed(2)}
               </Text>
+              {averageLeftPerDay !== null && (
+                <Text style={styles.row}>
+                  Average left per day: {averageLeftPerDay.toFixed(2)}
+                </Text>
+              )}
             </>
           ) : (
             <Text style={styles.row}>No budget set for this month yet</Text>
@@ -72,6 +92,15 @@ const styles = StyleSheet.create({
   row: {
     fontSize: 16,
     marginBottom: 8,
+  },
+  green: {
+    color: '#2e7d32',
+  },
+  amber: {
+    color: '#f9a825',
+  },
+  red: {
+    color: '#c62828',
   },
 });
 

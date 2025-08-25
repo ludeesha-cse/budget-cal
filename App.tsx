@@ -25,6 +25,7 @@ import HistoryListScreen from './screens/HistoryListScreen';
 import EditTransactionScreen from './screens/EditTransactionScreen';
 import ExpensesByTypeScreen from './screens/ExpensesByTypeScreen';
 import AddTransactionScreen from './screens/AddTransactionScreen';
+import BudgetSettingsScreen from './screens/BudgetSettingsScreen';
 import type {
   HistoryStackParamList,
   RootTabParamList,
@@ -92,6 +93,7 @@ function App(): React.JSX.Element {
           />
           <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
           <Tab.Screen name="Add" component={AddTransactionScreen} />
+          <Tab.Screen name="Budget" component={BudgetSettingsScreen} />
         </Tab.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

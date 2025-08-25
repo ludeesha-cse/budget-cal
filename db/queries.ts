@@ -1,4 +1,4 @@
-import { eq, like, sql } from 'drizzle-orm';
+import { desc, eq, like, sql } from 'drizzle-orm';
 import { db } from './index';
 import { accounts, budgets, transactions } from './schema';
 
@@ -13,15 +13,13 @@ export type NewTransaction = {
   date: string; // 'YYYY-MM-DD'
 };
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions, keeping the same return type.
 export async function getTransactions() {
   return db.select().from(transactions);
 }
 
-// NETWORK-READY: currently writes directly to the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//  If a backend is added later, replace this with a fetch() call
 // to POST /api/transactions, keeping the same input/return shape.
 export async function addTransaction(data: NewTransaction) {
   return db
@@ -33,9 +31,8 @@ export async function addTransaction(data: NewTransaction) {
     .returning();
 }
 
-// NETWORK-READY: currently checks/writes directly to the local
-// Drizzle/op-sqlite database. If a backend is added later, replace this
-// with a fetch() call to GET/POST /api/accounts/default, keeping the same
+// If a backend is added later, replace this with a fetch() call
+// to GET/POST /api/accounts/default, keeping the same
 // return shape.
 export async function ensureDefaultAccount() {
   const existing = await db.select().from(accounts).limit(1);
@@ -54,8 +51,7 @@ export async function ensureDefaultAccount() {
   return account;
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//  If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions?month=YYYY-MM, keeping the same return type.
 export async function getTransactionsByMonth(month: string) {
   return db
@@ -64,8 +60,7 @@ export async function getTransactionsByMonth(month: string) {
     .where(like(transactions.date, `${month}%`));
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions?year=YYYY, keeping the same return type.
 export async function getTransactionsByYear(year: string) {
   return db
@@ -74,8 +69,7 @@ export async function getTransactionsByYear(year: string) {
     .where(like(transactions.date, `${year}%`));
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions/summary?month=YYYY-MM&groupBy=category, keeping
 // the same return shape.
 export async function getExpensesByType(month: string) {
@@ -89,8 +83,7 @@ export async function getExpensesByType(month: string) {
     .groupBy(transactions.category);
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions/summary?month=YYYY-MM&total=1, keeping the same
 // return shape.
 export async function getMonthlyTotal(month: string): Promise<number> {
@@ -101,8 +94,7 @@ export async function getMonthlyTotal(month: string): Promise<number> {
   return row?.total ?? 0;
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/budgets?month=YYYY-MM, keeping the same return type.
 export async function getBudgetForMonth(month: string): Promise<Budget | null> {
   const [budget] = await db
@@ -113,8 +105,7 @@ export async function getBudgetForMonth(month: string): Promise<Budget | null> {
   return budget ?? null;
 }
 
-// NETWORK-READY: currently reads directly from the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with a fetch() call
+//If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions/:id, keeping the same return type.
 export async function getTransactionById(
   id: number,
@@ -127,8 +118,7 @@ export async function getTransactionById(
   return row ?? null;
 }
 
-// NETWORK-READY: currently writes directly to the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with fetch(PATCH
+// If a backend is added later, replace this with fetch(PATCH
 // /api/transactions/:id), keeping the same input/return shape.
 export async function updateTransaction(
   id: number,
@@ -141,9 +131,48 @@ export async function updateTransaction(
     .returning();
 }
 
-// NETWORK-READY: currently writes directly to the local Drizzle/op-sqlite
-// database. If a backend is added later, replace this with fetch(DELETE
+// If a backend is added later, replace this with fetch(DELETE
 // /api/transactions/:id), keeping the same return shape.
 export async function deleteTransaction(id: number) {
   return db.delete(transactions).where(eq(transactions.id, id)).returning();
+}
+
+function monthStartEpoch(month: string): number {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Date(year, monthNumber - 1, 1).getTime();
+}
+
+// If a backend is added later, replace this with fetch(POST or PATCH
+// /api/budgets), keeping the same input/return shape.
+export async function upsertBudget(
+  month: string,
+  amount: number,
+): Promise<Budget> {
+  const existing = await getBudgetForMonth(month);
+  if (existing) {
+    const [updated] = await db
+      .update(budgets)
+      .set({ limitAmount: amount })
+      .where(eq(budgets.id, existing.id))
+      .returning();
+    return updated;
+  }
+  const [created] = await db
+    .insert(budgets)
+    .values({
+      category: 'Overall',
+      limitAmount: amount,
+      period: 'monthly',
+      startDate: monthStartEpoch(month),
+      month,
+      createdAt: Date.now(),
+    })
+    .returning();
+  return created;
+}
+
+// If a backend is added later, replace this with fetch(GET /api/budgets),
+// keeping the same return type.
+export async function getAllBudgets(): Promise<Budget[]> {
+  return db.select().from(budgets).orderBy(desc(budgets.month));
 }

@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from 'react';
 import { Alert, Button, FlatList, StyleSheet, Text, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HistoryStackParamList } from '../navigation/types';
@@ -10,27 +9,9 @@ import {
   getTransactionsByYear,
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import MonthYearPicker from '../components/MonthYearPicker';
 
 type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
-
-const MONTHS = [
-  { label: 'All', value: '' },
-  { label: 'January', value: '01' },
-  { label: 'February', value: '02' },
-  { label: 'March', value: '03' },
-  { label: 'April', value: '04' },
-  { label: 'May', value: '05' },
-  { label: 'June', value: '06' },
-  { label: 'July', value: '07' },
-  { label: 'August', value: '08' },
-  { label: 'September', value: '09' },
-  { label: 'October', value: '10' },
-  { label: 'November', value: '11' },
-  { label: 'December', value: '12' },
-];
-
-const currentYear = Number(getCurrentYearString());
-const YEARS = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>;
 
@@ -75,22 +56,13 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={styles.filters}>
-        <View style={styles.pickerWrapper}>
-          <Picker selectedValue={month} onValueChange={setMonth}>
-            {MONTHS.map(m => (
-              <Picker.Item key={m.value} label={m.label} value={m.value} />
-            ))}
-          </Picker>
-        </View>
-        <View style={styles.pickerWrapper}>
-          <Picker selectedValue={year} onValueChange={setYear}>
-            {YEARS.map(y => (
-              <Picker.Item key={y} label={y} value={y} />
-            ))}
-          </Picker>
-        </View>
-      </View>
+      <MonthYearPicker
+        month={month}
+        year={year}
+        onMonthChange={setMonth}
+        onYearChange={setYear}
+        includeAllMonths
+      />
 
       {loading ? (
         <Text style={styles.empty}>Loading...</Text>
@@ -128,12 +100,6 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  filters: {
-    flexDirection: 'row',
-  },
-  pickerWrapper: {
     flex: 1,
   },
   empty: {
