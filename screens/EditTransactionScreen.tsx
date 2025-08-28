@@ -29,6 +29,7 @@ function EditTransactionScreen({
 
   const handleSubmit = async (values: TransactionFormSubmitValues) => {
     await updateTransaction(id, {
+      accountId: values.accountId,
       amount: values.amount,
       category: values.category,
       description: values.description,
@@ -61,6 +62,7 @@ function EditTransactionScreen({
           amount: transaction.amount,
           category: transaction.category as TransactionCategory,
           description: transaction.description ?? '',
+          accountId: transaction.accountId,
         }}
         onSubmit={handleSubmit}
         submitLabel="Update"

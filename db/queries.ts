@@ -4,6 +4,7 @@ import { accounts, budgets, transactions } from './schema';
 
 type Budget = typeof budgets.$inferSelect;
 type Transaction = typeof transactions.$inferSelect;
+type Account = typeof accounts.$inferSelect;
 
 export type NewTransaction = {
   accountId: number;
@@ -11,6 +12,12 @@ export type NewTransaction = {
   category: string;
   description?: string;
   date: string; // 'YYYY-MM-DD'
+};
+
+export type NewAccount = {
+  name: string;
+  type: string;
+  openingBalance: number;
 };
 
 //If a backend is added later, replace this with a fetch() call
@@ -175,4 +182,88 @@ export async function upsertBudget(
 // keeping the same return type.
 export async function getAllBudgets(): Promise<Budget[]> {
   return db.select().from(budgets).orderBy(desc(budgets.month));
+}
+
+// If a backend is added later, replace this with a fetch() call to GET
+// /api/accounts, keeping the same return type.
+export async function getAccounts(): Promise<Account[]> {
+  return db.select().from(accounts);
+}
+
+// If a backend is added later, replace this with a fetch() call to POST
+// /api/accounts, keeping the same input/return shape.
+export async function addAccount(data: NewAccount): Promise<Account> {
+  const [account] = await db
+    .insert(accounts)
+    .values({
+      name: data.name,
+      type: data.type,
+      balance: data.openingBalance,
+      createdAt: Date.now(),
+    })
+    .returning();
+  return account;
+}
+
+// If a backend is added later, replace this with fetch(PATCH
+// /api/accounts/:id), keeping the same input/return shape.
+export async function updateAccount(
+  id: number,
+  data: Partial<NewAccount>,
+): Promise<Account> {
+  const { openingBalance, ...rest } = data;
+  const [updated] = await db
+    .update(accounts)
+    .set({
+      ...rest,
+      ...(openingBalance !== undefined ? { balance: openingBalance } : {}),
+    })
+    .where(eq(accounts.id, id))
+    .returning();
+  return updated;
+}
+
+// If a backend is added later, replace this with fetch(DELETE
+// /api/accounts/:id), keeping the same return shape.
+export async function deleteAccount(id: number): Promise<Account[]> {
+  const referencing = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.accountId, id))
+    .limit(1);
+  if (referencing.length > 0) {
+    throw new Error(
+      'Cannot delete this account because it has existing transactions.',
+    );
+  }
+  return db.delete(accounts).where(eq(accounts.id, id)).returning();
+}
+
+// If a backend is added later, replace this with a fetch() call to GET
+// /api/accounts/:id/balance, keeping the same return type.
+export async function getAccountBalance(accountId: number): Promise<number> {
+  const [account] = await db
+    .select()
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1);
+  if (!account) {
+    return 0;
+  }
+  const [row] = await db
+    .select({ total: sql<number>`sum(${transactions.amount})` })
+    .from(transactions)
+    .where(eq(transactions.accountId, accountId));
+  const spent = row?.total ?? 0;
+  return account.balance - spent;
+}
+
+// If a backend is added later, replace this with a fetch() call to GET
+// /api/accounts/cash-in-hand, keeping the same return type.
+export async function getTotalCashInHand(): Promise<number> {
+  const allAccounts = await getAccounts();
+  const balances = await Promise.all(
+    allAccounts.map(account => getAccountBalance(account.id)),
+  );
+  return balances.reduce((sum, balance) => sum + balance, 0);
 }

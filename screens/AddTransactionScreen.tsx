@@ -3,16 +3,15 @@ import { StyleSheet, Text, View } from 'react-native';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
-import { addTransaction, ensureDefaultAccount } from '../db/queries';
+import { addTransaction } from '../db/queries';
 
 function AddTransactionScreen(): React.JSX.Element {
   const [formKey, setFormKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (values: TransactionFormSubmitValues) => {
-    const account = await ensureDefaultAccount();
     await addTransaction({
-      accountId: account.id,
+      accountId: values.accountId,
       amount: values.amount,
       category: values.category,
       description: values.description,

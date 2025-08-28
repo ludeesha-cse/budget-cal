@@ -5,10 +5,15 @@ export type HistoryStackParamList = {
   EditTransaction: { id: number };
 };
 
+export type BudgetStackParamList = {
+  BudgetSettings: undefined;
+  Accounts: undefined;
+};
+
 export type RootTabParamList = {
   Dashboard: undefined;
   History: NavigatorScreenParams<HistoryStackParamList> | undefined;
   Expenses: undefined;
   Add: undefined;
-  Budget: undefined;
+  Budget: NavigatorScreenParams<BudgetStackParamList> | undefined;
 };

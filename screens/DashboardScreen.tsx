@@ -1,7 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getBudgetForMonth, getMonthlyTotal } from '../db/queries';
+import {
+  getBudgetForMonth,
+  getMonthlyTotal,
+  getTotalCashInHand,
+} from '../db/queries';
 import { getAmountLeft, getAverageLeftPerDay } from '../utils/budgetCalculations';
 import { getCurrentMonthString } from '../utils/date';
 
@@ -14,6 +18,7 @@ function DashboardScreen(): React.JSX.Element {
   const [averageLeftPerDay, setAverageLeftPerDay] = useState<number | null>(
     null,
   );
+  const [cashInHand, setCashInHand] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -26,12 +31,14 @@ function DashboardScreen(): React.JSX.Element {
         getBudgetForMonth(month),
         getAmountLeft(month),
         getAverageLeftPerDay(month),
-      ]).then(([monthlyTotal, monthlyBudget, left, avgLeftPerDay]) => {
+        getTotalCashInHand(),
+      ]).then(([monthlyTotal, monthlyBudget, left, avgLeftPerDay, totalCash]) => {
         if (!cancelled) {
           setTotal(monthlyTotal);
           setBudget(monthlyBudget);
           setAmountLeft(left);
           setAverageLeftPerDay(avgLeftPerDay);
+          setCashInHand(totalCash);
           setLoading(false);
         }
       });
@@ -53,6 +60,9 @@ function DashboardScreen(): React.JSX.Element {
         <ActivityIndicator size="large" />
       ) : (
         <>
+          <Text style={styles.row}>
+            Total cash in hand: {cashInHand.toFixed(2)}
+          </Text>
           <Text style={styles.row}>
             Total spent this month: {total.toFixed(2)}
           </Text>

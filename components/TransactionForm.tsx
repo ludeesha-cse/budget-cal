@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Button,
   Platform,
@@ -12,6 +12,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { formatDateString } from '../utils/date';
+import { getAccounts } from '../db/queries';
 
 export const TRANSACTION_CATEGORIES = [
   'Food',
@@ -28,6 +29,7 @@ export type TransactionFormSubmitValues = {
   amount: number;
   category: TransactionCategory;
   description: string;
+  accountId: number;
 };
 
 type TransactionFormProps = {
@@ -36,6 +38,7 @@ type TransactionFormProps = {
     amount?: number;
     category?: TransactionCategory;
     description?: string;
+    accountId?: number;
   };
   onSubmit: (values: TransactionFormSubmitValues) => void;
   submitLabel?: string;
@@ -59,7 +62,20 @@ function TransactionForm({
   const [description, setDescription] = useState(
     initialValues?.description ?? '',
   );
+  const [accounts, setAccounts] = useState<Awaited<ReturnType<typeof getAccounts>>>(
+    [],
+  );
+  const [accountId, setAccountId] = useState<number | null>(
+    initialValues?.accountId ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAccounts().then(rows => {
+      setAccounts(rows);
+      setAccountId(current => current ?? rows[0]?.id ?? null);
+    });
+  }, []);
 
   const handleDateChange = (
     _event: DateTimePickerEvent,
@@ -77,12 +93,27 @@ function TransactionForm({
       setError('Enter a valid amount');
       return;
     }
+    if (accountId == null) {
+      setError('Select an account');
+      return;
+    }
     setError(null);
-    onSubmit({ date, amount: parsedAmount, category, description });
+    onSubmit({ date, amount: parsedAmount, category, description, accountId });
   };
 
   return (
     <View style={styles.container}>
+      <Text style={styles.label}>Account</Text>
+      <View style={styles.pickerWrapper}>
+        <Picker
+          selectedValue={accountId != null ? String(accountId) : undefined}
+          onValueChange={value => setAccountId(Number(value))}>
+          {accounts.map(a => (
+            <Picker.Item key={a.id} label={a.name} value={String(a.id)} />
+          ))}
+        </Picker>
+      </View>
+
       <Text style={styles.label}>Date</Text>
       <Button title={date} onPress={() => setShowDatePicker(true)} />
       {showDatePicker && (
