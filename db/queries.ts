@@ -239,6 +239,16 @@ export async function deleteAccount(id: number): Promise<Account[]> {
   return db.delete(accounts).where(eq(accounts.id, id)).returning();
 }
 
+const CREDIT_CARD_TYPE = 'Card';
+
+async function getTotalSpentForAccount(accountId: number): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`sum(${transactions.amount})` })
+    .from(transactions)
+    .where(eq(transactions.accountId, accountId));
+  return row?.total ?? 0;
+}
+
 // If a backend is added later, replace this with a fetch() call to GET
 // /api/accounts/:id/balance, keeping the same return type.
 export async function getAccountBalance(accountId: number): Promise<number> {
@@ -250,11 +260,7 @@ export async function getAccountBalance(accountId: number): Promise<number> {
   if (!account) {
     return 0;
   }
-  const [row] = await db
-    .select({ total: sql<number>`sum(${transactions.amount})` })
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId));
-  const spent = row?.total ?? 0;
+  const spent = await getTotalSpentForAccount(accountId);
   return account.balance - spent;
 }
 
@@ -266,4 +272,31 @@ export async function getTotalCashInHand(): Promise<number> {
     allAccounts.map(account => getAccountBalance(account.id)),
   );
   return balances.reduce((sum, balance) => sum + balance, 0);
+}
+
+// If a backend is added later, replace this with a fetch() call to GET
+// /api/accounts/credit-card-debt, keeping the same return type. Card
+// balances are negative (owed to the bank); debt is shown as the positive
+// amount you owe.
+export async function getTotalCreditCardDebt(): Promise<number> {
+  const cardAccounts = (await getAccounts()).filter(
+    account => account.type === CREDIT_CARD_TYPE,
+  );
+  const balances = await Promise.all(
+    cardAccounts.map(account => getAccountBalance(account.id)),
+  );
+  const totalBalance = balances.reduce((sum, balance) => sum + balance, 0);
+  return -totalBalance;
+}
+
+// If a backend is added later, replace this with fetch(POST
+// /api/accounts/:id/settle), keeping the same return type. Settling a
+// credit card doesn't delete its transaction history — it raises the
+// account's opening balance to match what's been spent so far, so the
+// computed balance (and debt) resets to zero going forward.
+export async function settleCreditCardAccount(
+  accountId: number,
+): Promise<Account> {
+  const spent = await getTotalSpentForAccount(accountId);
+  return updateAccount(accountId, { openingBalance: spent });
 }

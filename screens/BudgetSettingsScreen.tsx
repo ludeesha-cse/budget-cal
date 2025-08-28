@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Button,
   FlatList,
   StyleSheet,
@@ -9,27 +10,52 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import MonthYearPicker from '../components/MonthYearPicker';
-import { getAllBudgets, getBudgetForMonth, upsertBudget } from '../db/queries';
+import {
+  getAccountBalance,
+  getAccounts,
+  getAllBudgets,
+  getBudgetForMonth,
+  settleCreditCardAccount,
+  upsertBudget,
+} from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 
+const CREDIT_CARD_TYPE = 'Card';
+
 type BudgetRow = Awaited<ReturnType<typeof getAllBudgets>>[number];
+type CreditCardRow = Awaited<ReturnType<typeof getAccounts>>[number] & {
+  debt: number;
+};
 
 function BudgetSettingsScreen(): React.JSX.Element {
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [amount, setAmount] = useState('');
   const [allBudgets, setAllBudgets] = useState<BudgetRow[]>([]);
+  const [creditCards, setCreditCards] = useState<CreditCardRow[]>([]);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const selectedMonth = `${year}-${month}`;
 
   const load = useCallback(async () => {
-    const [existing, all] = await Promise.all([
+    const [existing, all, accounts] = await Promise.all([
       getBudgetForMonth(selectedMonth),
       getAllBudgets(),
+      getAccounts(),
     ]);
     setAmount(existing ? String(existing.limitAmount) : '');
     setAllBudgets(all);
+
+    const cardAccounts = accounts.filter(
+      account => account.type === CREDIT_CARD_TYPE,
+    );
+    const withDebt = await Promise.all(
+      cardAccounts.map(async account => ({
+        ...account,
+        debt: -(await getAccountBalance(account.id)),
+      })),
+    );
+    setCreditCards(withDebt);
   }, [selectedMonth]);
 
   useFocusEffect(
@@ -50,6 +76,23 @@ function BudgetSettingsScreen(): React.JSX.Element {
     await upsertBudget(selectedMonth, parsedAmount);
     setSavedMessage('Budget saved');
     load();
+  };
+
+  const handleSettle = (id: number, name: string) => {
+    Alert.alert(
+      'Settle credit card',
+      `Mark ${name} as paid off? This sets its balance back to zero. Past transactions stay in your history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Settle',
+          onPress: async () => {
+            await settleCreditCardAccount(id);
+            load();
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -85,6 +128,27 @@ function BudgetSettingsScreen(): React.JSX.Element {
         )}
         ListEmptyComponent={
           <Text style={styles.empty}>No budgets set yet.</Text>
+        }
+      />
+
+      <Text style={styles.subtitle}>Credit Cards</Text>
+      <FlatList
+        data={creditCards}
+        keyExtractor={item => String(item.id)}
+        renderItem={({ item }) => (
+          <View style={styles.cardRow}>
+            <View style={styles.cardInfo}>
+              <Text style={styles.rowName}>{item.name}</Text>
+              <Text style={styles.rowDebt}>Owed: {item.debt.toFixed(2)}</Text>
+            </View>
+            <Button
+              title="Settle"
+              onPress={() => handleSettle(item.id, item.name)}
+            />
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.empty}>No credit cards yet.</Text>
         }
       />
     </View>
@@ -135,6 +199,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc',
+  },
+  cardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  rowName: {
+    fontWeight: '600',
+  },
+  rowDebt: {
+    marginTop: 2,
+    color: '#c62828',
   },
 });
 

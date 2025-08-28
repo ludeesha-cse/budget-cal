@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button,
+  Modal,
   Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View,
 } from 'react-native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import { formatDateString } from '../utils/date';
 import { getAccounts } from '../db/queries';
+import CollapsiblePicker from './CollapsiblePicker';
 
 export const TRANSACTION_CATEGORIES = [
   'Food',
@@ -81,9 +83,13 @@ function TransactionForm({
     _event: DateTimePickerEvent,
     selectedDate?: Date,
   ) => {
-    setShowDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
       setDate(formatDateString(selectedDate));
+    }
+    // Android's native dialog dismisses itself on pick/cancel; the iOS
+    // popup modal (below) is closed explicitly via its Done button instead.
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
     }
   };
 
@@ -101,28 +107,53 @@ function TransactionForm({
     onSubmit({ date, amount: parsedAmount, category, description, accountId });
   };
 
+  const selectedAccountName =
+    accounts.find(a => a.id === accountId)?.name ?? 'Select account';
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled">
       <Text style={styles.label}>Account</Text>
-      <View style={styles.pickerWrapper}>
-        <Picker
-          selectedValue={accountId != null ? String(accountId) : undefined}
-          onValueChange={value => setAccountId(Number(value))}>
-          {accounts.map(a => (
-            <Picker.Item key={a.id} label={a.name} value={String(a.id)} />
-          ))}
-        </Picker>
-      </View>
+      <CollapsiblePicker
+        displayLabel={selectedAccountName}
+        selectedValue={accountId != null ? String(accountId) : ''}
+        onValueChange={value => setAccountId(Number(value))}
+        items={accounts.map(a => ({ label: a.name, value: String(a.id) }))}
+      />
 
       <Text style={styles.label}>Date</Text>
       <Button title={date} onPress={() => setShowDatePicker(true)} />
-      {showDatePicker && (
-        <DateTimePicker
-          value={new Date(date)}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-        />
+      {Platform.OS === 'android' ? (
+        showDatePicker && (
+          <DateTimePicker
+            value={new Date(date)}
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+          />
+        )
+      ) : (
+        <Modal
+          visible={showDatePicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowDatePicker(false)}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setShowDatePicker(false)}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
+              <DateTimePicker
+                value={new Date(date)}
+                mode="date"
+                display="spinner"
+                onChange={handleDateChange}
+              />
+              <Button title="Done" onPress={() => setShowDatePicker(false)} />
+            </Pressable>
+          </Pressable>
+        </Modal>
       )}
 
       <Text style={styles.label}>Amount</Text>
@@ -135,15 +166,12 @@ function TransactionForm({
       />
 
       <Text style={styles.label}>Type</Text>
-      <View style={styles.pickerWrapper}>
-        <Picker
-          selectedValue={category}
-          onValueChange={value => setCategory(value)}>
-          {TRANSACTION_CATEGORIES.map(c => (
-            <Picker.Item key={c} label={c} value={c} />
-          ))}
-        </Picker>
-      </View>
+      <CollapsiblePicker
+        displayLabel={category}
+        selectedValue={category}
+        onValueChange={value => setCategory(value as TransactionCategory)}
+        items={TRANSACTION_CATEGORIES.map(c => ({ label: c, value: c }))}
+      />
 
       <Text style={styles.label}>Description</Text>
       <TextInput
@@ -156,11 +184,14 @@ function TransactionForm({
       {error && <Text style={styles.error}>{error}</Text>}
 
       <Button title={submitLabel} onPress={handleSubmit} />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   container: {
     padding: 16,
   },
@@ -178,14 +209,21 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  pickerWrapper: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
-    borderRadius: 6,
-  },
   error: {
     color: '#c0392b',
     marginTop: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
   },
 });
 

@@ -5,6 +5,7 @@ import {
   getBudgetForMonth,
   getMonthlyTotal,
   getTotalCashInHand,
+  getTotalCreditCardDebt,
 } from '../db/queries';
 import { getAmountLeft, getAverageLeftPerDay } from '../utils/budgetCalculations';
 import { getCurrentMonthString } from '../utils/date';
@@ -19,6 +20,7 @@ function DashboardScreen(): React.JSX.Element {
     null,
   );
   const [cashInHand, setCashInHand] = useState(0);
+  const [creditCardDebt, setCreditCardDebt] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -32,16 +34,20 @@ function DashboardScreen(): React.JSX.Element {
         getAmountLeft(month),
         getAverageLeftPerDay(month),
         getTotalCashInHand(),
-      ]).then(([monthlyTotal, monthlyBudget, left, avgLeftPerDay, totalCash]) => {
-        if (!cancelled) {
-          setTotal(monthlyTotal);
-          setBudget(monthlyBudget);
-          setAmountLeft(left);
-          setAverageLeftPerDay(avgLeftPerDay);
-          setCashInHand(totalCash);
-          setLoading(false);
-        }
-      });
+        getTotalCreditCardDebt(),
+      ]).then(
+        ([monthlyTotal, monthlyBudget, left, avgLeftPerDay, totalCash, cardDebt]) => {
+          if (!cancelled) {
+            setTotal(monthlyTotal);
+            setBudget(monthlyBudget);
+            setAmountLeft(left);
+            setAverageLeftPerDay(avgLeftPerDay);
+            setCashInHand(totalCash);
+            setCreditCardDebt(cardDebt);
+            setLoading(false);
+          }
+        },
+      );
       return () => {
         cancelled = true;
       };
@@ -62,6 +68,9 @@ function DashboardScreen(): React.JSX.Element {
         <>
           <Text style={styles.row}>
             Total cash in hand: {cashInHand.toFixed(2)}
+          </Text>
+          <Text style={[styles.row, styles.red]}>
+            Credit card debt: {creditCardDebt.toFixed(2)}
           </Text>
           <Text style={styles.row}>
             Total spent this month: {total.toFixed(2)}
