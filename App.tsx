@@ -8,7 +8,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Button,
   StatusBar,
   StyleSheet,
   Text,
@@ -17,10 +16,7 @@ import {
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import {
-  createNativeStackNavigator,
-  NativeStackNavigationProp,
-} from '@react-navigation/native-stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { runMigrations } from './db';
 import { ensureDefaultAccount } from './db/queries';
@@ -29,17 +25,18 @@ import HistoryListScreen from './screens/HistoryListScreen';
 import EditTransactionScreen from './screens/EditTransactionScreen';
 import ExpensesByTypeScreen from './screens/ExpensesByTypeScreen';
 import AddTransactionScreen from './screens/AddTransactionScreen';
+import SettingsHomeScreen from './screens/SettingsHomeScreen';
 import BudgetSettingsScreen from './screens/BudgetSettingsScreen';
 import AccountsScreen from './screens/AccountsScreen';
 import type {
-  BudgetStackParamList,
   HistoryStackParamList,
   RootTabParamList,
+  SettingsStackParamList,
 } from './navigation/types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const HistoryStack = createNativeStackNavigator<HistoryStackParamList>();
-const BudgetStack = createNativeStackNavigator<BudgetStackParamList>();
+const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function HistoryStackNavigator(): React.JSX.Element {
   return (
@@ -58,42 +55,25 @@ function HistoryStackNavigator(): React.JSX.Element {
   );
 }
 
-type BudgetSettingsNavigationProp = NativeStackNavigationProp<
-  BudgetStackParamList,
-  'BudgetSettings'
->;
-
-function ManageAccountsButton({
-  navigation,
-}: {
-  navigation: BudgetSettingsNavigationProp;
-}): React.JSX.Element {
+function SettingsStackNavigator(): React.JSX.Element {
   return (
-    <Button
-      title="Manage Accounts"
-      onPress={() => navigation.navigate('Accounts')}
-    />
-  );
-}
-
-function BudgetStackNavigator(): React.JSX.Element {
-  return (
-    <BudgetStack.Navigator>
-      <BudgetStack.Screen
+    <SettingsStack.Navigator>
+      <SettingsStack.Screen
+        name="SettingsHome"
+        component={SettingsHomeScreen}
+        options={{ title: 'Settings' }}
+      />
+      <SettingsStack.Screen
         name="BudgetSettings"
         component={BudgetSettingsScreen}
-        options={({ navigation }) => ({
-          title: 'Budget',
-          // eslint-disable-next-line react/no-unstable-nested-components -- headerRight is a react-navigation render prop, re-invoked by design; ManageAccountsButton itself is hoisted and stable.
-          headerRight: () => <ManageAccountsButton navigation={navigation} />,
-        })}
+        options={{ title: 'Budget' }}
       />
-      <BudgetStack.Screen
+      <SettingsStack.Screen
         name="Accounts"
         component={AccountsScreen}
         options={{ title: 'Accounts' }}
       />
-    </BudgetStack.Navigator>
+    </SettingsStack.Navigator>
   );
 }
 
@@ -140,8 +120,8 @@ function App(): React.JSX.Element {
           <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
           <Tab.Screen name="Add" component={AddTransactionScreen} />
           <Tab.Screen
-            name="Budget"
-            component={BudgetStackNavigator}
+            name="Settings"
+            component={SettingsStackNavigator}
             options={{ headerShown: false }}
           />
         </Tab.Navigator>

@@ -1,0 +1,67 @@
+import React from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { SettingsStackParamList } from '../navigation/types';
+
+type SettingsHomeNavigationProp = NativeStackNavigationProp<
+  SettingsStackParamList,
+  'SettingsHome'
+>;
+
+type Props = {
+  navigation: SettingsHomeNavigationProp;
+};
+
+function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
+  const handleCategoriesPress = () => {
+    // Categories screen is not built yet — implemented in the next stage.
+    Alert.alert('Coming soon', 'Category management will be available soon.');
+  };
+
+  return (
+    <View style={styles.container}>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('BudgetSettings')}>
+        <Text style={styles.rowLabel}>Monthly Budget</Text>
+        <Text style={styles.chevron}>{'>'}</Text>
+      </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('Accounts')}>
+        <Text style={styles.rowLabel}>Accounts</Text>
+        <Text style={styles.chevron}>{'>'}</Text>
+      </Pressable>
+      <Pressable style={styles.row} onPress={handleCategoriesPress}>
+        <Text style={styles.rowLabel}>Categories</Text>
+        <Text style={styles.chevron}>{'>'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
+  rowLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  chevron: {
+    fontSize: 16,
+    color: '#999',
+  },
+});
+
+export default SettingsHomeScreen;
