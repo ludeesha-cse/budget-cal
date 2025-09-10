@@ -13,23 +13,13 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { formatDateString } from '../utils/date';
-import { getAccounts } from '../db/queries';
+import { getAccounts, getCategories } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
-
-export const TRANSACTION_CATEGORIES = [
-  'Food',
-  'Transport',
-  'Bills',
-  'Entertainment',
-  'Other',
-] as const;
-
-export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
 
 export type TransactionFormSubmitValues = {
   date: string; // 'YYYY-MM-DD'
   amount: number;
-  category: TransactionCategory;
+  categoryId: number;
   description: string;
   accountId: number;
 };
@@ -38,7 +28,7 @@ type TransactionFormProps = {
   initialValues?: {
     date?: string;
     amount?: number;
-    category?: TransactionCategory;
+    categoryId?: number;
     description?: string;
     accountId?: number;
   };
@@ -58,9 +48,6 @@ function TransactionForm({
   const [amount, setAmount] = useState(
     initialValues?.amount != null ? String(initialValues.amount) : '',
   );
-  const [category, setCategory] = useState<TransactionCategory>(
-    initialValues?.category ?? 'Food',
-  );
   const [description, setDescription] = useState(
     initialValues?.description ?? '',
   );
@@ -70,12 +57,22 @@ function TransactionForm({
   const [accountId, setAccountId] = useState<number | null>(
     initialValues?.accountId ?? null,
   );
+  const [categories, setCategories] = useState<
+    Awaited<ReturnType<typeof getCategories>>
+  >([]);
+  const [categoryId, setCategoryId] = useState<number | null>(
+    initialValues?.categoryId ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getAccounts().then(rows => {
       setAccounts(rows);
       setAccountId(current => current ?? rows[0]?.id ?? null);
+    });
+    getCategories().then(rows => {
+      setCategories(rows);
+      setCategoryId(current => current ?? rows[0]?.id ?? null);
     });
   }, []);
 
@@ -103,12 +100,24 @@ function TransactionForm({
       setError('Select an account');
       return;
     }
+    if (categoryId == null) {
+      setError('Select a category');
+      return;
+    }
     setError(null);
-    onSubmit({ date, amount: parsedAmount, category, description, accountId });
+    onSubmit({
+      date,
+      amount: parsedAmount,
+      categoryId,
+      description,
+      accountId,
+    });
   };
 
   const selectedAccountName =
     accounts.find(a => a.id === accountId)?.name ?? 'Select account';
+  const selectedCategoryName =
+    categories.find(c => c.id === categoryId)?.name ?? 'Select category';
 
   return (
     <ScrollView
@@ -165,12 +174,12 @@ function TransactionForm({
         placeholder="0.00"
       />
 
-      <Text style={styles.label}>Type</Text>
+      <Text style={styles.label}>Category</Text>
       <CollapsiblePicker
-        displayLabel={category}
-        selectedValue={category}
-        onValueChange={value => setCategory(value as TransactionCategory)}
-        items={TRANSACTION_CATEGORIES.map(c => ({ label: c, value: c }))}
+        displayLabel={selectedCategoryName}
+        selectedValue={categoryId != null ? String(categoryId) : ''}
+        onValueChange={value => setCategoryId(Number(value))}
+        items={categories.map(c => ({ label: c.name, value: String(c.id) }))}
       />
 
       <Text style={styles.label}>Description</Text>

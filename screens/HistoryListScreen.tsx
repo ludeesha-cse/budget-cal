@@ -77,7 +77,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
               <View style={styles.rowDetails}>
                 <Text style={styles.rowDate}>{item.date}</Text>
                 <Text>
-                  {item.category} · {item.description || '—'}
+                  {item.categoryName ?? 'Unknown'} · {item.description || '—'}
                 </Text>
                 <Text style={styles.rowAmount}>{item.amount.toFixed(2)}</Text>
               </View>

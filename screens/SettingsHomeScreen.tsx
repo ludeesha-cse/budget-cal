@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { SettingsStackParamList } from '../navigation/types';
 
@@ -13,11 +13,6 @@ type Props = {
 };
 
 function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
-  const handleCategoriesPress = () => {
-    // Categories screen is not built yet — implemented in the next stage.
-    Alert.alert('Coming soon', 'Category management will be available soon.');
-  };
-
   return (
     <View style={styles.container}>
       <Pressable
@@ -32,8 +27,16 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
         <Text style={styles.rowLabel}>Accounts</Text>
         <Text style={styles.chevron}>{'>'}</Text>
       </Pressable>
-      <Pressable style={styles.row} onPress={handleCategoriesPress}>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('Categories')}>
         <Text style={styles.rowLabel}>Categories</Text>
+        <Text style={styles.chevron}>{'>'}</Text>
+      </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('CategoryBudgets')}>
+        <Text style={styles.rowLabel}>Category Budgets</Text>
         <Text style={styles.chevron}>{'>'}</Text>
       </Pressable>
     </View>

@@ -9,6 +9,8 @@ export type SettingsStackParamList = {
   SettingsHome: undefined;
   BudgetSettings: undefined;
   Accounts: undefined;
+  Categories: undefined;
+  CategoryBudgets: undefined;
 };
 
 export type RootTabParamList = {

@@ -28,6 +28,8 @@ import AddTransactionScreen from './screens/AddTransactionScreen';
 import SettingsHomeScreen from './screens/SettingsHomeScreen';
 import BudgetSettingsScreen from './screens/BudgetSettingsScreen';
 import AccountsScreen from './screens/AccountsScreen';
+import CategoriesScreen from './screens/CategoriesScreen';
+import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import type {
   HistoryStackParamList,
   RootTabParamList,
@@ -72,6 +74,16 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="Accounts"
         component={AccountsScreen}
         options={{ title: 'Accounts' }}
+      />
+      <SettingsStack.Screen
+        name="Categories"
+        component={CategoriesScreen}
+        options={{ title: 'Categories' }}
+      />
+      <SettingsStack.Screen
+        name="CategoryBudgets"
+        component={CategoryBudgetsScreen}
+        options={{ title: 'Category Budgets' }}
       />
     </SettingsStack.Navigator>
   );

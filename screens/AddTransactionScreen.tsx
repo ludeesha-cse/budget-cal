@@ -13,7 +13,7 @@ function AddTransactionScreen(): React.JSX.Element {
     await addTransaction({
       accountId: values.accountId,
       amount: values.amount,
-      category: values.category,
+      categoryId: values.categoryId,
       description: values.description,
       date: values.date,
     });

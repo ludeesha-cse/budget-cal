@@ -1,15 +1,23 @@
-import { desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { db } from './index';
-import { accounts, budgets, transactions } from './schema';
+import {
+  accounts,
+  budgets,
+  categories,
+  categoryBudgets,
+  transactions,
+} from './schema';
 
 type Budget = typeof budgets.$inferSelect;
 type Transaction = typeof transactions.$inferSelect;
 type Account = typeof accounts.$inferSelect;
+type Category = typeof categories.$inferSelect;
+type CategoryBudget = typeof categoryBudgets.$inferSelect;
 
 export type NewTransaction = {
   accountId: number;
   amount: number;
-  category: string;
+  categoryId: number;
   description?: string;
   date: string; // 'YYYY-MM-DD'
 };
@@ -62,8 +70,18 @@ export async function ensureDefaultAccount() {
 // to GET /api/transactions?month=YYYY-MM, keeping the same return type.
 export async function getTransactionsByMonth(month: string) {
   return db
-    .select()
+    .select({
+      id: transactions.id,
+      accountId: transactions.accountId,
+      amount: transactions.amount,
+      categoryId: transactions.categoryId,
+      categoryName: categories.name,
+      description: transactions.description,
+      date: transactions.date,
+      createdAt: transactions.createdAt,
+    })
     .from(transactions)
+    .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(like(transactions.date, `${month}%`));
 }
 
@@ -71,8 +89,18 @@ export async function getTransactionsByMonth(month: string) {
 // to GET /api/transactions?year=YYYY, keeping the same return type.
 export async function getTransactionsByYear(year: string) {
   return db
-    .select()
+    .select({
+      id: transactions.id,
+      accountId: transactions.accountId,
+      amount: transactions.amount,
+      categoryId: transactions.categoryId,
+      categoryName: categories.name,
+      description: transactions.description,
+      date: transactions.date,
+      createdAt: transactions.createdAt,
+    })
     .from(transactions)
+    .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(like(transactions.date, `${year}%`));
 }
 
@@ -82,12 +110,13 @@ export async function getTransactionsByYear(year: string) {
 export async function getExpensesByType(month: string) {
   return db
     .select({
-      type: transactions.category,
+      type: categories.name,
       total: sql<number>`sum(${transactions.amount})`,
     })
     .from(transactions)
+    .innerJoin(categories, eq(transactions.categoryId, categories.id))
     .where(like(transactions.date, `${month}%`))
-    .groupBy(transactions.category);
+    .groupBy(categories.name);
 }
 
 //If a backend is added later, replace this with a fetch() call
@@ -299,4 +328,110 @@ export async function settleCreditCardAccount(
 ): Promise<Account> {
   const spent = await getTotalSpentForAccount(accountId);
   return updateAccount(accountId, { openingBalance: spent });
+}
+
+// If a backend is added later, replace this with a fetch() call to GET
+// /api/categories, keeping the same return type.
+export async function getCategories(): Promise<Category[]> {
+  return db.select().from(categories);
+}
+
+// If a backend is added later, replace this with a fetch() call to POST
+// /api/categories, keeping the same input/return shape.
+export async function addCategory(name: string): Promise<Category> {
+  const [category] = await db
+    .insert(categories)
+    .values({ name, createdAt: Date.now() })
+    .returning();
+  return category;
+}
+
+// If a backend is added later, replace this with fetch(PATCH
+// /api/categories/:id), keeping the same input/return shape.
+export async function updateCategory(
+  id: number,
+  name: string,
+): Promise<Category> {
+  const [updated] = await db
+    .update(categories)
+    .set({ name })
+    .where(eq(categories.id, id))
+    .returning();
+  return updated;
+}
+
+// If a backend is added later, replace this with fetch(DELETE
+// /api/categories/:id), keeping the same return shape.
+export async function deleteCategory(id: number): Promise<Category[]> {
+  const referencing = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.categoryId, id))
+    .limit(1);
+  if (referencing.length > 0) {
+    throw new Error(
+      'Cannot delete this category because it has existing transactions.',
+    );
+  }
+  return db.delete(categories).where(eq(categories.id, id)).returning();
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/category-budgets?month=YYYY-MM&categoryId=, keeping the
+// same return type.
+export async function getCategoryBudget(
+  month: string,
+  categoryId: number,
+): Promise<CategoryBudget | null> {
+  const [row] = await db
+    .select()
+    .from(categoryBudgets)
+    .where(
+      and(
+        eq(categoryBudgets.month, month),
+        eq(categoryBudgets.categoryId, categoryId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/category-budgets?month=YYYY-MM, keeping the same
+// return shape.
+export async function getCategoryBudgetsForMonth(month: string) {
+  return db
+    .select({
+      id: categoryBudgets.id,
+      month: categoryBudgets.month,
+      categoryId: categoryBudgets.categoryId,
+      categoryName: categories.name,
+      amount: categoryBudgets.amount,
+    })
+    .from(categoryBudgets)
+    .innerJoin(categories, eq(categoryBudgets.categoryId, categories.id))
+    .where(eq(categoryBudgets.month, month));
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// or PATCH /api/category-budgets), keeping the same input/return shape.
+export async function upsertCategoryBudget(
+  month: string,
+  categoryId: number,
+  amount: number,
+): Promise<CategoryBudget> {
+  const existing = await getCategoryBudget(month, categoryId);
+  if (existing) {
+    const [updated] = await db
+      .update(categoryBudgets)
+      .set({ amount })
+      .where(eq(categoryBudgets.id, existing.id))
+      .returning();
+    return updated;
+  }
+  const [created] = await db
+    .insert(categoryBudgets)
+    .values({ month, categoryId, amount })
+    .returning();
+  return created;
 }

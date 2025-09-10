@@ -3,7 +3,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HistoryStackParamList } from '../navigation/types';
 import TransactionForm, {
-  TransactionCategory,
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import { getTransactionById, updateTransaction } from '../db/queries';
@@ -31,7 +30,7 @@ function EditTransactionScreen({
     await updateTransaction(id, {
       accountId: values.accountId,
       amount: values.amount,
-      category: values.category,
+      categoryId: values.categoryId,
       description: values.description,
       date: values.date,
     });
@@ -60,7 +59,7 @@ function EditTransactionScreen({
         initialValues={{
           date: transaction.date,
           amount: transaction.amount,
-          category: transaction.category as TransactionCategory,
+          categoryId: transaction.categoryId,
           description: transaction.description ?? '',
           accountId: transaction.accountId,
         }}
