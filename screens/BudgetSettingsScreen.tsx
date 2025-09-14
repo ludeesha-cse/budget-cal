@@ -20,7 +20,7 @@ import {
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 
-const CREDIT_CARD_TYPE = 'Card';
+const CREDIT_CARD_TYPE = 'CreditCard';
 
 type BudgetRow = Awaited<ReturnType<typeof getAllBudgets>>[number];
 type CreditCardRow = Awaited<ReturnType<typeof getAccounts>>[number] & {

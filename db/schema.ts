@@ -10,10 +10,39 @@ import {
 export const accounts = sqliteTable('accounts', {
   id: int('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'checking' | 'savings' | 'cash' | 'credit'
-  balance: real('balance').notNull().default(0),
+  type: text('type').notNull(), // 'Cash' | 'Bank' | 'CreditCard'
   createdAt: int('created_at').notNull(),
 });
+
+export const currencies = sqliteTable('currencies', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  code: text('code').notNull().unique(), // 'LKR' | 'USD' | 'GBP' | 'EUR' | 'AUD' | 'USDT'
+  name: text('name').notNull(),
+  isDefault: integer('is_default', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  createdAt: int('created_at').notNull(),
+});
+
+export const accountBalances = sqliteTable(
+  'account_balances',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    accountId: int('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    currencyId: int('currency_id')
+      .notNull()
+      .references(() => currencies.id),
+    balance: int('balance').notNull().default(0),
+  },
+  table => ({
+    accountCurrencyUnique: uniqueIndex('account_currency_unique').on(
+      table.accountId,
+      table.currencyId,
+    ),
+  }),
+);
 
 export const categories = sqliteTable('categories', {
   id: int('id').primaryKey({ autoIncrement: true }),

@@ -14,6 +14,7 @@ import {
   addAccount,
   deleteAccount,
   getAccountBalance,
+  getAccountBalances,
   getAccounts,
   updateAccount,
 } from '../db/queries';
@@ -22,6 +23,9 @@ const ACCOUNT_TYPES = ['Cash', 'Bank', 'Card'] as const;
 
 type AccountWithBalance = Awaited<ReturnType<typeof getAccounts>>[number] & {
   currentBalance: number;
+  // Raw opening balance in the default currency (account_balances), as
+  // opposed to currentBalance which already has spending subtracted.
+  openingBalance: number;
 };
 
 function AccountsScreen(): React.JSX.Element {
@@ -35,10 +39,14 @@ function AccountsScreen(): React.JSX.Element {
   const load = useCallback(async () => {
     const rows = await getAccounts();
     const withBalances = await Promise.all(
-      rows.map(async account => ({
-        ...account,
-        currentBalance: await getAccountBalance(account.id),
-      })),
+      rows.map(async account => {
+        const balances = await getAccountBalances(account.id);
+        return {
+          ...account,
+          currentBalance: await getAccountBalance(account.id),
+          openingBalance: balances[0]?.balance ?? 0,
+        };
+      }),
     );
     setAccounts(withBalances);
   }, []);
@@ -65,7 +73,7 @@ function AccountsScreen(): React.JSX.Element {
     setEditingId(account.id);
     setName(account.name);
     setType(account.type);
-    setOpeningBalance(String(account.balance));
+    setOpeningBalance(String(account.openingBalance));
     setFormVisible(true);
   };
 

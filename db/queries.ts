@@ -1,10 +1,12 @@
 import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { db } from './index';
 import {
+  accountBalances,
   accounts,
   budgets,
   categories,
   categoryBudgets,
+  currencies,
   transactions,
 } from './schema';
 
@@ -13,6 +15,7 @@ type Transaction = typeof transactions.$inferSelect;
 type Account = typeof accounts.$inferSelect;
 type Category = typeof categories.$inferSelect;
 type CategoryBudget = typeof categoryBudgets.$inferSelect;
+type Currency = typeof currencies.$inferSelect;
 
 export type NewTransaction = {
   accountId: number;
@@ -59,7 +62,6 @@ export async function ensureDefaultAccount() {
     .values({
       name: 'Cash',
       type: 'Cash',
-      balance: 0,
       createdAt: Date.now(),
     })
     .returning();
@@ -219,36 +221,76 @@ export async function getAccounts(): Promise<Account[]> {
   return db.select().from(accounts);
 }
 
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// or PATCH /api/accounts/:id/balances), keeping the same input/return
+// shape. Inserts or updates the (accountId, currencyId) balance row.
+async function upsertAccountBalance(
+  accountId: number,
+  currencyId: number,
+  balance: number,
+): Promise<void> {
+  const [existing] = await db
+    .select()
+    .from(accountBalances)
+    .where(
+      and(
+        eq(accountBalances.accountId, accountId),
+        eq(accountBalances.currencyId, currencyId),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await db
+      .update(accountBalances)
+      .set({ balance })
+      .where(eq(accountBalances.id, existing.id));
+  } else {
+    await db.insert(accountBalances).values({ accountId, currencyId, balance });
+  }
+}
+
 // If a backend is added later, replace this with a fetch() call to POST
-// /api/accounts, keeping the same input/return shape.
+// /api/accounts, keeping the same input/return shape. The opening balance
+// is stored in account_balances under the default currency.
 export async function addAccount(data: NewAccount): Promise<Account> {
   const [account] = await db
     .insert(accounts)
     .values({
       name: data.name,
       type: data.type,
-      balance: data.openingBalance,
       createdAt: Date.now(),
     })
     .returning();
+  const defaultCurrency = await getDefaultCurrency();
+  if (defaultCurrency) {
+    await upsertAccountBalance(account.id, defaultCurrency.id, data.openingBalance);
+  }
   return account;
 }
 
 // If a backend is added later, replace this with fetch(PATCH
-// /api/accounts/:id), keeping the same input/return shape.
+// /api/accounts/:id), keeping the same input/return shape. An updated
+// opening balance is written to account_balances under the default
+// currency.
 export async function updateAccount(
   id: number,
   data: Partial<NewAccount>,
 ): Promise<Account> {
   const { openingBalance, ...rest } = data;
+  if (Object.keys(rest).length > 0) {
+    await db.update(accounts).set(rest).where(eq(accounts.id, id));
+  }
+  if (openingBalance !== undefined) {
+    const defaultCurrency = await getDefaultCurrency();
+    if (defaultCurrency) {
+      await upsertAccountBalance(id, defaultCurrency.id, openingBalance);
+    }
+  }
   const [updated] = await db
-    .update(accounts)
-    .set({
-      ...rest,
-      ...(openingBalance !== undefined ? { balance: openingBalance } : {}),
-    })
+    .select()
+    .from(accounts)
     .where(eq(accounts.id, id))
-    .returning();
+    .limit(1);
   return updated;
 }
 
@@ -265,10 +307,11 @@ export async function deleteAccount(id: number): Promise<Account[]> {
       'Cannot delete this account because it has existing transactions.',
     );
   }
+  await db.delete(accountBalances).where(eq(accountBalances.accountId, id));
   return db.delete(accounts).where(eq(accounts.id, id)).returning();
 }
 
-const CREDIT_CARD_TYPE = 'Card';
+const CREDIT_CARD_TYPE = 'CreditCard';
 
 async function getTotalSpentForAccount(accountId: number): Promise<number> {
   const [row] = await db
@@ -279,7 +322,9 @@ async function getTotalSpentForAccount(accountId: number): Promise<number> {
 }
 
 // If a backend is added later, replace this with a fetch() call to GET
-// /api/accounts/:id/balance, keeping the same return type.
+// /api/accounts/:id/balance, keeping the same return type. Balance is the
+// account's opening balance in the default currency, minus everything
+// spent from it since (spending isn't currency-tagged yet).
 export async function getAccountBalance(accountId: number): Promise<number> {
   const [account] = await db
     .select()
@@ -289,8 +334,23 @@ export async function getAccountBalance(accountId: number): Promise<number> {
   if (!account) {
     return 0;
   }
+  const defaultCurrency = await getDefaultCurrency();
+  if (!defaultCurrency) {
+    return 0;
+  }
+  const [balanceRow] = await db
+    .select()
+    .from(accountBalances)
+    .where(
+      and(
+        eq(accountBalances.accountId, accountId),
+        eq(accountBalances.currencyId, defaultCurrency.id),
+      ),
+    )
+    .limit(1);
+  const openingBalance = balanceRow?.balance ?? 0;
   const spent = await getTotalSpentForAccount(accountId);
-  return account.balance - spent;
+  return openingBalance - spent;
 }
 
 // If a backend is added later, replace this with a fetch() call to GET
@@ -434,4 +494,52 @@ export async function upsertCategoryBudget(
     .values({ month, categoryId, amount })
     .returning();
   return created;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/currencies, keeping the same return type.
+export async function getCurrencies(): Promise<Currency[]> {
+  return db.select().from(currencies);
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to POST /api/currencies, keeping the same input/return shape. New
+// currencies are never created as the default.
+export async function addCurrency(
+  code: string,
+  name: string,
+): Promise<Currency> {
+  const [currency] = await db
+    .insert(currencies)
+    .values({ code, name, isDefault: false, createdAt: Date.now() })
+    .returning();
+  return currency;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/:id/balances, keeping the same return shape.
+export async function getAccountBalances(accountId: number) {
+  return db
+    .select({
+      id: accountBalances.id,
+      accountId: accountBalances.accountId,
+      currencyId: accountBalances.currencyId,
+      currencyCode: currencies.code,
+      currencyName: currencies.name,
+      balance: accountBalances.balance,
+    })
+    .from(accountBalances)
+    .innerJoin(currencies, eq(accountBalances.currencyId, currencies.id))
+    .where(eq(accountBalances.accountId, accountId));
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/currencies/default, keeping the same return type.
+export async function getDefaultCurrency(): Promise<Currency | null> {
+  const [row] = await db
+    .select()
+    .from(currencies)
+    .where(eq(currencies.isDefault, true))
+    .limit(1);
+  return row ?? null;
 }
