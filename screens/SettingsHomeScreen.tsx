@@ -39,6 +39,12 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
         <Text style={styles.rowLabel}>Category Budgets</Text>
         <Text style={styles.chevron}>{'>'}</Text>
       </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('Currencies')}>
+        <Text style={styles.rowLabel}>Currencies</Text>
+        <Text style={styles.chevron}>{'>'}</Text>
+      </Pressable>
     </View>
   );
 }

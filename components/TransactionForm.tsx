@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Button,
   Modal,
@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
@@ -65,16 +66,29 @@ function TransactionForm({
   );
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    getAccounts().then(rows => {
-      setAccounts(rows);
-      setAccountId(current => current ?? rows[0]?.id ?? null);
-    });
-    getCategories().then(rows => {
-      setCategories(rows);
-      setCategoryId(current => current ?? rows[0]?.id ?? null);
-    });
-  }, []);
+  // Refetch on every focus (not just on mount) so accounts/categories
+  // added, edited, or deleted elsewhere show up immediately without
+  // needing to reload the app.
+  useFocusEffect(
+    useCallback(() => {
+      getAccounts().then(rows => {
+        setAccounts(rows);
+        setAccountId(current =>
+          current != null && rows.some(a => a.id === current)
+            ? current
+            : rows[0]?.id ?? null,
+        );
+      });
+      getCategories().then(rows => {
+        setCategories(rows);
+        setCategoryId(current =>
+          current != null && rows.some(c => c.id === current)
+            ? current
+            : rows[0]?.id ?? null,
+        );
+      });
+    }, []),
+  );
 
   const handleDateChange = (
     _event: DateTimePickerEvent,

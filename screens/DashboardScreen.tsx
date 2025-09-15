@@ -12,7 +12,7 @@ import {
   getCategories,
   getCategoryBudgetsForMonth,
   getMonthlyTotal,
-  getTotalCashInHand,
+  getTotalCashInHandByCurrency,
   getTotalCreditCardDebt,
   getTransactionsByMonth,
 } from '../db/queries';
@@ -51,7 +51,9 @@ function DashboardScreen(): React.JSX.Element {
   const [averageLeftPerDay, setAverageLeftPerDay] = useState<number | null>(
     null,
   );
-  const [cashInHand, setCashInHand] = useState(0);
+  const [cashInHandByCurrency, setCashInHandByCurrency] = useState<
+    Record<string, number>
+  >({});
   const [creditCardDebt, setCreditCardDebt] = useState(0);
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     CategoryBreakdownRow[]
@@ -68,7 +70,7 @@ function DashboardScreen(): React.JSX.Element {
         getBudgetForMonth(month),
         getAmountLeft(month),
         getAverageLeftPerDay(month),
-        getTotalCashInHand(),
+        getTotalCashInHandByCurrency(),
         getTotalCreditCardDebt(),
         getCategories(),
         getCategoryBudgetsForMonth(month),
@@ -79,7 +81,7 @@ function DashboardScreen(): React.JSX.Element {
           monthlyBudget,
           left,
           avgLeftPerDay,
-          totalCash,
+          cashByCurrency,
           cardDebt,
           categories,
           categoryBudgets,
@@ -131,7 +133,7 @@ function DashboardScreen(): React.JSX.Element {
             setBudget(monthlyBudget);
             setAmountLeft(left);
             setAverageLeftPerDay(avgLeftPerDay);
-            setCashInHand(totalCash);
+            setCashInHandByCurrency(cashByCurrency);
             setCreditCardDebt(cardDebt);
             setCategoryBreakdown(breakdown);
             setLoading(false);
@@ -156,9 +158,20 @@ function DashboardScreen(): React.JSX.Element {
         <ActivityIndicator size="large" />
       ) : (
         <>
-          <Text style={styles.row}>
-            Total cash in hand: {cashInHand.toFixed(2)}
-          </Text>
+          {/* One line per currency — amounts are never summed across currencies. */}
+          <Text style={styles.subtitle}>Total cash in hand</Text>
+          {Object.keys(cashInHandByCurrency).length > 0 ? (
+            Object.entries(cashInHandByCurrency)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([currencyCode, amount]) => (
+                <Text style={styles.row} key={currencyCode}>
+                  {currencyCode} {amount.toFixed(2)}
+                </Text>
+              ))
+          ) : (
+            <Text style={styles.row}>No cash accounts yet</Text>
+          )}
+
           <Text style={[styles.row, styles.red]}>
             Credit card debt: {creditCardDebt.toFixed(2)}
           </Text>

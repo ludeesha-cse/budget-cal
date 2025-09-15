@@ -30,6 +30,7 @@ import BudgetSettingsScreen from './screens/BudgetSettingsScreen';
 import AccountsScreen from './screens/AccountsScreen';
 import CategoriesScreen from './screens/CategoriesScreen';
 import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
+import CurrenciesScreen from './screens/CurrenciesScreen';
 import type {
   HistoryStackParamList,
   RootTabParamList,
@@ -84,6 +85,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="CategoryBudgets"
         component={CategoryBudgetsScreen}
         options={{ title: 'Category Budgets' }}
+      />
+      <SettingsStack.Screen
+        name="Currencies"
+        component={CurrenciesScreen}
+        options={{ title: 'Currencies' }}
       />
     </SettingsStack.Navigator>
   );

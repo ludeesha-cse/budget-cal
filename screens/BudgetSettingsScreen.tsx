@@ -15,6 +15,7 @@ import {
   getAccounts,
   getAllBudgets,
   getBudgetForMonth,
+  getDefaultCurrency,
   settleCreditCardAccount,
   upsertBudget,
 } from '../db/queries';
@@ -49,10 +50,14 @@ function BudgetSettingsScreen(): React.JSX.Element {
     const cardAccounts = accounts.filter(
       account => account.type === CREDIT_CARD_TYPE,
     );
+    // Card debt is computed in the default currency only for now.
+    const defaultCurrency = await getDefaultCurrency();
     const withDebt = await Promise.all(
       cardAccounts.map(async account => ({
         ...account,
-        debt: -(await getAccountBalance(account.id)),
+        debt: defaultCurrency
+          ? -(await getAccountBalance(account.id, defaultCurrency.id))
+          : 0,
       })),
     );
     setCreditCards(withDebt);

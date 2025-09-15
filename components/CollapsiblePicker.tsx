@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export type CollapsiblePickerOption = {
   label: string;
@@ -37,24 +37,31 @@ function CollapsiblePicker({
         <Text style={styles.buttonText}>{displayLabel}</Text>
       </Pressable>
       {expanded && (
+        // Capped height + internal scroll so long option lists (e.g. many
+        // currencies) don't overflow off-screen.
         <View style={styles.optionsOverlay}>
-          {items.map((item, index) => (
-            <Pressable
-              key={item.value}
-              style={[
-                styles.option,
-                index === items.length - 1 && styles.optionLast,
-              ]}
-              onPress={() => handleSelect(item.value)}>
-              <Text
+          <ScrollView
+            style={styles.optionsScroll}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled">
+            {items.map((item, index) => (
+              <Pressable
+                key={item.value}
                 style={[
-                  styles.optionText,
-                  item.value === selectedValue && styles.optionTextSelected,
-                ]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
+                  styles.option,
+                  index === items.length - 1 && styles.optionLast,
+                ]}
+                onPress={() => handleSelect(item.value)}>
+                <Text
+                  style={[
+                    styles.optionText,
+                    item.value === selectedValue && styles.optionTextSelected,
+                  ]}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       )}
     </View>
@@ -86,6 +93,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     marginTop: 4,
+    maxHeight: 240,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#999',
@@ -95,6 +103,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 6,
+  },
+  optionsScroll: {
+    maxHeight: 240,
   },
   option: {
     paddingHorizontal: 12,

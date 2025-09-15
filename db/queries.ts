@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { db } from './index';
 import {
   accountBalances,
@@ -249,6 +249,58 @@ async function upsertAccountBalance(
   }
 }
 
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/accounts), keeping the same input/return shape. Creates the
+// account and its first account_balances row together, in the given
+// currency.
+export async function addAccountWithBalance(
+  name: string,
+  type: string,
+  currencyId: number,
+  initialBalance: number,
+): Promise<Account> {
+  const [account] = await db
+    .insert(accounts)
+    .values({ name, type, createdAt: Date.now() })
+    .returning();
+  await db.insert(accountBalances).values({
+    accountId: account.id,
+    currencyId,
+    balance: initialBalance,
+  });
+  return account;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/accounts/:id/balances), keeping the same input/return shape. Adds
+// an additional currency balance to an existing account; rejects if the
+// account already has a balance in this currency (the unique
+// (accountId, currencyId) constraint from Stage 7a).
+export async function addCurrencyToAccount(
+  accountId: number,
+  currencyId: number,
+  initialBalance: number,
+): Promise<void> {
+  const [existing] = await db
+    .select()
+    .from(accountBalances)
+    .where(
+      and(
+        eq(accountBalances.accountId, accountId),
+        eq(accountBalances.currencyId, currencyId),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    throw new Error('This account already has a balance in this currency.');
+  }
+  await db.insert(accountBalances).values({
+    accountId,
+    currencyId,
+    balance: initialBalance,
+  });
+}
+
 // If a backend is added later, replace this with a fetch() call to POST
 // /api/accounts, keeping the same input/return shape. The opening balance
 // is stored in account_balances under the default currency.
@@ -321,30 +373,26 @@ async function getTotalSpentForAccount(accountId: number): Promise<number> {
   return row?.total ?? 0;
 }
 
-// If a backend is added later, replace this with a fetch() call to GET
-// /api/accounts/:id/balance, keeping the same return type. Balance is the
-// account's opening balance in the default currency, minus everything
-// spent from it since (spending isn't currency-tagged yet).
-export async function getAccountBalance(accountId: number): Promise<number> {
-  const [account] = await db
-    .select()
-    .from(accounts)
-    .where(eq(accounts.id, accountId))
-    .limit(1);
-  if (!account) {
-    return 0;
-  }
-  const defaultCurrency = await getDefaultCurrency();
-  if (!defaultCurrency) {
-    return 0;
-  }
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/:id/balance?currencyId=, keeping the same
+// return type. Replaces the single-currency version from Stage 4b/7a —
+// returns the balance for one specific (account, currency) pair: that
+// currency's stored balance minus everything spent from the account so
+// far. Spending isn't currency-tagged yet (that's Stage 7c), so the same
+// account-wide spent total is applied regardless of which currency is
+// asked for; this is a known simplification until transactions carry a
+// currency of their own.
+export async function getAccountBalance(
+  accountId: number,
+  currencyId: number,
+): Promise<number> {
   const [balanceRow] = await db
     .select()
     .from(accountBalances)
     .where(
       and(
         eq(accountBalances.accountId, accountId),
-        eq(accountBalances.currencyId, defaultCurrency.id),
+        eq(accountBalances.currencyId, currencyId),
       ),
     )
     .limit(1);
@@ -353,26 +401,57 @@ export async function getAccountBalance(accountId: number): Promise<number> {
   return openingBalance - spent;
 }
 
-// If a backend is added later, replace this with a fetch() call to GET
-// /api/accounts/cash-in-hand, keeping the same return type.
-export async function getTotalCashInHand(): Promise<number> {
-  const allAccounts = await getAccounts();
-  const balances = await Promise.all(
-    allAccounts.map(account => getAccountBalance(account.id)),
-  );
-  return balances.reduce((sum, balance) => sum + balance, 0);
+const CASH_LIKE_ACCOUNT_TYPES = [
+  'Bank',
+  'Cash',
+  'CryptoWallet',
+  'Receivable',
+] as const;
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/cash-in-hand-by-currency, keeping the same
+// return shape. Sums Bank + Cash + CryptoWallet + Receivable account
+// balances (Liability and CreditCard are debts, not cash), grouped by
+// currency code. Currencies are never summed together — the result is a
+// map of currency code to that currency's total only.
+export async function getTotalCashInHandByCurrency(): Promise<
+  Record<string, number>
+> {
+  const rows = await db
+    .select({
+      currencyCode: currencies.code,
+      total: sql<number>`sum(${accountBalances.balance})`,
+    })
+    .from(accountBalances)
+    .innerJoin(accounts, eq(accountBalances.accountId, accounts.id))
+    .innerJoin(currencies, eq(accountBalances.currencyId, currencies.id))
+    .where(inArray(accounts.type, CASH_LIKE_ACCOUNT_TYPES))
+    .groupBy(currencies.code);
+
+  const totals: Record<string, number> = {};
+  for (const row of rows) {
+    totals[row.currencyCode] = row.total;
+  }
+  return totals;
 }
 
 // If a backend is added later, replace this with a fetch() call to GET
 // /api/accounts/credit-card-debt, keeping the same return type. Card
 // balances are negative (owed to the bank); debt is shown as the positive
-// amount you owe.
+// amount you owe. Computed in the default currency only — multi-currency
+// credit card debt isn't tracked separately yet.
 export async function getTotalCreditCardDebt(): Promise<number> {
+  const defaultCurrency = await getDefaultCurrency();
+  if (!defaultCurrency) {
+    return 0;
+  }
   const cardAccounts = (await getAccounts()).filter(
     account => account.type === CREDIT_CARD_TYPE,
   );
   const balances = await Promise.all(
-    cardAccounts.map(account => getAccountBalance(account.id)),
+    cardAccounts.map(account =>
+      getAccountBalance(account.id, defaultCurrency.id),
+    ),
   );
   const totalBalance = balances.reduce((sum, balance) => sum + balance, 0);
   return -totalBalance;

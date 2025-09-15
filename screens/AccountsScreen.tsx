@@ -2,50 +2,82 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Button,
-  FlatList,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
+import CollapsiblePicker from '../components/CollapsiblePicker';
 import {
-  addAccount,
+  addAccountWithBalance,
+  addCurrencyToAccount,
   deleteAccount,
   getAccountBalance,
   getAccountBalances,
   getAccounts,
+  getCurrencies,
   updateAccount,
 } from '../db/queries';
 
-const ACCOUNT_TYPES = ['Cash', 'Bank', 'Card'] as const;
+const ACCOUNT_TYPES = [
+  'Cash',
+  'Bank',
+  'CreditCard',
+  'CryptoWallet',
+  'Receivable',
+  'Liability',
+] as const;
 
-type AccountWithBalance = Awaited<ReturnType<typeof getAccounts>>[number] & {
+type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+type AccountBalanceRow = Awaited<
+  ReturnType<typeof getAccountBalances>
+>[number] & {
+  // Balance minus everything spent from the account so far (see
+  // getAccountBalance's NETWORK-READY comment for the currency caveat).
   currentBalance: number;
-  // Raw opening balance in the default currency (account_balances), as
-  // opposed to currentBalance which already has spending subtracted.
-  openingBalance: number;
+};
+type AccountWithBalances = Awaited<ReturnType<typeof getAccounts>>[number] & {
+  balances: AccountBalanceRow[];
 };
 
 function AccountsScreen(): React.JSX.Element {
-  const [accounts, setAccounts] = useState<AccountWithBalance[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
+  const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState<string>(ACCOUNT_TYPES[0]);
-  const [openingBalance, setOpeningBalance] = useState('');
+  const [initialCurrencyId, setInitialCurrencyId] = useState('');
+  const [initialBalance, setInitialBalance] = useState('');
+
+  const [addCurrencyAccountId, setAddCurrencyAccountId] = useState<
+    number | null
+  >(null);
+  const [addCurrencyCurrencyId, setAddCurrencyCurrencyId] = useState('');
+  const [addCurrencyBalance, setAddCurrencyBalance] = useState('');
 
   const load = useCallback(async () => {
-    const rows = await getAccounts();
+    const [rows, currencyRows] = await Promise.all([
+      getAccounts(),
+      getCurrencies(),
+    ]);
+    setCurrencies(currencyRows);
     const withBalances = await Promise.all(
       rows.map(async account => {
         const balances = await getAccountBalances(account.id);
-        return {
-          ...account,
-          currentBalance: await getAccountBalance(account.id),
-          openingBalance: balances[0]?.balance ?? 0,
-        };
+        const balancesWithCurrent = await Promise.all(
+          balances.map(async balance => ({
+            ...balance,
+            currentBalance: await getAccountBalance(
+              account.id,
+              balance.currencyId,
+            ),
+          })),
+        );
+        return { ...account, balances: balancesWithCurrent };
       }),
     );
     setAccounts(withBalances);
@@ -57,11 +89,22 @@ function AccountsScreen(): React.JSX.Element {
     }, [load]),
   );
 
+  const defaultCurrencyId = () => {
+    const defaultCurrency = currencies.find(c => c.isDefault);
+    return String((defaultCurrency ?? currencies[0])?.id ?? '');
+  };
+
+  const currencyLabel = (currencyId: string) => {
+    const currency = currencies.find(c => String(c.id) === currencyId);
+    return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
+  };
+
   const resetForm = () => {
     setEditingId(null);
     setName('');
     setType(ACCOUNT_TYPES[0]);
-    setOpeningBalance('');
+    setInitialCurrencyId(defaultCurrencyId());
+    setInitialBalance('');
   };
 
   const handleAddPress = () => {
@@ -69,27 +112,34 @@ function AccountsScreen(): React.JSX.Element {
     setFormVisible(true);
   };
 
-  const handleEditPress = (account: AccountWithBalance) => {
+  const handleEditPress = (account: AccountWithBalances) => {
     setEditingId(account.id);
     setName(account.name);
     setType(account.type);
-    setOpeningBalance(String(account.openingBalance));
     setFormVisible(true);
   };
 
   const handleSubmit = async () => {
-    const parsedBalance = Number(openingBalance);
-    if (!name || !openingBalance || Number.isNaN(parsedBalance)) {
+    if (!name.trim()) {
       return;
     }
     if (editingId) {
-      await updateAccount(editingId, {
-        name,
-        type,
-        openingBalance: parsedBalance,
-      });
+      await updateAccount(editingId, { name: name.trim(), type });
     } else {
-      await addAccount({ name, type, openingBalance: parsedBalance });
+      const parsedBalance = Number(initialBalance);
+      if (
+        !initialCurrencyId ||
+        !initialBalance ||
+        Number.isNaN(parsedBalance)
+      ) {
+        return;
+      }
+      await addAccountWithBalance(
+        name.trim(),
+        type,
+        Number(initialCurrencyId),
+        parsedBalance,
+      );
     }
     setFormVisible(false);
     resetForm();
@@ -121,30 +171,84 @@ function AccountsScreen(): React.JSX.Element {
     );
   };
 
+  const toggleAddCurrency = (accountId: number) => {
+    if (addCurrencyAccountId === accountId) {
+      setAddCurrencyAccountId(null);
+      return;
+    }
+    setAddCurrencyAccountId(accountId);
+    setAddCurrencyCurrencyId('');
+    setAddCurrencyBalance('');
+  };
+
+  const handleAddCurrencySubmit = async (accountId: number) => {
+    const parsedBalance = Number(addCurrencyBalance);
+    if (
+      !addCurrencyCurrencyId ||
+      !addCurrencyBalance ||
+      Number.isNaN(parsedBalance)
+    ) {
+      return;
+    }
+    try {
+      await addCurrencyToAccount(
+        accountId,
+        Number(addCurrencyCurrencyId),
+        parsedBalance,
+      );
+      setAddCurrencyAccountId(null);
+      setAddCurrencyCurrencyId('');
+      setAddCurrencyBalance('');
+      load();
+    } catch (error) {
+      Alert.alert(
+        'Cannot add currency',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.containerContent}
+      keyboardShouldPersistTaps="handled">
       {formVisible ? (
         <View style={styles.form}>
           <Text style={styles.label}>Name</Text>
           <TextInput style={styles.input} value={name} onChangeText={setName} />
 
           <Text style={styles.label}>Type</Text>
-          <View style={styles.pickerWrapper}>
-            <Picker selectedValue={type} onValueChange={setType}>
-              {ACCOUNT_TYPES.map(t => (
-                <Picker.Item key={t} label={t} value={t} />
-              ))}
-            </Picker>
-          </View>
-
-          <Text style={styles.label}>Opening balance</Text>
-          <TextInput
-            style={styles.input}
-            value={openingBalance}
-            onChangeText={setOpeningBalance}
-            keyboardType="numeric"
-            placeholder="0.00"
+          <CollapsiblePicker
+            displayLabel={type}
+            selectedValue={type}
+            onValueChange={setType}
+            items={ACCOUNT_TYPES.map(t => ({ label: t, value: t }))}
           />
+
+          {!editingId && (
+            <>
+              <Text style={styles.label}>Initial currency</Text>
+              <CollapsiblePicker
+                displayLabel={currencyLabel(initialCurrencyId)}
+                selectedValue={initialCurrencyId}
+                onValueChange={setInitialCurrencyId}
+                items={currencies.map(c => ({
+                  label: `${c.code} — ${c.name}`,
+                  value: String(c.id),
+                }))}
+              />
+
+              <Text style={styles.label}>Initial balance</Text>
+              <TextInput
+                style={styles.input}
+                value={initialBalance}
+                onChangeText={setInitialBalance}
+                keyboardType="numeric"
+                placeholder="0.00"
+              />
+            </>
+          )}
 
           <View style={styles.formActions}>
             <Button
@@ -164,36 +268,101 @@ function AccountsScreen(): React.JSX.Element {
         <Button title="Add Account" onPress={handleAddPress} />
       )}
 
-      <FlatList
-        style={styles.list}
-        data={accounts}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <View style={styles.rowDetails}>
-              <Text style={styles.rowName}>{item.name}</Text>
-              <Text>{item.type}</Text>
-              <Text style={styles.rowBalance}>
-                Cash in hand: {item.currentBalance.toFixed(2)}
-              </Text>
-            </View>
-            <View style={styles.rowActions}>
-              <Button title="Edit" onPress={() => handleEditPress(item)} />
-              <Button title="Delete" onPress={() => handleDelete(item.id)} />
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={
+      <View style={styles.list}>
+        {accounts.length === 0 ? (
           <Text style={styles.empty}>No accounts yet.</Text>
-        }
-      />
-    </View>
+        ) : (
+          accounts.map(item => {
+            const availableCurrencies = currencies.filter(
+              c => !item.balances.some(b => b.currencyId === c.id),
+            );
+            return (
+              <View key={item.id} style={styles.rowContainer}>
+                <View style={styles.row}>
+                  <View style={styles.rowDetails}>
+                    <Text style={styles.rowName}>{item.name}</Text>
+                    <Text>{item.type}</Text>
+                    <Text style={styles.rowBalance}>
+                      {item.balances.length > 0
+                        ? item.balances
+                            .map(
+                              b =>
+                                `${b.currencyCode} ${b.currentBalance.toFixed(2)}`,
+                            )
+                            .join(' · ')
+                        : 'No balances yet'}
+                    </Text>
+                  </View>
+                  <View style={styles.rowActions}>
+                    <Button
+                      title="Edit"
+                      onPress={() => handleEditPress(item)}
+                    />
+                    <Button
+                      title="Delete"
+                      onPress={() => handleDelete(item.id)}
+                    />
+                  </View>
+                </View>
+
+                <Pressable onPress={() => toggleAddCurrency(item.id)}>
+                  <Text style={styles.addCurrencyLink}>
+                    {addCurrencyAccountId === item.id
+                      ? 'Cancel'
+                      : '+ Add Currency'}
+                  </Text>
+                </Pressable>
+
+                {addCurrencyAccountId === item.id && (
+                  <View style={styles.addCurrencyForm}>
+                    {availableCurrencies.length === 0 ? (
+                      <Text style={styles.empty}>
+                        This account already has a balance in every currency.
+                      </Text>
+                    ) : (
+                      <>
+                        <CollapsiblePicker
+                          displayLabel={
+                            addCurrencyCurrencyId
+                              ? currencyLabel(addCurrencyCurrencyId)
+                              : 'Select currency'
+                          }
+                          selectedValue={addCurrencyCurrencyId}
+                          onValueChange={setAddCurrencyCurrencyId}
+                          items={availableCurrencies.map(c => ({
+                            label: `${c.code} — ${c.name}`,
+                            value: String(c.id),
+                          }))}
+                        />
+                        <TextInput
+                          style={styles.input}
+                          value={addCurrencyBalance}
+                          onChangeText={setAddCurrencyBalance}
+                          keyboardType="numeric"
+                          placeholder="Starting balance"
+                        />
+                        <Button
+                          title="Add"
+                          onPress={() => handleAddCurrencySubmit(item.id)}
+                        />
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  containerContent: {
     padding: 16,
   },
   form: {
@@ -213,11 +382,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  pickerWrapper: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
-    borderRadius: 6,
-  },
   formActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -230,13 +394,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
+  rowContainer: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   rowDetails: {
     flex: 1,
@@ -250,6 +416,15 @@ const styles = StyleSheet.create({
   rowActions: {
     flexDirection: 'row',
     gap: 4,
+  },
+  addCurrencyLink: {
+    marginTop: 8,
+    color: '#1565c0',
+    fontWeight: '600',
+  },
+  addCurrencyForm: {
+    marginTop: 8,
+    gap: 8,
   },
 });
 
