@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Button,
   Modal,
@@ -14,7 +14,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { formatDateString } from '../utils/date';
-import { getAccounts, getCategories } from '../db/queries';
+import { getAccountBalances, getAccounts, getCategories } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
 
 export type TransactionFormSubmitValues = {
@@ -64,6 +64,13 @@ function TransactionForm({
   const [categoryId, setCategoryId] = useState<number | null>(
     initialValues?.categoryId ?? null,
   );
+  // Which currencies the selected account actually holds, and which one
+  // is chosen. Stage 8 will persist this on the transaction itself
+  // (transactions.currencyId); for now it's local UI state only.
+  const [accountBalances, setAccountBalances] = useState<
+    Awaited<ReturnType<typeof getAccountBalances>>
+  >([]);
+  const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Refetch on every focus (not just on mount) so accounts/categories
@@ -89,6 +96,30 @@ function TransactionForm({
       });
     }, []),
   );
+
+  // After an account is picked (including the initial default), load only
+  // that account's own currencies. Switching accounts always resets the
+  // currency choice rather than leaving a stale, invalid selection —
+  // silently to the account's one currency if it only has one, or to
+  // "unselected" if there's a real choice to make.
+  useEffect(() => {
+    if (accountId == null) {
+      setAccountBalances([]);
+      setCurrencyId(null);
+      return;
+    }
+    let cancelled = false;
+    getAccountBalances(accountId).then(balances => {
+      if (cancelled) {
+        return;
+      }
+      setAccountBalances(balances);
+      setCurrencyId(balances.length === 1 ? balances[0].currencyId : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
 
   const handleDateChange = (
     _event: DateTimePickerEvent,
@@ -145,6 +176,24 @@ function TransactionForm({
         onValueChange={value => setAccountId(Number(value))}
         items={accounts.map(a => ({ label: a.name, value: String(a.id) }))}
       />
+
+      {accountBalances.length > 1 && (
+        <>
+          <Text style={styles.label}>Currency</Text>
+          <CollapsiblePicker
+            displayLabel={
+              accountBalances.find(b => b.currencyId === currencyId)
+                ?.currencyCode ?? 'Select currency'
+            }
+            selectedValue={currencyId != null ? String(currencyId) : ''}
+            onValueChange={value => setCurrencyId(Number(value))}
+            items={accountBalances.map(b => ({
+              label: `${b.currencyCode} — ${b.currencyName}`,
+              value: String(b.currencyId),
+            }))}
+          />
+        </>
+      )}
 
       <Text style={styles.label}>Date</Text>
       <Button title={date} onPress={() => setShowDatePicker(true)} />
