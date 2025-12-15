@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `active` integer DEFAULT true NOT NULL;

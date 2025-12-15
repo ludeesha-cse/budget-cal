@@ -622,3 +622,124 @@ export async function getDefaultCurrency(): Promise<Currency | null> {
     .limit(1);
   return row ?? null;
 }
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/currencies/:id/set-default), keeping the same input/return shape.
+// Runs inside a single DB transaction so there's never a moment with zero
+// or two default currencies — if the second update failed after the
+// first succeeded outside a transaction, the app would be left with no
+// default at all.
+export async function setDefaultCurrency(currencyId: number): Promise<void> {
+  try {
+    await db.transaction(async tx => {
+      await tx
+        .update(currencies)
+        .set({ isDefault: false })
+        .where(eq(currencies.isDefault, true));
+      await tx
+        .update(currencies)
+        .set({ isDefault: true })
+        .where(eq(currencies.id, currencyId));
+    });
+  } catch (error) {
+    console.error(
+      `setDefaultCurrency: failed to move the default flag to currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(DELETE
+// /api/currencies/:id), keeping the same return shape.
+export async function deleteCurrency(currencyId: number): Promise<void> {
+  try {
+    const referencing = await db
+      .select()
+      .from(accountBalances)
+      .where(eq(accountBalances.currencyId, currencyId))
+      .limit(1);
+    if (referencing.length > 0) {
+      throw new Error(
+        'This currency is used in an existing account. Cannot be deleted.',
+      );
+    }
+    await db.delete(currencies).where(eq(currencies.id, currencyId));
+  } catch (error) {
+    console.error(
+      `deleteCurrency: failed to delete currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/:id/is-zero-balance, keeping the same return
+// type. Despite the name, this returns a boolean, not a number — currency
+// balances are never summed together, so "total balance" here means
+// "every currency balance is exactly zero," which is all account closure
+// actually needs to know.
+export async function getAccountTotalBalance(
+  accountId: number,
+): Promise<boolean> {
+  try {
+    const balances = await db
+      .select()
+      .from(accountBalances)
+      .where(eq(accountBalances.accountId, accountId));
+    return balances.every(balance => balance.balance === 0);
+  } catch (error) {
+    console.error(
+      `getAccountTotalBalance: failed to check zero-balance status for account id=${accountId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/accounts/:id/close), keeping the same input/return shape. Throws
+// rather than silently proceeding if any currency balance is still
+// nonzero — closing is meant to be a hard gate, not a soft hide.
+export async function closeAccount(accountId: number): Promise<Account> {
+  try {
+    const isZeroBalance = await getAccountTotalBalance(accountId);
+    if (!isZeroBalance) {
+      throw new Error(
+        'This account still has a nonzero balance in at least one currency. Transfer the remainder elsewhere or log a transaction accounting for it before closing.',
+      );
+    }
+    const [updated] = await db
+      .update(accounts)
+      .set({ active: false })
+      .where(eq(accounts.id, accountId))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error(`closeAccount: failed to close account id=${accountId}`, error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/accounts/:id/reactivate), keeping the same input/return shape.
+// Nothing calls this yet — it exists for Stage 9's Liability/Receivable
+// reuse flow, which reopens a closed account instead of creating a new
+// one once its old loan is settled.
+export async function reactivateAccount(accountId: number): Promise<Account> {
+  try {
+    const [updated] = await db
+      .update(accounts)
+      .set({ active: true })
+      .where(eq(accounts.id, accountId))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error(
+      `reactivateAccount: failed to reactivate account id=${accountId}`,
+      error,
+    );
+    throw error;
+  }
+}

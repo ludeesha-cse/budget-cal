@@ -14,6 +14,7 @@ import CollapsiblePicker from '../components/CollapsiblePicker';
 import {
   addAccountWithBalance,
   addCurrencyToAccount,
+  closeAccount,
   deleteAccount,
   getAccountBalance,
   getAccountBalances,
@@ -170,6 +171,41 @@ function AccountsScreen(): React.JSX.Element {
       ],
     );
   };
+    // Mirror closeAccount's own zero-balance gate here so the blocked
+    // path shows an explanatory message instead of a confirm dialog —
+    // there's no "close anyway" option, by design.
+  const handleClose = (account: AccountWithBalances) => {
+    const isZeroBalance = account.balances.every(b => b.balance === 0);
+    if (!isZeroBalance) {
+      Alert.alert(
+        'Cannot close account',
+        'This account still has a nonzero balance in at least one currency. Transfer the remainder to another account or log a transaction accounting for it, then try again.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Close account',
+      `Close ${account.name}? You can reopen it later from Stage 9's reuse flow.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Close',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await closeAccount(account.id);
+              load();
+            } catch (error) {
+              Alert.alert(
+                'Cannot close account',
+                error instanceof Error ? error.message : String(error),
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const toggleAddCurrency = (accountId: number) => {
     if (addCurrencyAccountId === accountId) {
@@ -207,6 +243,10 @@ function AccountsScreen(): React.JSX.Element {
       );
     }
   };
+
+  // Closed accounts stay in the DB (and in `accounts` state, for anything
+  // that still needs to look one up) but drop out of the visible list.
+  const activeAccounts = accounts.filter(a => a.active);
 
   return (
     <ScrollView
@@ -269,10 +309,10 @@ function AccountsScreen(): React.JSX.Element {
       )}
 
       <View style={styles.list}>
-        {accounts.length === 0 ? (
+        {activeAccounts.length === 0 ? (
           <Text style={styles.empty}>No accounts yet.</Text>
         ) : (
-          accounts.map(item => {
+          activeAccounts.map(item => {
             const availableCurrencies = currencies.filter(
               c => !item.balances.some(b => b.currencyId === c.id),
             );
@@ -297,6 +337,10 @@ function AccountsScreen(): React.JSX.Element {
                     <Button
                       title="Edit"
                       onPress={() => handleEditPress(item)}
+                    />
+                    <Button
+                      title="Close"
+                      onPress={() => handleClose(item)}
                     />
                     <Button
                       title="Delete"

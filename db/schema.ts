@@ -10,7 +10,8 @@ import {
 export const accounts = sqliteTable('accounts', {
   id: int('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'Cash' | 'Bank' | 'CreditCard'
+  type: text('type').notNull(), // 'Cash' | 'Bank' | 'CreditCard' | 'CryptoWallet' | 'Receivable' | 'Liability'
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: int('created_at').notNull(),
 });
 

@@ -9,7 +9,12 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { addCurrency, getCurrencies } from '../db/queries';
+import {
+  addCurrency,
+  deleteCurrency,
+  getCurrencies,
+  setDefaultCurrency,
+} from '../db/queries';
 
 // Lists existing currencies and lets the user add new ones; the seeded
 // default currency is flagged with a badge and can't be added again.
@@ -61,6 +66,43 @@ function CurrenciesScreen(): React.JSX.Element {
     }
   };
 
+  const handleSetDefault = async (currencyId: number) => {
+    try {
+      await setDefaultCurrency(currencyId);
+      load();
+    } catch (error) {
+      Alert.alert(
+        'Cannot set default currency',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
+  const handleDelete = (currencyId: number, currencyCode: string) => {
+    Alert.alert(
+      'Delete currency',
+      `Are you sure you want to delete ${currencyCode}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteCurrency(currencyId);
+              load();
+            } catch (error) {
+              Alert.alert(
+                'Cannot delete currency',
+                error instanceof Error ? error.message : String(error),
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={styles.container}>
       {formVisible ? (
@@ -107,7 +149,20 @@ function CurrenciesScreen(): React.JSX.Element {
               <Text style={styles.rowCode}>{item.code}</Text>
               <Text>{item.name}</Text>
             </View>
-            {item.isDefault && <Text style={styles.defaultBadge}>Default</Text>}
+            <View style={styles.rowActions}>
+              {item.isDefault ? (
+                <Text style={styles.defaultBadge}>Default</Text>
+              ) : (
+                <Button
+                  title="Set as Default"
+                  onPress={() => handleSetDefault(item.id)}
+                />
+              )}
+              <Button
+                title="Delete"
+                onPress={() => handleDelete(item.id, item.code)}
+              />
+            </View>
           </View>
         )}
         ListEmptyComponent={
@@ -162,6 +217,11 @@ const styles = StyleSheet.create({
   },
   rowDetails: {
     flex: 1,
+  },
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   rowCode: {
     fontWeight: '600',
