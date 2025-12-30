@@ -56,12 +56,25 @@ export const transactions = sqliteTable('transactions', {
   accountId: int('account_id')
     .notNull()
     .references(() => accounts.id),
-  amount: real('amount').notNull(), // positive = income, negative = expense
+  amount: real('amount').notNull(), // magnitude only — direction comes from entryType, not the sign of this value
   categoryId: int('category_id')
     .notNull()
     .references(() => categories.id),
   description: text('description'),
   date: text('date').notNull(), // 'YYYY-MM-DD', enables month/year prefix filtering
+  entryType: text('entry_type')
+    .notNull()
+    .default('Expense')
+    .$type<'Expense' | 'Income'>(), // existing rows default to 'Expense' on migration (everything before Stage 8 was expense-only)
+  // Defaults to 1 (LKR), which is always the first currency inserted by
+  // the Stage 7a seeding migration — safe bootstrapping value for
+  // pre-Stage-8 rows and for a fresh install (no transactions exist yet
+  // at migration time either way, since currencies/transactions are
+  // populated after migrations run).
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id)
+    .default(1),
   createdAt: int('created_at').notNull(),
 });
 

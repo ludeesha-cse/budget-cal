@@ -9,6 +9,9 @@ import {
   currencies,
   transactions,
 } from './schema';
+import { getCurrentDateString } from '../utils/date';
+
+const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 
 type Budget = typeof budgets.$inferSelect;
 type Transaction = typeof transactions.$inferSelect;
@@ -23,6 +26,17 @@ export type NewTransaction = {
   categoryId: number;
   description?: string;
   date: string; // 'YYYY-MM-DD'
+  entryType: 'Expense' | 'Income';
+  currencyId: number;
+};
+
+export type NewIncome = {
+  date: string; // 'YYYY-MM-DD'
+  amount: number;
+  categoryId: number;
+  description?: string;
+  accountId: number;
+  currencyId: number;
 };
 
 export type NewAccount = {
@@ -34,19 +48,61 @@ export type NewAccount = {
 //If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions, keeping the same return type.
 export async function getTransactions() {
-  return db.select().from(transactions);
+  try {
+    return await db.select().from(transactions);
+  } catch (error) {
+    console.error('getTransactions: failed to load all transactions', error);
+    throw error;
+  }
 }
 
 //  If a backend is added later, replace this with a fetch() call
-// to POST /api/transactions, keeping the same input/return shape.
+// to POST /api/transactions, keeping the same input/return shape. Used
+// for Expense entries; Income goes through addIncome instead, even
+// though the two share the same underlying insert shape — kept as
+// separate named functions per Stage 8's spec.
 export async function addTransaction(data: NewTransaction) {
-  return db
-    .insert(transactions)
-    .values({
-      ...data,
-      createdAt: Date.now(),
-    })
-    .returning();
+  try {
+    return await db
+      .insert(transactions)
+      .values({
+        ...data,
+        createdAt: Date.now(),
+      })
+      .returning();
+  } catch (error) {
+    console.error('addTransaction: failed to insert transaction', data, error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to POST /api/transactions/income, keeping the same input/return
+// shape. This is the single insert for the whole operation — account
+// balances are never stored as a running total, they're always derived
+// on read (getAccountBalance nets every transaction for the account
+// against its stored baseline), so there's no second write to
+// account_balances that could fall out of sync with this one: the
+// "balance effect" and "recording the transaction" are the same write.
+export async function addIncome(data: NewIncome) {
+  try {
+    return await db
+      .insert(transactions)
+      .values({
+        accountId: data.accountId,
+        amount: data.amount,
+        categoryId: data.categoryId,
+        description: data.description,
+        date: data.date,
+        currencyId: data.currencyId,
+        entryType: 'Income',
+        createdAt: Date.now(),
+      })
+      .returning();
+  } catch (error) {
+    console.error('addIncome: failed to insert income transaction', data, error);
+    throw error;
+  }
 }
 
 // If a backend is added later, replace this with a fetch() call
@@ -71,65 +127,137 @@ export async function ensureDefaultAccount() {
 //  If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions?month=YYYY-MM, keeping the same return type.
 export async function getTransactionsByMonth(month: string) {
-  return db
-    .select({
-      id: transactions.id,
-      accountId: transactions.accountId,
-      amount: transactions.amount,
-      categoryId: transactions.categoryId,
-      categoryName: categories.name,
-      description: transactions.description,
-      date: transactions.date,
-      createdAt: transactions.createdAt,
-    })
-    .from(transactions)
-    .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .where(like(transactions.date, `${month}%`));
+  try {
+    return await db
+      .select({
+        id: transactions.id,
+        accountId: transactions.accountId,
+        amount: transactions.amount,
+        categoryId: transactions.categoryId,
+        categoryName: categories.name,
+        description: transactions.description,
+        date: transactions.date,
+        entryType: transactions.entryType,
+        currencyId: transactions.currencyId,
+        createdAt: transactions.createdAt,
+      })
+      .from(transactions)
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(like(transactions.date, `${month}%`));
+  } catch (error) {
+    console.error(
+      `getTransactionsByMonth: failed to load transactions for month=${month}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 //If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions?year=YYYY, keeping the same return type.
 export async function getTransactionsByYear(year: string) {
-  return db
-    .select({
-      id: transactions.id,
-      accountId: transactions.accountId,
-      amount: transactions.amount,
-      categoryId: transactions.categoryId,
-      categoryName: categories.name,
-      description: transactions.description,
-      date: transactions.date,
-      createdAt: transactions.createdAt,
-    })
-    .from(transactions)
-    .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .where(like(transactions.date, `${year}%`));
+  try {
+    return await db
+      .select({
+        id: transactions.id,
+        accountId: transactions.accountId,
+        amount: transactions.amount,
+        categoryId: transactions.categoryId,
+        categoryName: categories.name,
+        description: transactions.description,
+        date: transactions.date,
+        entryType: transactions.entryType,
+        currencyId: transactions.currencyId,
+        createdAt: transactions.createdAt,
+      })
+      .from(transactions)
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(like(transactions.date, `${year}%`));
+  } catch (error) {
+    console.error(
+      `getTransactionsByYear: failed to load transactions for year=${year}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 //If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions/summary?month=YYYY-MM&groupBy=category, keeping
-// the same return shape.
+// the same return shape. Expense-only — Income entries are tracked
+// separately (getMonthlyIncome) rather than netted into "expenses by type".
 export async function getExpensesByType(month: string) {
-  return db
-    .select({
-      type: categories.name,
-      total: sql<number>`sum(${transactions.amount})`,
-    })
-    .from(transactions)
-    .innerJoin(categories, eq(transactions.categoryId, categories.id))
-    .where(like(transactions.date, `${month}%`))
-    .groupBy(categories.name);
+  try {
+    return await db
+      .select({
+        type: categories.name,
+        total: sql<number>`sum(${transactions.amount})`,
+      })
+      .from(transactions)
+      .innerJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(
+        and(
+          like(transactions.date, `${month}%`),
+          eq(transactions.entryType, 'Expense'),
+        ),
+      )
+      .groupBy(categories.name);
+  } catch (error) {
+    console.error(
+      `getExpensesByType: failed to summarize expenses by category for month=${month}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 //If a backend is added later, replace this with a fetch() call
 // to GET /api/transactions/summary?month=YYYY-MM&total=1, keeping the same
-// return shape.
+// return shape. Expense-only, so Income entries don't mask how much was
+// actually spent — see getMonthlyIncome for the income-side figure.
 export async function getMonthlyTotal(month: string): Promise<number> {
-  const [row] = await db
-    .select({ total: sql<number>`sum(${transactions.amount})` })
-    .from(transactions)
-    .where(like(transactions.date, `${month}%`));
-  return row?.total ?? 0;
+  try {
+    const [row] = await db
+      .select({ total: sql<number>`sum(${transactions.amount})` })
+      .from(transactions)
+      .where(
+        and(
+          like(transactions.date, `${month}%`),
+          eq(transactions.entryType, 'Expense'),
+        ),
+      );
+    return row?.total ?? 0;
+  } catch (error) {
+    console.error(
+      `getMonthlyTotal: failed to sum expenses for month=${month}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/transactions/summary?month=YYYY-MM&total=1&entryType=Income,
+// keeping the same return shape. Mirrors getMonthlyTotal but for Income.
+export async function getMonthlyIncome(month: string): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ total: sql<number>`sum(${transactions.amount})` })
+      .from(transactions)
+      .where(
+        and(
+          like(transactions.date, `${month}%`),
+          eq(transactions.entryType, 'Income'),
+        ),
+      );
+    return row?.total ?? 0;
+  } catch (error) {
+    console.error(
+      `getMonthlyIncome: failed to sum income for month=${month}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 //If a backend is added later, replace this with a fetch() call
@@ -365,40 +493,71 @@ export async function deleteAccount(id: number): Promise<Account[]> {
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
-async function getTotalSpentForAccount(accountId: number): Promise<number> {
-  const [row] = await db
-    .select({ total: sql<number>`sum(${transactions.amount})` })
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId));
-  return row?.total ?? 0;
+// Net "spent" for one (account, currency) pair: Expense entries add to
+// it, Income entries subtract from it, so getAccountBalance can do a
+// single subtraction (openingBalance - netSpent) and have Income
+// correctly increase the resulting balance instead of reducing it like
+// an Expense would. Now filtered by currencyId too — closing the "known
+// simplification" flagged back in Stage 7b/7c now that transactions
+// finally carry their own currency.
+async function getNetSpentForAccount(
+  accountId: number,
+  currencyId: number,
+): Promise<number> {
+  try {
+    const [row] = await db
+      .select({
+        total: sql<number>`sum(CASE WHEN ${transactions.entryType} = 'Expense' THEN ${transactions.amount} ELSE -${transactions.amount} END)`,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, accountId),
+          eq(transactions.currencyId, currencyId),
+        ),
+      );
+    return row?.total ?? 0;
+  } catch (error) {
+    console.error(
+      `getNetSpentForAccount: failed to compute net expense/income for account id=${accountId} currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
 // call to GET /api/accounts/:id/balance?currencyId=, keeping the same
 // return type. Replaces the single-currency version from Stage 4b/7a —
 // returns the balance for one specific (account, currency) pair: that
-// currency's stored balance minus everything spent from the account so
-// far. Spending isn't currency-tagged yet (that's Stage 7c), so the same
-// account-wide spent total is applied regardless of which currency is
-// asked for; this is a known simplification until transactions carry a
-// currency of their own.
+// currency's stored balance minus everything net-spent from the account
+// in that same currency (Income adds, Expense subtracts — see
+// getNetSpentForAccount).
 export async function getAccountBalance(
   accountId: number,
   currencyId: number,
 ): Promise<number> {
-  const [balanceRow] = await db
-    .select()
-    .from(accountBalances)
-    .where(
-      and(
-        eq(accountBalances.accountId, accountId),
-        eq(accountBalances.currencyId, currencyId),
-      ),
-    )
-    .limit(1);
-  const openingBalance = balanceRow?.balance ?? 0;
-  const spent = await getTotalSpentForAccount(accountId);
-  return openingBalance - spent;
+  try {
+    const [balanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(
+        and(
+          eq(accountBalances.accountId, accountId),
+          eq(accountBalances.currencyId, currencyId),
+        ),
+      )
+      .limit(1);
+    const openingBalance = balanceRow?.balance ?? 0;
+    const netSpent = await getNetSpentForAccount(accountId, currencyId);
+    return openingBalance - netSpent;
+  } catch (error) {
+    console.error(
+      `getAccountBalance: failed to compute balance for account id=${accountId} currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 const CASH_LIKE_ACCOUNT_TYPES = [
@@ -460,13 +619,116 @@ export async function getTotalCreditCardDebt(): Promise<number> {
 // If a backend is added later, replace this with fetch(POST
 // /api/accounts/:id/settle), keeping the same return type. Settling a
 // credit card doesn't delete its transaction history — it raises the
-// account's opening balance to match what's been spent so far, so the
-// computed balance (and debt) resets to zero going forward.
+// account's opening balance (in the default currency, same as the rest
+// of the credit-card-debt flow) to match what's been net-spent so far,
+// so the computed balance (and debt) resets to zero going forward.
 export async function settleCreditCardAccount(
   accountId: number,
 ): Promise<Account> {
-  const spent = await getTotalSpentForAccount(accountId);
-  return updateAccount(accountId, { openingBalance: spent });
+  try {
+    const defaultCurrency = await getDefaultCurrency();
+    const netSpent = defaultCurrency
+      ? await getNetSpentForAccount(accountId, defaultCurrency.id)
+      : 0;
+    return await updateAccount(accountId, { openingBalance: netSpent });
+  } catch (error) {
+    console.error(
+      `settleCreditCardAccount: failed to settle account id=${accountId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// The reserved category from db/index.ts's seedReservedBankCategory
+// should already exist by the time this runs, but this falls back to
+// creating it rather than crash-failing a balance correction just
+// because the one-time seed somehow hasn't happened yet.
+async function getOrCreateBankCategoryId(): Promise<number> {
+  const [existing] = await db
+    .select()
+    .from(categories)
+    .where(eq(categories.name, RESERVED_BANK_CATEGORY_NAME))
+    .limit(1);
+  if (existing) {
+    return existing.id;
+  }
+  const [created] = await db
+    .insert(categories)
+    .values({ name: RESERVED_BANK_CATEGORY_NAME, createdAt: Date.now() })
+    .returning();
+  return created.id;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/accounts/:id/balances/:currencyId/correct), keeping the same
+// input/return shape. Reconciles a (account, currency) balance to
+// newBalance by posting a dated, categorized, described audit
+// transaction for the difference — the same mechanism whether it's
+// triggered by a month-start prompt or run anytime by hand.
+//
+// Why this doesn't just overwrite account_balances.balance to newBalance:
+// getAccountBalance always recomputes as
+// "stored baseline − every transaction ever recorded for this account
+// and currency" (see getNetSpentForAccount) — it doesn't reset that
+// history at a point in time. So the only way to make the *computed*
+// balance come out to newBalance, without corrupting it the next time
+// it's read, is to let the inserted audit transaction carry the entire
+// delta and leave the stored baseline exactly as it was (the same trick
+// settleCreditCardAccount uses to zero out a balance without a
+// transaction). This function still explicitly touches account_balances
+// so the row exists (relevant if this account/currency somehow has none
+// yet) — for an existing row that's a same-value write, not a bug.
+export async function updateAccountBalanceWithAudit(
+  accountId: number,
+  currencyId: number,
+  newBalance: number,
+  description: string,
+): Promise<void> {
+  try {
+    if (!description.trim()) {
+      throw new Error(
+        'A description is required to correct a balance — that record is the whole point of the audit trail.',
+      );
+    }
+    const current = await getAccountBalance(accountId, currencyId);
+    const delta = newBalance - current;
+    if (delta === 0) {
+      return;
+    }
+    const bankCategoryId = await getOrCreateBankCategoryId();
+    await db.insert(transactions).values({
+      accountId,
+      amount: Math.abs(delta),
+      categoryId: bankCategoryId,
+      description: description.trim(),
+      date: getCurrentDateString(),
+      currencyId,
+      entryType: delta > 0 ? 'Income' : 'Expense',
+      createdAt: Date.now(),
+    });
+    const [existingBalanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(
+        and(
+          eq(accountBalances.accountId, accountId),
+          eq(accountBalances.currencyId, currencyId),
+        ),
+      )
+      .limit(1);
+    await upsertAccountBalance(
+      accountId,
+      currencyId,
+      existingBalanceRow?.balance ?? 0,
+    );
+  } catch (error) {
+    console.error(
+      `updateAccountBalanceWithAudit: failed to correct balance for account id=${accountId} currency id=${currencyId} to ${newBalance}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 // If a backend is added later, replace this with a fetch() call to GET

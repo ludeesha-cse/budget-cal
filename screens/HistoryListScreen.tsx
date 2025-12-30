@@ -79,7 +79,16 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 <Text>
                   {item.categoryName ?? 'Unknown'} · {item.description || '—'}
                 </Text>
-                <Text style={styles.rowAmount}>{item.amount.toFixed(2)}</Text>
+                <Text
+                  style={[
+                    styles.rowAmount,
+                    item.entryType === 'Income'
+                      ? styles.income
+                      : styles.expense,
+                  ]}>
+                  {item.entryType === 'Income' ? '+' : '-'}
+                  {item.amount.toFixed(2)}
+                </Text>
               </View>
               <View style={styles.rowActions}>
                 <Button
@@ -122,6 +131,13 @@ const styles = StyleSheet.create({
   },
   rowAmount: {
     marginTop: 2,
+    fontWeight: '600',
+  },
+  income: {
+    color: '#2e7d32',
+  },
+  expense: {
+    color: '#c62828',
   },
   rowActions: {
     flexDirection: 'row',

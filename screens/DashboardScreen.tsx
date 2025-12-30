@@ -11,6 +11,7 @@ import {
   getBudgetForMonth,
   getCategories,
   getCategoryBudgetsForMonth,
+  getMonthlyIncome,
   getMonthlyTotal,
   getTotalCashInHandByCurrency,
   getTotalCreditCardDebt,
@@ -44,6 +45,7 @@ function amountLeftStyleFor(spent: number, budgetAmount: number) {
 
 function DashboardScreen(): React.JSX.Element {
   const [total, setTotal] = useState(0);
+  const [totalIncome, setTotalIncome] = useState(0);
   const [budget, setBudget] = useState<
     Awaited<ReturnType<typeof getBudgetForMonth>>
   >(null);
@@ -67,6 +69,7 @@ function DashboardScreen(): React.JSX.Element {
       const month = getCurrentMonthString();
       Promise.all([
         getMonthlyTotal(month),
+        getMonthlyIncome(month),
         getBudgetForMonth(month),
         getAmountLeft(month),
         getAverageLeftPerDay(month),
@@ -78,6 +81,7 @@ function DashboardScreen(): React.JSX.Element {
       ]).then(
         async ([
           monthlyTotal,
+          monthlyIncome,
           monthlyBudget,
           left,
           avgLeftPerDay,
@@ -87,8 +91,13 @@ function DashboardScreen(): React.JSX.Element {
           categoryBudgets,
           monthTransactions,
         ]) => {
+          // Expense-only, same as getMonthlyTotal — an Income entry
+          // filed under a category shouldn't reduce how "spent" it looks.
           const spentByCategory = new Map<number, number>();
           for (const transaction of monthTransactions) {
+            if (transaction.entryType !== 'Expense') {
+              continue;
+            }
             spentByCategory.set(
               transaction.categoryId,
               (spentByCategory.get(transaction.categoryId) ?? 0) +
@@ -130,6 +139,7 @@ function DashboardScreen(): React.JSX.Element {
 
           if (!cancelled) {
             setTotal(monthlyTotal);
+            setTotalIncome(monthlyIncome);
             setBudget(monthlyBudget);
             setAmountLeft(left);
             setAverageLeftPerDay(avgLeftPerDay);
@@ -177,6 +187,9 @@ function DashboardScreen(): React.JSX.Element {
           </Text>
           <Text style={styles.row}>
             Total spent this month: {total.toFixed(2)}
+          </Text>
+          <Text style={[styles.row, styles.green]}>
+            Total income this month: {totalIncome.toFixed(2)}
           </Text>
           {budget && amountLeft !== null ? (
             <>

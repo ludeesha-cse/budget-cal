@@ -31,13 +31,15 @@ export async function getAverageLeftPerDay(
 // Pure composition over existing queries (getCategoryBudget,
 // getTransactionsByMonth) — not a DB read/write itself, so no NETWORK-READY
 // comment needed here; the underlying queries already carry one.
+// Expense-only, matching getMonthlyTotal's semantics — an Income entry
+// filed under this category shouldn't make it look like less was spent.
 export async function getCategorySpent(
   month: string,
   categoryId: number,
 ): Promise<number> {
   const rows = await getTransactionsByMonth(month);
   return rows
-    .filter(row => row.categoryId === categoryId)
+    .filter(row => row.categoryId === categoryId && row.entryType === 'Expense')
     .reduce((sum, row) => sum + row.amount, 0);
 }
 

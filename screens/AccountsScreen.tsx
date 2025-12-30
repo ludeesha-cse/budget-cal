@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Button,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
   getAccounts,
   getCurrencies,
   updateAccount,
+  updateAccountBalanceWithAudit,
 } from '../db/queries';
 
 const ACCOUNT_TYPES = [
@@ -59,6 +61,20 @@ function AccountsScreen(): React.JSX.Element {
   >(null);
   const [addCurrencyCurrencyId, setAddCurrencyCurrencyId] = useState('');
   const [addCurrencyBalance, setAddCurrencyBalance] = useState('');
+
+  // Same modal/handler pair regardless of what triggers it (month-start
+  // prompt or an anytime tap) — one code path calling
+  // updateAccountBalanceWithAudit, per the Stage 8 build order.
+  const [updateBalanceTarget, setUpdateBalanceTarget] = useState<{
+    accountId: number;
+    accountName: string;
+    currencyId: number;
+    currencyCode: string;
+    currentBalance: number;
+  } | null>(null);
+  const [updateBalanceNewValue, setUpdateBalanceNewValue] = useState('');
+  const [updateBalanceDescription, setUpdateBalanceDescription] =
+    useState('');
 
   const load = useCallback(async () => {
     const [rows, currencyRows] = await Promise.all([
@@ -244,6 +260,53 @@ function AccountsScreen(): React.JSX.Element {
     }
   };
 
+  const openUpdateBalance = (
+    account: AccountWithBalances,
+    balance: AccountBalanceRow,
+  ) => {
+    setUpdateBalanceTarget({
+      accountId: account.id,
+      accountName: account.name,
+      currencyId: balance.currencyId,
+      currencyCode: balance.currencyCode,
+      currentBalance: balance.currentBalance,
+    });
+    setUpdateBalanceNewValue(String(balance.currentBalance));
+    setUpdateBalanceDescription('');
+  };
+
+  const handleUpdateBalanceSubmit = async () => {
+    if (!updateBalanceTarget) {
+      return;
+    }
+    const parsed = Number(updateBalanceNewValue);
+    if (!updateBalanceNewValue || Number.isNaN(parsed)) {
+      return;
+    }
+    if (!updateBalanceDescription.trim()) {
+      Alert.alert(
+        'Description required',
+        'Enter a description explaining this balance correction.',
+      );
+      return;
+    }
+    try {
+      await updateAccountBalanceWithAudit(
+        updateBalanceTarget.accountId,
+        updateBalanceTarget.currencyId,
+        parsed,
+        updateBalanceDescription.trim(),
+      );
+      setUpdateBalanceTarget(null);
+      load();
+    } catch (error) {
+      Alert.alert(
+        'Cannot update balance',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
   // Closed accounts stay in the DB (and in `accounts` state, for anything
   // that still needs to look one up) but drop out of the visible list.
   const activeAccounts = accounts.filter(a => a.active);
@@ -322,16 +385,21 @@ function AccountsScreen(): React.JSX.Element {
                   <View style={styles.rowDetails}>
                     <Text style={styles.rowName}>{item.name}</Text>
                     <Text>{item.type}</Text>
-                    <Text style={styles.rowBalance}>
-                      {item.balances.length > 0
-                        ? item.balances
-                            .map(
-                              b =>
-                                `${b.currencyCode} ${b.currentBalance.toFixed(2)}`,
-                            )
-                            .join(' · ')
-                        : 'No balances yet'}
-                    </Text>
+                    {item.balances.length > 0 ? (
+                      <View style={styles.balanceChips}>
+                        {item.balances.map(b => (
+                          <Pressable
+                            key={b.currencyId}
+                            onPress={() => openUpdateBalance(item, b)}>
+                            <Text style={styles.balanceChip}>
+                              {b.currencyCode} {b.currentBalance.toFixed(2)}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.rowBalance}>No balances yet</Text>
+                    )}
                   </View>
                   <View style={styles.rowActions}>
                     <Button
@@ -398,6 +466,53 @@ function AccountsScreen(): React.JSX.Element {
           })
         )}
       </View>
+
+      <Modal
+        visible={updateBalanceTarget != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setUpdateBalanceTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {updateBalanceTarget && (
+              <>
+                <Text style={styles.label}>
+                  Update balance — {updateBalanceTarget.accountName} (
+                  {updateBalanceTarget.currencyCode})
+                </Text>
+                <Text style={styles.modalCurrent}>
+                  Current: {updateBalanceTarget.currentBalance.toFixed(2)}
+                </Text>
+
+                <Text style={styles.label}>New balance</Text>
+                <TextInput
+                  style={styles.input}
+                  value={updateBalanceNewValue}
+                  onChangeText={setUpdateBalanceNewValue}
+                  keyboardType="numeric"
+                  placeholder="0.00"
+                />
+
+                <Text style={styles.label}>Description (required)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={updateBalanceDescription}
+                  onChangeText={setUpdateBalanceDescription}
+                  placeholder="Why is this balance being corrected?"
+                />
+
+                <View style={styles.formActions}>
+                  <Button
+                    title="Cancel"
+                    onPress={() => setUpdateBalanceTarget(null)}
+                  />
+                  <Button title="Save" onPress={handleUpdateBalanceSubmit} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -457,6 +572,23 @@ const styles = StyleSheet.create({
   rowBalance: {
     marginTop: 2,
   },
+  balanceChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  balanceChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#1565c0',
+    color: '#1565c0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 13,
+    fontWeight: '600',
+    overflow: 'hidden',
+  },
   rowActions: {
     flexDirection: 'row',
     gap: 4,
@@ -469,6 +601,23 @@ const styles = StyleSheet.create({
   addCurrencyForm: {
     marginTop: 8,
     gap: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+  },
+  modalCurrent: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 4,
   },
 });
 

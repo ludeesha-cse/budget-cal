@@ -3,21 +3,35 @@ import { StyleSheet, Text, View } from 'react-native';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
-import { addTransaction } from '../db/queries';
+import { addIncome, addTransaction } from '../db/queries';
 
 function AddTransactionScreen(): React.JSX.Element {
   const [formKey, setFormKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (values: TransactionFormSubmitValues) => {
-    await addTransaction({
-      accountId: values.accountId,
-      amount: values.amount,
-      categoryId: values.categoryId,
-      description: values.description,
-      date: values.date,
-    });
-    setSuccessMessage('Transaction added');
+    if (values.entryType === 'Income') {
+      await addIncome({
+        accountId: values.accountId,
+        amount: values.amount,
+        categoryId: values.categoryId,
+        description: values.description,
+        date: values.date,
+        currencyId: values.currencyId,
+      });
+      setSuccessMessage('Income added');
+    } else {
+      await addTransaction({
+        accountId: values.accountId,
+        amount: values.amount,
+        categoryId: values.categoryId,
+        description: values.description,
+        date: values.date,
+        currencyId: values.currencyId,
+        entryType: 'Expense',
+      });
+      setSuccessMessage('Transaction added');
+    }
     setFormKey(key => key + 1);
   };
 

@@ -33,6 +33,8 @@ function EditTransactionScreen({
       categoryId: values.categoryId,
       description: values.description,
       date: values.date,
+      currencyId: values.currencyId,
+      entryType: values.entryType,
     });
     navigation.navigate('HistoryList');
   };
@@ -62,6 +64,8 @@ function EditTransactionScreen({
           categoryId: transaction.categoryId,
           description: transaction.description ?? '',
           accountId: transaction.accountId,
+          currencyId: transaction.currencyId,
+          entryType: transaction.entryType,
         }}
         onSubmit={handleSubmit}
         submitLabel="Update"

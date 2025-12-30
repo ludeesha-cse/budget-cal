@@ -31,6 +31,27 @@ async function seedDefaultCategories(): Promise<void> {
     .values(DEFAULT_CATEGORIES.map(name => ({ name, createdAt: now })));
 }
 
+const RESERVED_BANK_CATEGORY_NAME = 'Bank';
+
+// Stage 8's updateAccountBalanceWithAudit tags every balance-correction
+// entry with this category so they're easy to pick out from ordinary
+// spending later. Checked by name specifically, not by table-emptiness
+// like seedDefaultCategories — this needs to exist even on databases
+// that already have their five original categories from Stage 5.
+async function seedReservedBankCategory(): Promise<void> {
+  const existing = await db
+    .select()
+    .from(categories)
+    .where(eq(categories.name, RESERVED_BANK_CATEGORY_NAME))
+    .limit(1);
+  if (existing.length > 0) {
+    return;
+  }
+  await db
+    .insert(categories)
+    .values({ name: RESERVED_BANK_CATEGORY_NAME, createdAt: Date.now() });
+}
+
 const DEFAULT_CURRENCIES = [
   { code: 'LKR', name: 'Sri Lankan Rupee', isDefault: true },
   { code: 'USD', name: 'US Dollar', isDefault: false },
@@ -135,5 +156,6 @@ export async function runMigrations(): Promise<void> {
   const legacyBalances = await captureLegacyAccountBalances();
   await migrate(db, migrations);
   await seedDefaultCategories();
+  await seedReservedBankCategory();
   await runCurrencyMigration(legacyBalances);
 }
