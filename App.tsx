@@ -28,6 +28,7 @@ import AddTransactionScreen from './screens/AddTransactionScreen';
 import SettingsHomeScreen from './screens/SettingsHomeScreen';
 import BudgetSettingsScreen from './screens/BudgetSettingsScreen';
 import AccountsScreen from './screens/AccountsScreen';
+import LiabilitiesReceivablesScreen from './screens/LiabilitiesReceivablesScreen';
 import CategoriesScreen from './screens/CategoriesScreen';
 import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
@@ -75,6 +76,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="Accounts"
         component={AccountsScreen}
         options={{ title: 'Accounts' }}
+      />
+      <SettingsStack.Screen
+        name="LiabilitiesReceivables"
+        component={LiabilitiesReceivablesScreen}
+        options={{ title: 'Liabilities & Receivables' }}
       />
       <SettingsStack.Screen
         name="Categories"

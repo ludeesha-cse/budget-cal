@@ -9,6 +9,7 @@ export type SettingsStackParamList = {
   SettingsHome: undefined;
   BudgetSettings: undefined;
   Accounts: undefined;
+  LiabilitiesReceivables: undefined;
   Categories: undefined;
   CategoryBudgets: undefined;
   Currencies: undefined;

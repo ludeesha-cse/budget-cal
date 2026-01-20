@@ -50,6 +50,13 @@
       "when": 1785095695360,
       "tag": "0006_add_transaction_entry_type_and_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1785422262712,
+      "tag": "0007_add_loan_details_and_loan_payments",
+      "breakpoints": true
     }
   ]
 }

@@ -78,6 +78,46 @@ export const transactions = sqliteTable('transactions', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per Liability/Receivable account. Kept separate from `accounts`
+// rather than adding nullable columns there, so ordinary Cash/Bank
+// accounts don't carry six permanently-null loan fields.
+export const loanDetails = sqliteTable('loan_details', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  accountId: int('account_id')
+    .notNull()
+    .unique() // one loan per account — reactivation updates this row, never inserts a second
+    .references(() => accounts.id),
+  counterpartyName: text('counterparty_name').notNull(),
+  dateCreated: text('date_created').notNull(), // 'YYYY-MM-DD', historical record — never modified after creation/reactivation
+  // Where Stage 9b's interest accrual counts from. Starts equal to
+  // dateCreated but diverges from it on every settlement, which is why
+  // it's a separate column rather than a computation over dateCreated.
+  lastAccrualAnchorDate: text('last_accrual_anchor_date').notNull(),
+  dueDate: text('due_date'), // 'YYYY-MM-DD', nullable
+  // Stored as rate × 100 so it stays an integer — 5.5% is 550. Avoids
+  // float rounding drift in Stage 9b's interest math.
+  interestRate: int('interest_rate'),
+  interestPeriod: text('interest_period').$type<'monthly' | 'annual'>(),
+});
+
+// Scaffolded now, unused until Stage 9b's settlement flow — a payment
+// moves `amount` between the loan account and the counterpart account.
+export const loanPayments = sqliteTable('loan_payments', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  loanAccountId: int('loan_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  counterpartAccountId: int('counterpart_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  amount: real('amount').notNull(),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  date: text('date').notNull(), // 'YYYY-MM-DD'
+  createdAt: int('created_at').notNull(),
+});
+
 export const budgets = sqliteTable('budgets', {
   id: int('id').primaryKey({ autoIncrement: true }),
   category: text('category').notNull(),
