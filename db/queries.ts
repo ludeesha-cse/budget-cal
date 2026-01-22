@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from './index';
 import {
   accountBalances,
@@ -8,9 +9,11 @@ import {
   categoryBudgets,
   currencies,
   loanDetails,
+  loanPayments,
   transactions,
 } from './schema';
 import { getCurrentDateString } from '../utils/date';
+import { getTotalOwed } from '../utils/interestCalculations';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 
@@ -31,10 +34,11 @@ export type NewTransaction = {
   currencyId: number;
 };
 
+// No categoryId — Income entries carry no category at all, by design
+// (the dedicated Income tab has no category picker anywhere in it).
 export type NewIncome = {
   date: string; // 'YYYY-MM-DD'
   amount: number;
-  categoryId: number;
   description?: string;
   accountId: number;
   currencyId: number;
@@ -85,6 +89,7 @@ export async function addTransaction(data: NewTransaction) {
 // against its stored baseline), so there's no second write to
 // account_balances that could fall out of sync with this one: the
 // "balance effect" and "recording the transaction" are the same write.
+// categoryId is always written as null — Income never gets a category.
 export async function addIncome(data: NewIncome) {
   try {
     return await db
@@ -92,7 +97,7 @@ export async function addIncome(data: NewIncome) {
       .values({
         accountId: data.accountId,
         amount: data.amount,
-        categoryId: data.categoryId,
+        categoryId: null,
         description: data.description,
         date: data.date,
         currencyId: data.currencyId,
@@ -1286,6 +1291,226 @@ export async function reactivateLoanAccount(
     console.error(
       `reactivateLoanAccount: failed to reactivate loan account id=${params.accountId}`,
       params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/loans/:id/total-owed?asOf=YYYY-MM-DD, keeping the same
+// return type. Composes the stored principal + loan_details with the pure
+// getTotalOwed math — this is what live "total owed" figures on screen
+// (and settleLoan's payment split below) always call instead of trusting
+// any stored number, since accrued interest is never written back into
+// the database. Assumes one balance row per loan account (true for every
+// loan created via createLoanAccount/reactivateLoanAccount, which only
+// ever set up a single currency) — takes the first if that assumption is
+// ever violated by hand-editing accounts outside this flow.
+export async function getLoanTotalOwed(
+  accountId: number,
+  asOfDate: string,
+): Promise<number> {
+  try {
+    const [details] = await db
+      .select()
+      .from(loanDetails)
+      .where(eq(loanDetails.accountId, accountId))
+      .limit(1);
+    if (!details) {
+      throw new Error('No loan details found for this account.');
+    }
+    const [balanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(eq(accountBalances.accountId, accountId))
+      .limit(1);
+    const principal = balanceRow?.balance ?? 0;
+    return getTotalOwed(
+      principal,
+      details.interestRate,
+      details.interestPeriod,
+      details.lastAccrualAnchorDate,
+      asOfDate,
+    );
+  } catch (error) {
+    console.error(
+      `getLoanTotalOwed: failed to compute total owed for account id=${accountId} as of ${asOfDate}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+export type SettleLoanParams = {
+  loanAccountId: number;
+  counterpartAccountId: number;
+  paymentAmount: number;
+  currencyId: number;
+  date: string; // 'YYYY-MM-DD'
+};
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/loans/:id/settle), keeping the same input/return shape. A payment
+// is applied against interest-inclusive total owed (getLoanTotalOwed),
+// not principal alone — otherwise accrued-but-unpaid interest would just
+// vanish on a full payoff, or never get collected on a partial one.
+// Everything below runs in a single DB transaction: a partial failure
+// here (say, the loan closes but the counterpart account never moves)
+// would be a real accounting bug, not a cosmetic one, so there's no
+// sequencing that leaves it half-applied.
+export async function settleLoan(params: SettleLoanParams): Promise<void> {
+  try {
+    if (params.paymentAmount <= 0) {
+      throw new Error('Enter a payment amount greater than zero.');
+    }
+    const [loanAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, params.loanAccountId))
+      .limit(1);
+    if (!loanAccount) {
+      throw new Error('That loan account no longer exists.');
+    }
+    const totalOwed = await getLoanTotalOwed(params.loanAccountId, params.date);
+    const isFullPayoff = params.paymentAmount >= totalOwed;
+
+    await db.transaction(async tx => {
+      if (isFullPayoff) {
+        // Set directly, computed by us moments ago — this bypasses
+        // closeAccount()'s zero-balance gate (and its user-facing prompt)
+        // on purpose, per the Stage 9b spec: there's nothing to ask about
+        // when we've just zeroed the balance ourselves in this same
+        // transaction.
+        await upsertAccountBalanceWithin(
+          tx,
+          params.loanAccountId,
+          params.currencyId,
+          0,
+        );
+        await tx
+          .update(accounts)
+          .set({ active: false })
+          .where(eq(accounts.id, params.loanAccountId));
+      } else {
+        // The new, smaller principal absorbs whatever interest wasn't
+        // covered by this payment — accrual then restarts from `date`
+        // against that new principal, not from the loan's original date,
+        // which is exactly what resetting lastAccrualAnchorDate does.
+        const newPrincipal = totalOwed - params.paymentAmount;
+        await upsertAccountBalanceWithin(
+          tx,
+          params.loanAccountId,
+          params.currencyId,
+          newPrincipal,
+        );
+        await tx
+          .update(loanDetails)
+          .set({ lastAccrualAnchorDate: params.date })
+          .where(eq(loanDetails.accountId, params.loanAccountId));
+      }
+      // Liability settlement pays down what you owe, so the counterpart
+      // account drains; Receivable settlement is someone paying you back,
+      // so it fills up — the exact opposite direction of
+      // counterpartDeltaSign at loan creation, since money is now flowing
+      // back across the same edge it originally crossed.
+      await shiftAccountBaselineWithin(
+        tx,
+        params.counterpartAccountId,
+        params.currencyId,
+        -counterpartDeltaSign(loanAccount.type as LoanAccountType) *
+          params.paymentAmount,
+      );
+      await tx.insert(loanPayments).values({
+        loanAccountId: params.loanAccountId,
+        counterpartAccountId: params.counterpartAccountId,
+        amount: params.paymentAmount,
+        currencyId: params.currencyId,
+        date: params.date,
+        createdAt: Date.now(),
+      });
+    });
+  } catch (error) {
+    console.error(
+      `settleLoan: failed to settle a payment of ${params.paymentAmount} against loan account id=${params.loanAccountId}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// Aliased twice because a loan_payments row references `accounts` from
+// both sides (the loan account and the counterpart account) — a plain
+// join can't disambiguate two references to the same table.
+const loanAccountAlias = alias(accounts, 'loan_account_alias');
+const counterpartAccountAlias = alias(accounts, 'counterpart_account_alias');
+
+function selectLoanPaymentColumns() {
+  return {
+    id: loanPayments.id,
+    loanAccountId: loanPayments.loanAccountId,
+    loanAccountName: loanAccountAlias.name,
+    loanAccountType: loanAccountAlias.type,
+    counterpartAccountId: loanPayments.counterpartAccountId,
+    counterpartAccountName: counterpartAccountAlias.name,
+    amount: loanPayments.amount,
+    currencyId: loanPayments.currencyId,
+    currencyCode: currencies.code,
+    date: loanPayments.date,
+    createdAt: loanPayments.createdAt,
+  };
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/loan-payments?month=YYYY-MM, keeping the same return
+// shape. Mirrors getTransactionsByMonth's month-prefix filter so
+// HistoryListScreen can fetch both with the same `month` value and merge
+// them into one list.
+export async function getLoanPaymentsByMonth(month: string) {
+  try {
+    return await db
+      .select(selectLoanPaymentColumns())
+      .from(loanPayments)
+      .innerJoin(
+        loanAccountAlias,
+        eq(loanPayments.loanAccountId, loanAccountAlias.id),
+      )
+      .innerJoin(
+        counterpartAccountAlias,
+        eq(loanPayments.counterpartAccountId, counterpartAccountAlias.id),
+      )
+      .innerJoin(currencies, eq(loanPayments.currencyId, currencies.id))
+      .where(like(loanPayments.date, `${month}%`));
+  } catch (error) {
+    console.error(
+      `getLoanPaymentsByMonth: failed to load loan payments for month=${month}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/loan-payments?year=YYYY, keeping the same return shape.
+export async function getLoanPaymentsByYear(year: string) {
+  try {
+    return await db
+      .select(selectLoanPaymentColumns())
+      .from(loanPayments)
+      .innerJoin(
+        loanAccountAlias,
+        eq(loanPayments.loanAccountId, loanAccountAlias.id),
+      )
+      .innerJoin(
+        counterpartAccountAlias,
+        eq(loanPayments.counterpartAccountId, counterpartAccountAlias.id),
+      )
+      .innerJoin(currencies, eq(loanPayments.currencyId, currencies.id))
+      .where(like(loanPayments.date, `${year}%`));
+  } catch (error) {
+    console.error(
+      `getLoanPaymentsByYear: failed to load loan payments for year=${year}`,
       error,
     );
     throw error;

@@ -16,14 +16,16 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
-import { formatDateString } from '../utils/date';
+import { formatDateString, getCurrentDateString } from '../utils/date';
 import {
   createLoanAccount,
   getAccounts,
   getActiveLoanAccounts,
   getCurrencies,
   getInactiveLoanAccounts,
+  getLoanTotalOwed,
   reactivateLoanAccount,
+  settleLoan,
 } from '../db/queries';
 import type { LoanAccountType } from '../db/queries';
 
@@ -77,6 +79,19 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Live total owed (principal + accrued interest, computed fresh — never
+  // stored) per active loan account, keyed by accountId. Fetched
+  // alongside the loan lists themselves so the two can't visibly go out
+  // of sync while loading.
+  const [totalOwedByAccountId, setTotalOwedByAccountId] = useState<
+    Record<number, number>
+  >({});
+
+  const [settleTarget, setSettleTarget] = useState<ActiveLoan | null>(null);
+  const [settlePaymentAmount, setSettlePaymentAmount] = useState('');
+  const [settleCounterpartAccountId, setSettleCounterpartAccountId] =
+    useState('');
+  const [settleError, setSettleError] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>(null);
   // Set only by picking a closed account from the name suggestions, which
@@ -108,6 +123,17 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     setInactiveLoans(inactiveRows);
     setCurrencies(currencyRows);
     setAccounts(accountRows);
+
+    const today = getCurrentDateString();
+    const allActiveLoans = [...liabilityRows, ...receivableRows];
+    const totalOwedEntries = await Promise.all(
+      allActiveLoans.map(
+        async loan =>
+          [loan.accountId, await getLoanTotalOwed(loan.accountId, today)] as const,
+      ),
+    );
+    setTotalOwedByAccountId(Object.fromEntries(totalOwedEntries));
+
     setLoading(false);
   }, [type]);
 
@@ -123,17 +149,25 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     a => a.active && COUNTERPART_ACCOUNT_TYPES.includes(a.type),
   );
 
-  // Closed accounts of this type whose counterparty matches what's been
-  // typed so far. Suppressed once one is picked, so the list doesn't sit
-  // on top of the field after the choice is made.
-  const nameSuggestions =
-    reuseAccountId != null || !counterpartyName.trim()
+  // Every existing loan of this type — open or closed — whose
+  // counterparty matches what's been typed so far. Showing the open ones
+  // too (even though they can't be tapped to reuse) is what surfaces an
+  // about-to-be-duplicated name before Save creates a second account for
+  // the same person, rather than only warning about it after the fact.
+  // Suppressed once a closed one is picked, so the list doesn't sit on
+  // top of the field after the choice is made.
+  const query = counterpartyName.trim().toLowerCase();
+  const matchesQuery = (name: string) => name.toLowerCase().includes(query);
+  const activeNameMatches =
+    reuseAccountId != null || !query
       ? []
-      : inactiveLoans.filter(loan =>
-          loan.counterpartyName
-            .toLowerCase()
-            .includes(counterpartyName.trim().toLowerCase()),
-        );
+      : loans.filter(loan => matchesQuery(loan.counterpartyName));
+  const inactiveNameMatches =
+    reuseAccountId != null || !query
+      ? []
+      : inactiveLoans.filter(loan => matchesQuery(loan.counterpartyName));
+  const hasNameMatches =
+    activeNameMatches.length > 0 || inactiveNameMatches.length > 0;
 
   const defaultCurrencyId = () => {
     const fallback = currencies.find(c => c.isDefault) ?? currencies[0];
@@ -257,6 +291,56 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     }
   };
 
+  const openSettle = (loan: ActiveLoan) => {
+    setSettleTarget(loan);
+    setSettlePaymentAmount('');
+    setSettleCounterpartAccountId(String(counterpartAccounts[0]?.id ?? ''));
+    setSettleError(null);
+  };
+
+  const closeSettle = () => {
+    setSettleTarget(null);
+    setSettleError(null);
+  };
+
+  const handleSettleSubmit = async () => {
+    if (!settleTarget) {
+      return;
+    }
+    const parsedAmount = Number(settlePaymentAmount);
+    if (
+      !settlePaymentAmount ||
+      Number.isNaN(parsedAmount) ||
+      parsedAmount <= 0
+    ) {
+      setSettleError('Enter a valid payment amount');
+      return;
+    }
+    if (!settleCounterpartAccountId) {
+      setSettleError('Select the account this payment moves through');
+      return;
+    }
+    setSettleError(null);
+    try {
+      await settleLoan({
+        loanAccountId: settleTarget.accountId,
+        counterpartAccountId: Number(settleCounterpartAccountId),
+        paymentAmount: parsedAmount,
+        currencyId: settleTarget.currencyId,
+        date: getCurrentDateString(),
+      });
+      closeSettle();
+      load();
+    } catch (submitError) {
+      Alert.alert(
+        'Could not settle',
+        submitError instanceof Error
+          ? submitError.message
+          : String(submitError),
+      );
+    }
+  };
+
   const currencyLabel = (id: string) => {
     const currency = currencies.find(c => String(c.id) === id);
     return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
@@ -330,9 +414,14 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                 <Text style={styles.loanDetail}>
                   Principal: {loan.currencyCode} {loan.principal.toFixed(2)}
                 </Text>
-                <Text style={styles.loanDetail}>
-                  Outstanding: {loan.currencyCode}{' '}
-                  {loan.currentBalance.toFixed(2)}
+                {/* Live figure — principal plus interest accrued since
+                    lastAccrualAnchorDate, recomputed on every load rather
+                    than trusted from a stored column. */}
+                <Text style={[styles.loanDetail, styles.loanTotalOwed]}>
+                  Total owed: {loan.currencyCode}{' '}
+                  {(totalOwedByAccountId[loan.accountId] ??
+                    loan.principal
+                  ).toFixed(2)}
                 </Text>
                 <Text style={styles.loanDetail}>
                   Started {loan.dateCreated}
@@ -344,6 +433,12 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                     {loan.interestPeriod ?? ''}
                   </Text>
                 )}
+                <View style={styles.settleButton}>
+                  <Button
+                    title="Settle / Pay Off"
+                    onPress={() => openSettle(loan)}
+                  />
+                </View>
               </View>
             ))
           )}
@@ -364,21 +459,34 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               type === 'Liability' ? 'Borrowed from…' : 'Lended to…'
             }
           />
-          {nameSuggestions.length > 0 && (
+          {hasNameMatches && (
             <View style={styles.suggestions}>
               <Text style={styles.suggestionsHint}>
-                Closed accounts matching this name — tap to reuse one:
+                Existing accounts matching this name:
               </Text>
-              {nameSuggestions.map(loan => (
+              {activeNameMatches.map(loan => (
+                <View
+                  key={`active-${loan.accountId}`}
+                  style={styles.suggestionRowInactive}>
+                  <Text style={styles.suggestionName}>
+                    {loan.counterpartyName}
+                  </Text>
+                  <Text style={styles.loanDetail}>
+                    Already open · {loan.currencyCode}{' '}
+                    {loan.currentBalance.toFixed(2)} outstanding
+                  </Text>
+                </View>
+              ))}
+              {inactiveNameMatches.map(loan => (
                 <Pressable
-                  key={loan.accountId}
+                  key={`inactive-${loan.accountId}`}
                   style={styles.suggestionRow}
                   onPress={() => handlePickSuggestion(loan)}>
                   <Text style={styles.suggestionName}>
                     {loan.counterpartyName}
                   </Text>
                   <Text style={styles.loanDetail}>
-                    Last opened {loan.dateCreated}
+                    Closed · last opened {loan.dateCreated} · tap to reuse
                   </Text>
                 </Pressable>
               ))}
@@ -504,6 +612,69 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
           </View>
         </View>
       )}
+
+      <Modal
+        visible={settleTarget != null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSettle}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {settleTarget && (
+              <>
+                <Text style={styles.label}>
+                  Settle — {settleTarget.counterpartyName}
+                </Text>
+                <Text style={styles.modalCurrent}>
+                  Total owed today: {settleTarget.currencyCode}{' '}
+                  {(
+                    totalOwedByAccountId[settleTarget.accountId] ??
+                    settleTarget.principal
+                  ).toFixed(2)}
+                </Text>
+
+                <Text style={styles.label}>Payment amount</Text>
+                <TextInput
+                  style={styles.input}
+                  value={settlePaymentAmount}
+                  onChangeText={setSettlePaymentAmount}
+                  keyboardType="numeric"
+                  placeholder="0.00"
+                />
+                <Text style={styles.hint}>
+                  A payment equal to or greater than the total owed pays
+                  this loan off in full and closes the account.
+                </Text>
+
+                {/* settleTarget is always drawn from `loans`, i.e. whichever
+                    of the two active-loan lists matches the current tab —
+                    so the tab's type is the loan's type too. */}
+                <Text style={styles.label}>
+                  {type === 'Receivable' ? 'Deposit into' : 'Pay from'}
+                </Text>
+                <CollapsiblePicker
+                  displayLabel={counterpartLabel(settleCounterpartAccountId)}
+                  selectedValue={settleCounterpartAccountId}
+                  onValueChange={setSettleCounterpartAccountId}
+                  items={counterpartAccounts.map(a => ({
+                    label: `${a.name} (${a.type})`,
+                    value: String(a.id),
+                  }))}
+                />
+
+                {settleError && (
+                  <Text style={styles.error}>{settleError}</Text>
+                )}
+
+                <View style={styles.formActions}>
+                  <Button title="Cancel" onPress={closeSettle} />
+                  <Button title="Save" onPress={handleSettleSubmit} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -596,6 +767,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: '#444',
   },
+  loanTotalOwed: {
+    fontWeight: '700',
+    color: '#111',
+  },
+  settleButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
   form: {
     marginTop: 8,
   },
@@ -633,6 +812,14 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#ddd',
     marginTop: 6,
+  },
+  suggestionRowInactive: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#ddd',
+    marginTop: 6,
+    opacity: 0.6,
   },
   suggestionName: {
     fontSize: 16,
@@ -683,6 +870,16 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     padding: 16,
     paddingBottom: 32,
+  },
+  modalCurrent: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 4,
+  },
+  hint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
   },
 });
 

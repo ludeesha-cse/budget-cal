@@ -8,9 +8,11 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  getActiveLoanAccounts,
   getBudgetForMonth,
   getCategories,
   getCategoryBudgetsForMonth,
+  getLoanTotalOwed,
   getMonthlyIncome,
   getMonthlyTotal,
   getTotalCashInHandByCurrency,
@@ -23,7 +25,53 @@ import {
   getCategoryAmountLeft,
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
-import { getCurrentMonthString } from '../utils/date';
+import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
+
+const DUE_SOON_WINDOW_DAYS = 7;
+
+type UpcomingLoanRow = {
+  accountId: number;
+  counterpartyName: string;
+  type: 'Liability' | 'Receivable';
+  currencyCode: string;
+  totalOwed: number;
+  dueDate: string;
+  daysUntilDue: number; // negative once overdue
+};
+
+// Whole calendar days from today to dueDate — negative once the due date
+// has passed, same UTC-midnight-parse trick as
+// utils/interestCalculations.ts's daysBetween, kept separate since this
+// one only needs to compare against "today" rather than two arbitrary
+// dates.
+function daysUntil(dueDate: string, today: string): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const due = new Date(`${dueDate}T00:00:00Z`).getTime();
+  const now = new Date(`${today}T00:00:00Z`).getTime();
+  return Math.round((due - now) / msPerDay);
+}
+
+// Outstanding totals grouped by currency, never summed across
+// currencies — same rule as everywhere else this app shows money.
+function totalsByCurrency(
+  rows: { currencyCode: string; totalOwed: number }[],
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const row of rows) {
+    totals[row.currencyCode] = (totals[row.currencyCode] ?? 0) + row.totalOwed;
+  }
+  return totals;
+}
+
+function formatCurrencyTotals(totals: Record<string, number>): string {
+  const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    return 'None';
+  }
+  return entries
+    .map(([code, amount]) => `${code} ${amount.toFixed(2)}`)
+    .join(' · ');
+}
 
 type CategoryBreakdownRow = {
   categoryId: number;
@@ -60,6 +108,13 @@ function DashboardScreen(): React.JSX.Element {
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     CategoryBreakdownRow[]
   >([]);
+  const [liabilityTotals, setLiabilityTotals] = useState<Record<string, number>>(
+    {},
+  );
+  const [receivableTotals, setReceivableTotals] = useState<
+    Record<string, number>
+  >({});
+  const [upcomingLoans, setUpcomingLoans] = useState<UpcomingLoanRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -78,6 +133,8 @@ function DashboardScreen(): React.JSX.Element {
         getCategories(),
         getCategoryBudgetsForMonth(month),
         getTransactionsByMonth(month),
+        getActiveLoanAccounts('Liability'),
+        getActiveLoanAccounts('Receivable'),
       ]).then(
         async ([
           monthlyTotal,
@@ -90,18 +147,26 @@ function DashboardScreen(): React.JSX.Element {
           categories,
           categoryBudgets,
           monthTransactions,
+          liabilities,
+          receivables,
         ]) => {
           // Expense-only, same as getMonthlyTotal — an Income entry
           // filed under a category shouldn't reduce how "spent" it looks.
+          // Every Expense still requires a category (only Income can be
+          // null, as of the categoryId-nullable migration); the null
+          // check here just satisfies that at the type level too.
           const spentByCategory = new Map<number, number>();
           for (const transaction of monthTransactions) {
-            if (transaction.entryType !== 'Expense') {
+            if (
+              transaction.entryType !== 'Expense' ||
+              transaction.categoryId == null
+            ) {
               continue;
             }
+            const categoryId = transaction.categoryId;
             spentByCategory.set(
-              transaction.categoryId,
-              (spentByCategory.get(transaction.categoryId) ?? 0) +
-                transaction.amount,
+              categoryId,
+              (spentByCategory.get(categoryId) ?? 0) + transaction.amount,
             );
           }
           const budgetByCategory = new Map(
@@ -137,6 +202,48 @@ function DashboardScreen(): React.JSX.Element {
           );
           breakdown.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
 
+          // Live totals, same as LiabilitiesReceivablesScreen — never
+          // trusted from a stored column, always principal + interest
+          // accrued as of today.
+          const today = getCurrentDateString();
+          const withTotalOwed = async (
+            rows: typeof liabilities,
+            type: 'Liability' | 'Receivable',
+          ) =>
+            Promise.all(
+              rows.map(async row => ({
+                ...row,
+                type,
+                totalOwed: await getLoanTotalOwed(row.accountId, today),
+              })),
+            );
+          const [liabilitiesWithTotals, receivablesWithTotals] =
+            await Promise.all([
+              withTotalOwed(liabilities, 'Liability'),
+              withTotalOwed(receivables, 'Receivable'),
+            ]);
+          const allLoansWithTotals = [
+            ...liabilitiesWithTotals,
+            ...receivablesWithTotals,
+          ];
+
+          const upcoming = allLoansWithTotals
+            .filter((loan): loan is typeof loan & { dueDate: string } =>
+              Boolean(loan.dueDate),
+            )
+            .map(loan => ({
+              accountId: loan.accountId,
+              counterpartyName: loan.counterpartyName,
+              type: loan.type,
+              currencyCode: loan.currencyCode,
+              totalOwed: loan.totalOwed,
+              dueDate: loan.dueDate,
+              daysUntilDue: daysUntil(loan.dueDate, today),
+            }))
+            // Overdue (negative) through DUE_SOON_WINDOW_DAYS out.
+            .filter(loan => loan.daysUntilDue <= DUE_SOON_WINDOW_DAYS)
+            .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+
           if (!cancelled) {
             setTotal(monthlyTotal);
             setTotalIncome(monthlyIncome);
@@ -146,6 +253,9 @@ function DashboardScreen(): React.JSX.Element {
             setCashInHandByCurrency(cashByCurrency);
             setCreditCardDebt(cardDebt);
             setCategoryBreakdown(breakdown);
+            setLiabilityTotals(totalsByCurrency(liabilitiesWithTotals));
+            setReceivableTotals(totalsByCurrency(receivablesWithTotals));
+            setUpcomingLoans(upcoming);
             setLoading(false);
           }
         },
@@ -207,6 +317,33 @@ function DashboardScreen(): React.JSX.Element {
             </>
           ) : (
             <Text style={styles.row}>No budget set for this month yet</Text>
+          )}
+
+          <Text style={styles.subtitle}>Liabilities &amp; Receivables</Text>
+          <Text style={[styles.row, styles.red]}>
+            Total owed: {formatCurrencyTotals(liabilityTotals)}
+          </Text>
+          <Text style={[styles.row, styles.green]}>
+            Total owed to you: {formatCurrencyTotals(receivableTotals)}
+          </Text>
+          {upcomingLoans.length > 0 && (
+            <View style={styles.dueSoonBox}>
+              <Text style={styles.dueSoonTitle}>
+                Due soon / overdue
+              </Text>
+              {upcomingLoans.map(loan => (
+                <Text key={loan.accountId} style={styles.dueSoonRow}>
+                  {loan.daysUntilDue < 0
+                    ? `Overdue by ${Math.abs(loan.daysUntilDue)}d`
+                    : loan.daysUntilDue === 0
+                      ? 'Due today'
+                      : `Due in ${loan.daysUntilDue}d`}
+                  {' — '}
+                  {loan.counterpartyName} ({loan.type}): {loan.currencyCode}{' '}
+                  {loan.totalOwed.toFixed(2)}
+                </Text>
+              ))}
+            </View>
           )}
 
           <Text style={styles.subtitle}>By Category</Text>
@@ -279,6 +416,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  // Deliberately loud (solid fill, not just colored text) — this needs to
+  // stand out from the rest of the Dashboard's plain rows, not blend in.
+  dueSoonBox: {
+    backgroundColor: '#fff3e0',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e65100',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 8,
+  },
+  dueSoonTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#e65100',
+    marginBottom: 4,
+  },
+  dueSoonRow: {
+    fontSize: 13,
+    color: '#4e342e',
+    marginTop: 2,
   },
   green: {
     color: '#2e7d32',

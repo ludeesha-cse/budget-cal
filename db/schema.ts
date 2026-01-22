@@ -57,9 +57,11 @@ export const transactions = sqliteTable('transactions', {
     .notNull()
     .references(() => accounts.id),
   amount: real('amount').notNull(), // magnitude only — direction comes from entryType, not the sign of this value
-  categoryId: int('category_id')
-    .notNull()
-    .references(() => categories.id),
+  // Nullable as of this stage — Income entries carry no category at all
+  // (a dedicated Income form with no category picker), while every
+  // Expense still requires one. Existing rows are untouched by this
+  // relaxation; only new Income rows are ever inserted with NULL here.
+  categoryId: int('category_id').references(() => categories.id),
   description: text('description'),
   date: text('date').notNull(), // 'YYYY-MM-DD', enables month/year prefix filtering
   entryType: text('entry_type')

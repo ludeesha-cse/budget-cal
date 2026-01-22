@@ -18,6 +18,13 @@ import { formatDateString } from '../utils/date';
 import { getAccountBalances, getAccounts, getCategories } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
 
+// Liability/Receivable accounts are managed exclusively through the loan
+// flows (create/reactivate a loan, and Stage 9b's settlement) — posting
+// an ordinary Expense/Income straight to one would move money without
+// going through that bookkeeping (no loan_payments row, no interest
+// accrual reset), so they're never offered as a transaction account here.
+const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+
 export type TransactionFormSubmitValues = {
   date: string; // 'YYYY-MM-DD'
   amount: number;
@@ -40,12 +47,21 @@ type TransactionFormProps = {
   };
   onSubmit: (values: TransactionFormSubmitValues) => void;
   submitLabel?: string;
+  // When true, hides the Expense/Income toggle and the form always
+  // submits entryType: 'Expense'. The Add tab now has a dedicated Income
+  // tab/form with no category picker at all, so the old in-form toggle
+  // would let someone create a categorized Income entry from the Expense
+  // tab — exactly what the new Income tab exists to prevent. Left off by
+  // default so EditTransactionScreen (unchanged) can still edit Income
+  // rows created before Income got its own tab.
+  lockToExpense?: boolean;
 };
 
 function TransactionForm({
   initialValues,
   onSubmit,
   submitLabel = 'Save',
+  lockToExpense = false,
 }: TransactionFormProps): React.JSX.Element {
   const [date, setDate] = useState(
     initialValues?.date ?? formatDateString(new Date()),
@@ -70,7 +86,7 @@ function TransactionForm({
     initialValues?.categoryId ?? null,
   );
   const [entryType, setEntryType] = useState<'Expense' | 'Income'>(
-    initialValues?.entryType ?? 'Expense',
+    lockToExpense ? 'Expense' : (initialValues?.entryType ?? 'Expense'),
   );
   // Which currencies the selected account actually holds, and which one
   // is chosen. Now persisted on the transaction itself
@@ -92,11 +108,17 @@ function TransactionForm({
   useFocusEffect(
     useCallback(() => {
       getAccounts().then(rows => {
-        setAccounts(rows);
+        // Closed accounts can't take new activity either — same rule as
+        // the Liability/Receivable exclusion above, just for a different
+        // reason (the account was deliberately shut down).
+        const selectable = rows.filter(
+          a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
+        );
+        setAccounts(selectable);
         setAccountId(current =>
-          current != null && rows.some(a => a.id === current)
+          current != null && selectable.some(a => a.id === current)
             ? current
-            : rows[0]?.id ?? null,
+            : selectable[0]?.id ?? null,
         );
       });
       getCategories().then(rows => {
@@ -200,37 +222,41 @@ function TransactionForm({
       style={styles.scroll}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
-      <Text style={styles.label}>Type</Text>
-      <View style={styles.toggleRow}>
-        <Pressable
-          style={[
-            styles.toggleButton,
-            entryType === 'Expense' && styles.toggleButtonActive,
-          ]}
-          onPress={() => setEntryType('Expense')}>
-          <Text
-            style={[
-              styles.toggleButtonText,
-              entryType === 'Expense' && styles.toggleButtonTextActive,
-            ]}>
-            Expense
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[
-            styles.toggleButton,
-            entryType === 'Income' && styles.toggleButtonActive,
-          ]}
-          onPress={() => setEntryType('Income')}>
-          <Text
-            style={[
-              styles.toggleButtonText,
-              entryType === 'Income' && styles.toggleButtonTextActive,
-            ]}>
-            Income
-          </Text>
-        </Pressable>
-      </View>
+      {!lockToExpense && (
+        <>
+          <Text style={styles.label}>Type</Text>
+          <View style={styles.toggleRow}>
+            <Pressable
+              style={[
+                styles.toggleButton,
+                entryType === 'Expense' && styles.toggleButtonActive,
+              ]}
+              onPress={() => setEntryType('Expense')}>
+              <Text
+                style={[
+                  styles.toggleButtonText,
+                  entryType === 'Expense' && styles.toggleButtonTextActive,
+                ]}>
+                Expense
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.toggleButton,
+                entryType === 'Income' && styles.toggleButtonActive,
+              ]}
+              onPress={() => setEntryType('Income')}>
+              <Text
+                style={[
+                  styles.toggleButtonText,
+                  entryType === 'Income' && styles.toggleButtonTextActive,
+                ]}>
+                Income
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
 
       <Text style={styles.label}>Account</Text>
       <CollapsiblePicker
