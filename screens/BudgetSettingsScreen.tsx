@@ -20,6 +20,7 @@ import {
   upsertBudget,
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import { useTheme } from '../contexts/ThemeContext';
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
@@ -29,6 +30,7 @@ type CreditCardRow = Awaited<ReturnType<typeof getAccounts>>[number] & {
 };
 
 function BudgetSettingsScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [amount, setAmount] = useState('');
@@ -101,8 +103,10 @@ function BudgetSettingsScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Budget Settings</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.title, { color: colors.text }]}>
+        Budget Settings
+      </Text>
       <MonthYearPicker
         month={month}
         year={year}
@@ -110,50 +114,75 @@ function BudgetSettingsScreen(): React.JSX.Element {
         onYearChange={setYear}
       />
 
-      <Text style={styles.label}>Budget amount for {selectedMonth}</Text>
+      <Text style={[styles.label, { color: colors.text }]}>
+        Budget amount for {selectedMonth}
+      </Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+        ]}
         value={amount}
         onChangeText={setAmount}
         keyboardType="numeric"
         placeholder="0.00"
+        placeholderTextColor={colors.textSecondary}
       />
-      {savedMessage && <Text style={styles.success}>{savedMessage}</Text>}
-      <Button title="Save" onPress={handleSave} />
+      {savedMessage && (
+        <Text style={[styles.success, { color: colors.success }]}>
+          {savedMessage}
+        </Text>
+      )}
+      <Button title="Save" color={colors.primary} onPress={handleSave} />
 
-      <Text style={styles.subtitle}>Past budgets</Text>
+      <Text style={[styles.subtitle, { color: colors.text }]}>
+        Past budgets
+      </Text>
       <FlatList
         data={allBudgets}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text>{item.month ?? '—'}</Text>
-            <Text>{item.limitAmount.toFixed(2)}</Text>
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+            <Text style={{ color: colors.text }}>{item.month ?? '—'}</Text>
+            <Text style={{ color: colors.text }}>
+              {item.limitAmount.toFixed(2)}
+            </Text>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No budgets set yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No budgets set yet.
+          </Text>
         }
       />
 
-      <Text style={styles.subtitle}>Credit Cards</Text>
+      <Text style={[styles.subtitle, { color: colors.text }]}>
+        Credit Cards
+      </Text>
       <FlatList
         data={creditCards}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={styles.cardRow}>
+          <View style={[styles.cardRow, { borderBottomColor: colors.border }]}>
             <View style={styles.cardInfo}>
-              <Text style={styles.rowName}>{item.name}</Text>
-              <Text style={styles.rowDebt}>Owed: {item.debt.toFixed(2)}</Text>
+              <Text style={[styles.rowName, { color: colors.text }]}>
+                {item.name}
+              </Text>
+              <Text style={[styles.rowDebt, { color: colors.danger }]}>
+                Owed: {item.debt.toFixed(2)}
+              </Text>
             </View>
             <Button
               title="Settle"
+              color={colors.primary}
               onPress={() => handleSettle(item.id, item.name)}
             />
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No credit cards yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No credit cards yet.
+          </Text>
         }
       />
     </View>
@@ -178,7 +207,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -186,7 +214,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   success: {
-    color: '#2e7d32',
     marginBottom: 8,
   },
   subtitle: {
@@ -203,7 +230,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   cardRow: {
     flexDirection: 'row',
@@ -211,7 +237,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   cardInfo: {
     flex: 1,
@@ -221,7 +246,6 @@ const styles = StyleSheet.create({
   },
   rowDebt: {
     marginTop: 2,
-    color: '#c62828',
   },
 });
 

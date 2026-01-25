@@ -15,10 +15,12 @@ import {
   upsertCategoryBudget,
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import { useTheme } from '../contexts/ThemeContext';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoryBudgetsScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -73,8 +75,10 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Category Budgets</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.title, { color: colors.text }]}>
+        Category Budgets
+      </Text>
       <MonthYearPicker
         month={month}
         year={year}
@@ -82,30 +86,44 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         onYearChange={setYear}
       />
 
-      <Text style={styles.label}>Budgets for {selectedMonth}</Text>
-      {savedMessage && <Text style={styles.success}>{savedMessage}</Text>}
+      <Text style={[styles.label, { color: colors.text }]}>
+        Budgets for {selectedMonth}
+      </Text>
+      {savedMessage && (
+        <Text style={[styles.success, { color: colors.success }]}>
+          {savedMessage}
+        </Text>
+      )}
 
       <FlatList
         data={categories}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={styles.rowName}>{item.name}</Text>
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.rowName, { color: colors.text }]}>
+              {item.name}
+            </Text>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
               value={amounts[item.id] ?? ''}
               onChangeText={value => handleAmountChange(item.id, value)}
               keyboardType="numeric"
               placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
             />
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No categories yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No categories yet.
+          </Text>
         }
       />
 
-      <Button title="Save All" onPress={handleSaveAll} />
+      <Button title="Save All" color={colors.primary} onPress={handleSaveAll} />
     </View>
   );
 }
@@ -127,7 +145,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   success: {
-    color: '#2e7d32',
     marginBottom: 8,
   },
   row: {
@@ -136,7 +153,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   rowName: {
     fontSize: 16,
@@ -145,7 +161,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,

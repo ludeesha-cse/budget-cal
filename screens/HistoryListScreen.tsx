@@ -12,6 +12,7 @@ import {
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import MonthYearPicker from '../components/MonthYearPicker';
+import { useTheme } from '../contexts/ThemeContext';
 
 type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
 type LoanPaymentRow = Awaited<ReturnType<typeof getLoanPaymentsByMonth>>[number];
@@ -29,6 +30,7 @@ type HistoryRow =
 type Props = NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>;
 
 function HistoryListScreen({ navigation }: Props): React.JSX.Element {
+  const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [rows, setRows] = useState<HistoryRow[]>([]);
@@ -85,7 +87,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <MonthYearPicker
         month={month}
         year={year}
@@ -95,9 +97,13 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
       />
 
       {loading ? (
-        <Text style={styles.empty}>Loading...</Text>
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          Loading...
+        </Text>
       ) : rows.length === 0 ? (
-        <Text style={styles.empty}>No transactions found.</Text>
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          No transactions found.
+        </Text>
       ) : (
         <FlatList
           data={rows}
@@ -117,14 +123,16 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 ? loan.loanAccountName
                 : loan.counterpartAccountName;
               return (
-                <View style={styles.row}>
+                <View style={[styles.row, { borderBottomColor: colors.border }]}>
                   <View style={styles.rowDetails}>
-                    <Text style={styles.rowDate}>{loan.date}</Text>
-                    <Text>
+                    <Text style={[styles.rowDate, { color: colors.text }]}>
+                      {loan.date}
+                    </Text>
+                    <Text style={{ color: colors.textSecondary }}>
                       {isLiability ? 'Loan repayment' : 'Loan collection'}:{' '}
                       {fromName} → {toName}
                     </Text>
-                    <Text style={[styles.rowAmount, styles.loanPayment]}>
+                    <Text style={[styles.rowAmount, { color: colors.primary }]}>
                       {loan.currencyCode} {loan.amount.toFixed(2)}
                     </Text>
                   </View>
@@ -134,10 +142,12 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
 
             const item_ = item.data;
             return (
-              <View style={styles.row}>
+              <View style={[styles.row, { borderBottomColor: colors.border }]}>
                 <View style={styles.rowDetails}>
-                  <Text style={styles.rowDate}>{item_.date}</Text>
-                  <Text>
+                  <Text style={[styles.rowDate, { color: colors.text }]}>
+                    {item_.date}
+                  </Text>
+                  <Text style={{ color: colors.textSecondary }}>
                     {item_.categoryName ?? (item_.entryType === 'Income' ? 'Income' : 'Unknown')}
                     {' · '}
                     {item_.description || '—'}
@@ -145,9 +155,12 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                   <Text
                     style={[
                       styles.rowAmount,
-                      item_.entryType === 'Income'
-                        ? styles.income
-                        : styles.expense,
+                      {
+                        color:
+                          item_.entryType === 'Income'
+                            ? colors.success
+                            : colors.danger,
+                      },
                     ]}>
                     {item_.entryType === 'Income' ? '+' : '-'}
                     {item_.amount.toFixed(2)}
@@ -156,12 +169,14 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 <View style={styles.rowActions}>
                   <Button
                     title="Edit"
+                    color={colors.primary}
                     onPress={() =>
                       navigation.navigate('EditTransaction', { id: item_.id })
                     }
                   />
                   <Button
                     title="Delete"
+                    color={colors.danger}
                     onPress={() => handleDelete(item_.id)}
                   />
                 </View>
@@ -188,7 +203,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   rowDetails: {
     flex: 1,
@@ -199,15 +213,6 @@ const styles = StyleSheet.create({
   rowAmount: {
     marginTop: 2,
     fontWeight: '600',
-  },
-  income: {
-    color: '#2e7d32',
-  },
-  expense: {
-    color: '#c62828',
-  },
-  loanPayment: {
-    color: '#1565c0',
   },
   rowActions: {
     flexDirection: 'row',

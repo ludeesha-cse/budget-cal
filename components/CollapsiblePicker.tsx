@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useTheme } from '../contexts/ThemeContext';
 
 export type CollapsiblePickerOption = {
   label: string;
@@ -19,6 +20,7 @@ function CollapsiblePicker({
   onValueChange,
   items,
 }: CollapsiblePickerProps): React.JSX.Element {
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
 
   // Selecting an option always collapses the list, even when it's the
@@ -32,14 +34,23 @@ function CollapsiblePicker({
   return (
     <View style={[styles.container, expanded && styles.containerExpanded]}>
       <Pressable
-        style={styles.button}
+        style={[
+          styles.button,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
         onPress={() => setExpanded(current => !current)}>
-        <Text style={styles.buttonText}>{displayLabel}</Text>
+        <Text style={[styles.buttonText, { color: colors.text }]}>
+          {displayLabel}
+        </Text>
       </Pressable>
       {expanded && (
         // Capped height + internal scroll so long option lists (e.g. many
         // currencies) don't overflow off-screen.
-        <View style={styles.optionsOverlay}>
+        <View
+          style={[
+            styles.optionsOverlay,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}>
           <ScrollView
             style={styles.optionsScroll}
             nestedScrollEnabled
@@ -49,12 +60,14 @@ function CollapsiblePicker({
                 key={item.value}
                 style={[
                   styles.option,
+                  { backgroundColor: colors.surface, borderBottomColor: colors.border },
                   index === items.length - 1 && styles.optionLast,
                 ]}
                 onPress={() => handleSelect(item.value)}>
                 <Text
                   style={[
                     styles.optionText,
+                    { color: colors.text },
                     item.value === selectedValue && styles.optionTextSelected,
                   ]}>
                   {item.label}
@@ -78,11 +91,9 @@ const styles = StyleSheet.create({
   },
   button: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#fff',
   },
   buttonText: {
     fontSize: 16,
@@ -94,9 +105,7 @@ const styles = StyleSheet.create({
     right: 0,
     marginTop: 4,
     maxHeight: 240,
-    backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -111,8 +120,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-    backgroundColor: '#fff',
   },
   optionLast: {
     borderBottomWidth: 0,

@@ -20,6 +20,7 @@ import { formatDateString, getCurrentDateString } from '../utils/date';
 import {
   createLoanAccount,
   getAccounts,
+  getActiveAccountCountByType,
   getActiveLoanAccounts,
   getCurrencies,
   getInactiveLoanAccounts,
@@ -28,6 +29,10 @@ import {
   settleLoan,
 } from '../db/queries';
 import type { LoanAccountType } from '../db/queries';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { usePaywall } from '../contexts/PaywallContext';
+import { canAddAccount } from '../utils/entitlementChecks';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Only these can fund a loan — you can't borrow into a Liability or lend
 // out of another Receivable.
@@ -70,6 +75,9 @@ function formatTotals(totals: Record<string, number>): string {
 }
 
 function LiabilitiesReceivablesScreen(): React.JSX.Element {
+  const { colors } = useTheme();
+  const { tier } = useEntitlement();
+  const { openPaywall } = usePaywall();
   const [type, setType] = useState<LoanAccountType>('Liability');
   // Both types are loaded regardless of the toggle so the totals header
   // can show each side at once without a refetch when the toggle flips.
@@ -268,27 +276,48 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         : undefined,
     };
 
-    try {
-      if (reuseAccountId != null) {
-        await reactivateLoanAccount({ accountId: reuseAccountId, ...terms });
-      } else {
-        await createLoanAccount({
-          type,
-          counterpartyName: counterpartyName.trim(),
-          ...terms,
-        });
+    // Form is fully valid at this point (every field above already
+    // checked out) — the paywall, if it appears, is the last thing
+    // standing between the user and Save, never the first thing they
+    // see just for opening this screen. Applies to both branches:
+    // reactivating a closed loan account brings back an active
+    // Liability/Receivable just as much as creating a new one does, so
+    // it's gated the same way rather than treated as "editing existing
+    // data" (which stays ungated everywhere else in this app).
+    const performSubmit = async () => {
+      try {
+        if (reuseAccountId != null) {
+          await reactivateLoanAccount({ accountId: reuseAccountId, ...terms });
+        } else {
+          await createLoanAccount({
+            type,
+            counterpartyName: counterpartyName.trim(),
+            ...terms,
+          });
+        }
+        setStep(null);
+        resetForm();
+        load();
+      } catch (submitError) {
+        Alert.alert(
+          'Could not save',
+          submitError instanceof Error
+            ? submitError.message
+            : String(submitError),
+        );
       }
-      setStep(null);
-      resetForm();
-      load();
-    } catch (submitError) {
-      Alert.alert(
-        'Could not save',
-        submitError instanceof Error
-          ? submitError.message
-          : String(submitError),
-      );
+    };
+
+    const activeCountForType = await getActiveAccountCountByType(type);
+    const check = canAddAccount(type, activeCountForType, tier);
+    if (!check.allowed) {
+      openPaywall({
+        reason: check.reason ?? `${type} accounts require Premium.`,
+        onPurchaseSuccess: performSubmit,
+      });
+      return;
     }
+    await performSubmit();
   };
 
   const openSettle = (loan: ActiveLoan) => {
@@ -352,19 +381,27 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.containerContent}
       keyboardShouldPersistTaps="handled">
-      <View style={styles.summaryCard}>
+      <View
+        style={[
+          styles.summaryCard,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}>
         <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Total liabilities</Text>
-          <Text style={[styles.summaryValue, styles.owed]}>
+          <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+            Total liabilities
+          </Text>
+          <Text style={[styles.summaryValue, { color: colors.danger }]}>
             {formatTotals(totalsByCurrency(activeLiabilities))}
           </Text>
         </View>
         <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Total receivables</Text>
-          <Text style={[styles.summaryValue, styles.owedToYou]}>
+          <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+            Total receivables
+          </Text>
+          <Text style={[styles.summaryValue, { color: colors.success }]}>
             {formatTotals(totalsByCurrency(activeReceivables))}
           </Text>
         </View>
@@ -376,7 +413,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             key={option}
             style={[
               styles.toggleButton,
-              type === option && styles.toggleButtonActive,
+              { backgroundColor: colors.surface, borderColor: colors.primary },
+              type === option && { backgroundColor: colors.primary },
             ]}
             onPress={() => {
               setType(option);
@@ -385,7 +423,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             <Text
               style={[
                 styles.toggleButtonText,
-                type === option && styles.toggleButtonTextActive,
+                { color: colors.primary },
+                type === option && { color: colors.primaryText },
               ]}>
               {option === 'Liability' ? 'Liabilities' : 'Receivables'}
             </Text>
@@ -393,14 +432,18 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         ))}
       </View>
 
-      <Text style={styles.heading}>{TYPE_LABELS[type].heading}</Text>
+      <Text style={[styles.heading, { color: colors.text }]}>
+        {TYPE_LABELS[type].heading}
+      </Text>
 
       {step === null && (
         <>
           {loading ? (
-            <Text style={styles.empty}>Loading...</Text>
+            <Text style={[styles.empty, { color: colors.textSecondary }]}>
+              Loading...
+            </Text>
           ) : loans.length === 0 ? (
-            <Text style={styles.empty}>
+            <Text style={[styles.empty, { color: colors.textSecondary }]}>
               {type === 'Liability'
                 ? 'Nothing borrowed right now.'
                 : 'Nothing lended out right now.'}
@@ -409,26 +452,28 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             loans.map(loan => (
               <View
                 key={`${loan.accountId}-${loan.currencyId}`}
-                style={styles.loanRow}>
-                <Text style={styles.loanName}>{loan.counterpartyName}</Text>
-                <Text style={styles.loanDetail}>
+                style={[styles.loanRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.loanName, { color: colors.text }]}>
+                  {loan.counterpartyName}
+                </Text>
+                <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                   Principal: {loan.currencyCode} {loan.principal.toFixed(2)}
                 </Text>
                 {/* Live figure — principal plus interest accrued since
                     lastAccrualAnchorDate, recomputed on every load rather
                     than trusted from a stored column. */}
-                <Text style={[styles.loanDetail, styles.loanTotalOwed]}>
+                <Text style={[styles.loanDetail, styles.loanTotalOwed, { color: colors.text }]}>
                   Total owed: {loan.currencyCode}{' '}
                   {(totalOwedByAccountId[loan.accountId] ??
                     loan.principal
                   ).toFixed(2)}
                 </Text>
-                <Text style={styles.loanDetail}>
+                <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                   Started {loan.dateCreated}
                   {loan.dueDate ? ` · due ${loan.dueDate}` : ''}
                 </Text>
                 {loan.interestRate != null && (
-                  <Text style={styles.loanDetail}>
+                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                     Interest: {(loan.interestRate / 100).toFixed(2)}%{' '}
                     {loan.interestPeriod ?? ''}
                   </Text>
@@ -436,6 +481,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                 <View style={styles.settleButton}>
                   <Button
                     title="Settle / Pay Off"
+                    color={colors.primary}
                     onPress={() => openSettle(loan)}
                   />
                 </View>
@@ -443,35 +489,49 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             ))
           )}
           <View style={styles.addButton}>
-            <Button title={TYPE_LABELS[type].add} onPress={handleAddPress} />
+            <Button
+              title={TYPE_LABELS[type].add}
+              color={colors.primary}
+              onPress={handleAddPress}
+            />
           </View>
         </>
       )}
 
       {step === 'form' && (
         <View style={styles.form}>
-          <Text style={styles.label}>Counterparty name</Text>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Counterparty name
+          </Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
             value={counterpartyName}
             onChangeText={handleNameChange}
             placeholder={
               type === 'Liability' ? 'Borrowed from…' : 'Lended to…'
             }
+            placeholderTextColor={colors.textSecondary}
           />
           {hasNameMatches && (
-            <View style={styles.suggestions}>
-              <Text style={styles.suggestionsHint}>
+            <View
+              style={[
+                styles.suggestions,
+                { borderColor: colors.primary, backgroundColor: colors.surface },
+              ]}>
+              <Text style={[styles.suggestionsHint, { color: colors.textSecondary }]}>
                 Existing accounts matching this name:
               </Text>
               {activeNameMatches.map(loan => (
                 <View
                   key={`active-${loan.accountId}`}
-                  style={styles.suggestionRowInactive}>
-                  <Text style={styles.suggestionName}>
+                  style={[styles.suggestionRowInactive, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.suggestionName, { color: colors.primary }]}>
                     {loan.counterpartyName}
                   </Text>
-                  <Text style={styles.loanDetail}>
+                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                     Already open · {loan.currencyCode}{' '}
                     {loan.currentBalance.toFixed(2)} outstanding
                   </Text>
@@ -480,12 +540,12 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               {inactiveNameMatches.map(loan => (
                 <Pressable
                   key={`inactive-${loan.accountId}`}
-                  style={styles.suggestionRow}
+                  style={[styles.suggestionRow, { borderTopColor: colors.border }]}
                   onPress={() => handlePickSuggestion(loan)}>
-                  <Text style={styles.suggestionName}>
+                  <Text style={[styles.suggestionName, { color: colors.primary }]}>
                     {loan.counterpartyName}
                   </Text>
-                  <Text style={styles.loanDetail}>
+                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                     Closed · last opened {loan.dateCreated} · tap to reuse
                   </Text>
                 </Pressable>
@@ -493,26 +553,32 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             </View>
           )}
           {reuseAccountId != null && (
-            <View style={styles.reuseBanner}>
-              <Text style={styles.reuseBannerText}>
+            <View style={[styles.reuseBanner, { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.primary }]}>
+              <Text style={[styles.reuseBannerText, { color: colors.primary }]}>
                 Reopening the closed account for this counterparty.
               </Text>
               <Pressable onPress={() => setReuseAccountId(null)}>
-                <Text style={styles.reuseBannerClear}>Create new instead</Text>
+                <Text style={[styles.reuseBannerClear, { color: colors.primary }]}>
+                  Create new instead
+                </Text>
               </Pressable>
             </View>
           )}
 
-          <Text style={styles.label}>Principal</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Principal</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
             value={principal}
             onChangeText={setPrincipal}
             keyboardType="numeric"
             placeholder="0.00"
+            placeholderTextColor={colors.textSecondary}
           />
 
-          <Text style={styles.label}>Currency</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
           <CollapsiblePicker
             displayLabel={currencyLabel(currencyId)}
             selectedValue={currencyId}
@@ -523,7 +589,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             }))}
           />
 
-          <Text style={styles.label}>
+          <Text style={[styles.label, { color: colors.text }]}>
             {type === 'Liability' ? 'Deposit into' : 'Paid from'}
           </Text>
           <CollapsiblePicker
@@ -536,15 +602,24 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             }))}
           />
 
-          <Text style={styles.label}>Due date (optional)</Text>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Due date (optional)
+          </Text>
           <View style={styles.dueDateRow}>
             <View style={styles.dueDateButton}>
               <Button
                 title={dueDate ?? 'Not set'}
+                color={colors.primary}
                 onPress={() => setShowDueDatePicker(true)}
               />
             </View>
-            {dueDate && <Button title="Clear" onPress={() => setDueDate(null)} />}
+            {dueDate && (
+              <Button
+                title="Clear"
+                color={colors.primary}
+                onPress={() => setDueDate(null)}
+              />
+            )}
           </View>
           {Platform.OS === 'android' ? (
             showDueDatePicker && (
@@ -564,7 +639,9 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               <Pressable
                 style={styles.modalBackdrop}
                 onPress={() => setShowDueDatePicker(false)}>
-                <Pressable style={styles.modalCard} onPress={() => {}}>
+                <Pressable
+                  style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                  onPress={() => {}}>
                   <DateTimePicker
                     value={dueDate ? new Date(dueDate) : new Date()}
                     mode="date"
@@ -573,6 +650,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   />
                   <Button
                     title="Done"
+                    color={colors.primary}
                     onPress={() => setShowDueDatePicker(false)}
                   />
                 </Pressable>
@@ -580,18 +658,26 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             </Modal>
           )}
 
-          <Text style={styles.label}>Interest rate % (optional)</Text>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Interest rate % (optional)
+          </Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
             value={interestRate}
             onChangeText={setInterestRate}
             keyboardType="numeric"
             placeholder="e.g. 5.5"
+            placeholderTextColor={colors.textSecondary}
           />
 
           {interestRate.trim().length > 0 && (
             <>
-              <Text style={styles.label}>Interest period</Text>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Interest period
+              </Text>
               <CollapsiblePicker
                 displayLabel={interestPeriod || 'Select period'}
                 selectedValue={interestPeriod}
@@ -601,12 +687,17 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             </>
           )}
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          {error && (
+            <Text style={[styles.error, { color: colors.danger }]}>
+              {error}
+            </Text>
+          )}
 
           <View style={styles.formActions}>
-            <Button title="Cancel" onPress={handleCancel} />
+            <Button title="Cancel" color={colors.primary} onPress={handleCancel} />
             <Button
               title={reuseAccountId != null ? 'Reopen' : 'Save'}
+              color={colors.primary}
               onPress={handleSubmit}
             />
           </View>
@@ -619,13 +710,13 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         animationType="fade"
         onRequestClose={closeSettle}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {settleTarget && (
               <>
-                <Text style={styles.label}>
+                <Text style={[styles.label, { color: colors.text }]}>
                   Settle — {settleTarget.counterpartyName}
                 </Text>
-                <Text style={styles.modalCurrent}>
+                <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
                   Total owed today: {settleTarget.currencyCode}{' '}
                   {(
                     totalOwedByAccountId[settleTarget.accountId] ??
@@ -633,15 +724,21 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   ).toFixed(2)}
                 </Text>
 
-                <Text style={styles.label}>Payment amount</Text>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Payment amount
+                </Text>
                 <TextInput
-                  style={styles.input}
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                  ]}
                   value={settlePaymentAmount}
                   onChangeText={setSettlePaymentAmount}
                   keyboardType="numeric"
                   placeholder="0.00"
+                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.hint}>
+                <Text style={[styles.hint, { color: colors.textSecondary }]}>
                   A payment equal to or greater than the total owed pays
                   this loan off in full and closes the account.
                 </Text>
@@ -649,7 +746,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                 {/* settleTarget is always drawn from `loans`, i.e. whichever
                     of the two active-loan lists matches the current tab —
                     so the tab's type is the loan's type too. */}
-                <Text style={styles.label}>
+                <Text style={[styles.label, { color: colors.text }]}>
                   {type === 'Receivable' ? 'Deposit into' : 'Pay from'}
                 </Text>
                 <CollapsiblePicker
@@ -663,12 +760,14 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                 />
 
                 {settleError && (
-                  <Text style={styles.error}>{settleError}</Text>
+                  <Text style={[styles.error, { color: colors.danger }]}>
+                    {settleError}
+                  </Text>
                 )}
 
                 <View style={styles.formActions}>
-                  <Button title="Cancel" onPress={closeSettle} />
-                  <Button title="Save" onPress={handleSettleSubmit} />
+                  <Button title="Cancel" color={colors.primary} onPress={closeSettle} />
+                  <Button title="Save" color={colors.primary} onPress={handleSettleSubmit} />
                 </View>
               </>
             )}
@@ -692,9 +791,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
     borderRadius: 8,
-    backgroundColor: '#fafafa',
   },
   summaryItem: {
     flex: 1,
@@ -702,18 +799,11 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
   },
   summaryValue: {
     fontSize: 15,
     fontWeight: '700',
     marginTop: 4,
-  },
-  owed: {
-    color: '#c62828',
-  },
-  owedToYou: {
-    color: '#2e7d32',
   },
   toggleRow: {
     flexDirection: 'row',
@@ -722,23 +812,13 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  toggleButtonActive: {
-    backgroundColor: '#1565c0',
-    borderColor: '#1565c0',
   },
   toggleButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1565c0',
-  },
-  toggleButtonTextActive: {
-    color: '#fff',
   },
   heading: {
     fontSize: 16,
@@ -756,7 +836,6 @@ const styles = StyleSheet.create({
   loanRow: {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   loanName: {
     fontSize: 16,
@@ -765,11 +844,9 @@ const styles = StyleSheet.create({
   loanDetail: {
     fontSize: 14,
     marginTop: 2,
-    color: '#444',
   },
   loanTotalOwed: {
     fontWeight: '700',
-    color: '#111',
   },
   settleButton: {
     marginTop: 8,
@@ -786,7 +863,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -795,14 +871,11 @@ const styles = StyleSheet.create({
   suggestions: {
     marginTop: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1565c0',
     borderRadius: 6,
-    backgroundColor: '#fff',
     overflow: 'hidden',
   },
   suggestionsHint: {
     fontSize: 12,
-    color: '#666',
     paddingHorizontal: 12,
     paddingTop: 8,
   },
@@ -810,36 +883,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ddd',
     marginTop: 6,
   },
   suggestionRowInactive: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ddd',
     marginTop: 6,
     opacity: 0.6,
   },
   suggestionName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1565c0',
   },
   reuseBanner: {
     marginTop: 8,
     padding: 10,
     borderRadius: 6,
-    backgroundColor: '#e3f2fd',
   },
   reuseBannerText: {
     fontSize: 13,
-    color: '#0d47a1',
   },
   reuseBannerClear: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1565c0',
     marginTop: 6,
   },
   dueDateRow: {
@@ -856,7 +923,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   error: {
-    color: '#c0392b',
     marginTop: 12,
   },
   modalBackdrop: {
@@ -865,7 +931,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalCard: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,
@@ -873,12 +938,10 @@ const styles = StyleSheet.create({
   },
   modalCurrent: {
     fontSize: 14,
-    color: '#555',
     marginBottom: 4,
   },
   hint: {
     fontSize: 12,
-    color: '#666',
     marginTop: 4,
   },
 });

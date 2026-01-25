@@ -5,6 +5,7 @@ import {
   PLACEHOLDER_PRICING,
   YEARLY_DISCOUNT_MULTIPLIER,
 } from '../config/entitlements';
+import { useTheme } from '../contexts/ThemeContext';
 
 const PREMIUM_FEATURES = [
   'Credit cards',
@@ -19,6 +20,7 @@ const PREMIUM_FEATURES = [
 // it can overlay whatever screen is currently active as a true modal
 // rather than a pushed route, and dismissing it never navigates anywhere.
 function PaywallModal(): React.JSX.Element {
+  const { colors } = useTheme();
   const { isOpen, request, closePaywall } = usePaywall();
   const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null);
 
@@ -55,54 +57,70 @@ function PaywallModal(): React.JSX.Element {
       animationType="slide"
       onRequestClose={handleClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Go Premium</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.title, { color: colors.text }]}>
+            Go Premium
+          </Text>
           {request?.reason && (
-            <Text style={styles.reason}>{request.reason}</Text>
+            <Text style={[styles.reason, { color: colors.textSecondary }]}>
+              {request.reason}
+            </Text>
           )}
 
-          <Text style={styles.sectionLabel}>Premium unlocks</Text>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
+            Premium unlocks
+          </Text>
           {PREMIUM_FEATURES.map(feature => (
-            <Text key={feature} style={styles.featureRow}>
+            <Text key={feature} style={[styles.featureRow, { color: colors.text }]}>
               • {feature}
             </Text>
           ))}
 
           <View style={styles.plans}>
-            <View style={styles.planCard}>
-              <Text style={styles.planTitle}>Monthly</Text>
-              <Text style={styles.planPrice}>
+            <View style={[styles.planCard, { borderColor: colors.border }]}>
+              <Text style={[styles.planTitle, { color: colors.text }]}>
+                Monthly
+              </Text>
+              <Text style={[styles.planPrice, { color: colors.text }]}>
                 {PLACEHOLDER_PRICING.currencyCode} {monthly.toFixed(2)}
               </Text>
               <Button
                 title="Choose Monthly"
+                color={colors.primary}
                 onPress={() => handlePurchase('monthly')}
               />
             </View>
-            <View style={styles.planCard}>
-              <Text style={styles.planTitle}>Yearly</Text>
-              <Text style={styles.planPrice}>
+            <View style={[styles.planCard, { borderColor: colors.border }]}>
+              <Text style={[styles.planTitle, { color: colors.text }]}>
+                Yearly
+              </Text>
+              <Text style={[styles.planPrice, { color: colors.text }]}>
                 {PLACEHOLDER_PRICING.currencyCode}{' '}
                 {discountedYearly.toFixed(2)}
               </Text>
-              <Text style={styles.planStrike}>
+              <Text style={[styles.planStrike, { color: colors.textSecondary }]}>
                 {PLACEHOLDER_PRICING.currencyCode}{' '}
                 {undiscountedYearly.toFixed(2)}
               </Text>
-              <Text style={styles.planSavings}>Save {savingsPercent}%</Text>
+              <Text style={[styles.planSavings, { color: colors.success }]}>
+                Save {savingsPercent}%
+              </Text>
               <Button
                 title="Choose Yearly"
+                color={colors.primary}
                 onPress={() => handlePurchase('yearly')}
               />
             </View>
           </View>
 
           {purchaseMessage && (
-            <Text style={styles.purchaseMessage}>{purchaseMessage}</Text>
+            <Text style={[styles.purchaseMessage, { color: colors.textSecondary }]}>
+              {purchaseMessage}
+            </Text>
           )}
 
           <View style={styles.closeButton}>
-            <Button title="Not now" onPress={handleClose} />
+            <Button title="Not now" color={colors.primary} onPress={handleClose} />
           </View>
         </View>
       </View>
@@ -117,7 +135,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   card: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 20,
@@ -129,7 +146,6 @@ const styles = StyleSheet.create({
   },
   reason: {
     fontSize: 14,
-    color: '#555',
     marginTop: 4,
   },
   sectionLabel: {
@@ -150,7 +166,6 @@ const styles = StyleSheet.create({
   planCard: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
     borderRadius: 8,
     padding: 12,
     alignItems: 'center',
@@ -166,20 +181,17 @@ const styles = StyleSheet.create({
   },
   planStrike: {
     fontSize: 13,
-    color: '#999',
     textDecorationLine: 'line-through',
     marginTop: 2,
   },
   planSavings: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2e7d32',
     marginTop: 2,
     marginBottom: 8,
   },
   purchaseMessage: {
     fontSize: 13,
-    color: '#555',
     marginTop: 16,
     textAlign: 'center',
   },

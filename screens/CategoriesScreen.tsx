@@ -19,10 +19,12 @@ import {
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { canAddCategory } from '../utils/entitlementChecks';
+import { useTheme } from '../contexts/ThemeContext';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoriesScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -123,15 +125,24 @@ function CategoriesScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {formVisible ? (
         <View style={styles.form}>
-          <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} />
+          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor={colors.textSecondary}
+          />
 
           <View style={styles.formActions}>
             <Button
               title="Cancel"
+              color={colors.primary}
               onPress={() => {
                 setFormVisible(false);
                 resetForm();
@@ -139,12 +150,13 @@ function CategoriesScreen(): React.JSX.Element {
             />
             <Button
               title={editingId ? 'Update' : 'Add'}
+              color={colors.primary}
               onPress={handleSubmit}
             />
           </View>
         </View>
       ) : (
-        <Button title="Add Category" onPress={handleAddPress} />
+        <Button title="Add Category" color={colors.primary} onPress={handleAddPress} />
       )}
 
       <FlatList
@@ -152,16 +164,28 @@ function CategoriesScreen(): React.JSX.Element {
         data={categories}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={styles.rowName}>{item.name}</Text>
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.rowName, { color: colors.text }]}>
+              {item.name}
+            </Text>
             <View style={styles.rowActions}>
-              <Button title="Edit" onPress={() => handleEditPress(item)} />
-              <Button title="Delete" onPress={() => handleDelete(item.id)} />
+              <Button
+                title="Edit"
+                color={colors.primary}
+                onPress={() => handleEditPress(item)}
+              />
+              <Button
+                title="Delete"
+                color={colors.danger}
+                onPress={() => handleDelete(item.id)}
+              />
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No categories yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No categories yet.
+          </Text>
         }
       />
     </View>
@@ -184,7 +208,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -208,7 +231,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   rowName: {
     fontWeight: '600',

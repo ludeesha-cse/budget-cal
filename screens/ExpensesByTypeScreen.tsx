@@ -9,10 +9,12 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { getExpensesByType } from '../db/queries';
 import { getCurrentMonthString } from '../utils/date';
+import { useTheme } from '../contexts/ThemeContext';
 
 type ExpenseRow = Awaited<ReturnType<typeof getExpensesByType>>[number];
 
 function ExpensesByTypeScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,20 +35,26 @@ function ExpensesByTypeScreen(): React.JSX.Element {
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Expenses by Type</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.title, { color: colors.text }]}>
+        Expenses by Type
+      </Text>
       {loading ? (
         <ActivityIndicator size="large" />
       ) : expenses.length === 0 ? (
-        <Text style={styles.empty}>No expenses recorded this month.</Text>
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          No expenses recorded this month.
+        </Text>
       ) : (
         <FlatList
           data={expenses}
           keyExtractor={item => item.type}
           renderItem={({ item }) => (
-            <View style={styles.row}>
-              <Text>{item.type}</Text>
-              <Text>{item.total.toFixed(2)}</Text>
+            <View style={[styles.row, { borderBottomColor: colors.border }]}>
+              <Text style={{ color: colors.text }}>{item.type}</Text>
+              <Text style={{ color: colors.text }}>
+                {item.total.toFixed(2)}
+              </Text>
             </View>
           )}
         />
@@ -73,7 +81,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
 });
 

@@ -16,6 +16,7 @@ import DateTimePicker, {
 import { formatDateString } from '../utils/date';
 import { getAccountBalances, getAccounts } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Same exclusion as TransactionForm — Liability/Receivable accounts only
 // ever move through the loan flows, and Income never gets posted to a
@@ -42,6 +43,7 @@ function IncomeForm({
   onSubmit,
   submitLabel = 'Save',
 }: IncomeFormProps): React.JSX.Element {
+  const { colors } = useTheme();
   const [date, setDate] = useState(formatDateString(new Date()));
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [amount, setAmount] = useState('');
@@ -128,10 +130,10 @@ function IncomeForm({
 
   return (
     <ScrollView
-      style={styles.scroll}
+      style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
-      <Text style={styles.label}>Account</Text>
+      <Text style={[styles.label, { color: colors.text }]}>Account</Text>
       <CollapsiblePicker
         displayLabel={selectedAccountName}
         selectedValue={accountId != null ? String(accountId) : ''}
@@ -141,7 +143,7 @@ function IncomeForm({
 
       {accountBalances.length > 1 && (
         <>
-          <Text style={styles.label}>Currency</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
           <CollapsiblePicker
             displayLabel={
               accountBalances.find(b => b.currencyId === currencyId)
@@ -157,8 +159,8 @@ function IncomeForm({
         </>
       )}
 
-      <Text style={styles.label}>Date</Text>
-      <Button title={date} onPress={() => setShowDatePicker(true)} />
+      <Text style={[styles.label, { color: colors.text }]}>Date</Text>
+      <Button title={date} color={colors.primary} onPress={() => setShowDatePicker(true)} />
       {Platform.OS === 'android' ? (
         showDatePicker && (
           <DateTimePicker
@@ -177,39 +179,55 @@ function IncomeForm({
           <Pressable
             style={styles.modalBackdrop}
             onPress={() => setShowDatePicker(false)}>
-            <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Pressable
+              style={[styles.modalCard, { backgroundColor: colors.surface }]}
+              onPress={() => {}}>
               <DateTimePicker
                 value={new Date(date)}
                 mode="date"
                 display="spinner"
                 onChange={handleDateChange}
               />
-              <Button title="Done" onPress={() => setShowDatePicker(false)} />
+              <Button
+                title="Done"
+                color={colors.primary}
+                onPress={() => setShowDatePicker(false)}
+              />
             </Pressable>
           </Pressable>
         </Modal>
       )}
 
-      <Text style={styles.label}>Amount</Text>
+      <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+        ]}
         value={amount}
         onChangeText={setAmount}
         keyboardType="numeric"
         placeholder="0.00"
+        placeholderTextColor={colors.textSecondary}
       />
 
-      <Text style={styles.label}>Description</Text>
+      <Text style={[styles.label, { color: colors.text }]}>Description</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+        ]}
         value={description}
         onChangeText={setDescription}
         placeholder="Optional"
+        placeholderTextColor={colors.textSecondary}
       />
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && (
+        <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
+      )}
 
-      <Button title={submitLabel} onPress={handleSubmit} />
+      <Button title={submitLabel} color={colors.primary} onPress={handleSubmit} />
     </ScrollView>
   );
 }
@@ -229,14 +247,12 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 16,
   },
   error: {
-    color: '#c0392b',
     marginTop: 12,
   },
   modalBackdrop: {
@@ -245,7 +261,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalCard: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,

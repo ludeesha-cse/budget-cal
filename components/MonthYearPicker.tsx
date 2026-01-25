@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { getCurrentYearString } from '../utils/date';
+import { useTheme } from '../contexts/ThemeContext';
 
 export const MONTH_OPTIONS = [
   { label: 'January', value: '01' },
@@ -42,6 +43,7 @@ function MonthYearPicker({
   onYearChange,
   includeAllMonths = false,
 }: MonthYearPickerProps): React.JSX.Element {
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const monthOptions = includeAllMonths
     ? [{ label: 'All', value: '' }, ...MONTH_OPTIONS]
@@ -57,21 +59,35 @@ function MonthYearPicker({
   return (
     <View>
       <Pressable
-        style={styles.filterButton}
+        style={[
+          styles.filterButton,
+          { borderColor: colors.border, backgroundColor: colors.surface },
+        ]}
         onPress={() => setExpanded(current => !current)}>
-        <Text style={styles.filterButtonText}>{buttonLabel}</Text>
+        <Text style={[styles.filterButtonText, { color: colors.text }]}>
+          {buttonLabel}
+        </Text>
       </Pressable>
       {expanded && (
         <View style={styles.filters}>
           <View style={styles.pickerWrapper}>
-            <Picker selectedValue={month} onValueChange={handleMonthChange}>
+            <Picker
+              selectedValue={month}
+              onValueChange={handleMonthChange}
+              // itemStyle only applies on iOS's wheel picker — Android's
+              // dropdown picker inherits colors differently and isn't
+              // themed here to keep this a low-risk, additive change.
+              itemStyle={{ color: colors.text }}>
               {monthOptions.map(m => (
                 <Picker.Item key={m.value} label={m.label} value={m.value} />
               ))}
             </Picker>
           </View>
           <View style={styles.pickerWrapper}>
-            <Picker selectedValue={year} onValueChange={onYearChange}>
+            <Picker
+              selectedValue={year}
+              onValueChange={onYearChange}
+              itemStyle={{ color: colors.text }}>
               {YEAR_OPTIONS.map(y => (
                 <Picker.Item key={y} label={y} value={y} />
               ))}
@@ -86,7 +102,6 @@ function MonthYearPicker({
 const styles = StyleSheet.create({
   filterButton: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,

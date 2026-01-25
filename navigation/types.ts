@@ -13,6 +13,7 @@ export type SettingsStackParamList = {
   Categories: undefined;
   CategoryBudgets: undefined;
   Currencies: undefined;
+  AppSettings: undefined;
 };
 
 export type RootTabParamList = {

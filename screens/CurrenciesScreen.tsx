@@ -15,12 +15,14 @@ import {
   getCurrencies,
   setDefaultCurrency,
 } from '../db/queries';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Lists existing currencies and lets the user add new ones; the seeded
 // default currency is flagged with a badge and can't be added again.
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
 function CurrenciesScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
   const [code, setCode] = useState('');
@@ -104,39 +106,48 @@ function CurrenciesScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {formVisible ? (
         <View style={styles.form}>
-          <Text style={styles.label}>Code</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Code</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
             value={code}
             onChangeText={setCode}
             placeholder="e.g. JPY"
+            placeholderTextColor={colors.textSecondary}
             autoCapitalize="characters"
           />
 
-          <Text style={styles.label}>Name</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
             value={name}
             onChangeText={setName}
             placeholder="e.g. Japanese Yen"
+            placeholderTextColor={colors.textSecondary}
           />
 
           <View style={styles.formActions}>
             <Button
               title="Cancel"
+              color={colors.primary}
               onPress={() => {
                 setFormVisible(false);
                 resetForm();
               }}
             />
-            <Button title="Add" onPress={handleSubmit} />
+            <Button title="Add" color={colors.primary} onPress={handleSubmit} />
           </View>
         </View>
       ) : (
-        <Button title="Add Currency" onPress={handleAddPress} />
+        <Button title="Add Currency" color={colors.primary} onPress={handleAddPress} />
       )}
 
       <FlatList
@@ -144,29 +155,41 @@ function CurrenciesScreen(): React.JSX.Element {
         data={currencies}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={styles.row}>
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
             <View style={styles.rowDetails}>
-              <Text style={styles.rowCode}>{item.code}</Text>
-              <Text>{item.name}</Text>
+              <Text style={[styles.rowCode, { color: colors.text }]}>
+                {item.code}
+              </Text>
+              <Text style={{ color: colors.textSecondary }}>{item.name}</Text>
             </View>
             <View style={styles.rowActions}>
               {item.isDefault ? (
-                <Text style={styles.defaultBadge}>Default</Text>
+                <Text
+                  style={[
+                    styles.defaultBadge,
+                    { color: colors.success, borderColor: colors.success },
+                  ]}>
+                  Default
+                </Text>
               ) : (
                 <Button
                   title="Set as Default"
+                  color={colors.primary}
                   onPress={() => handleSetDefault(item.id)}
                 />
               )}
               <Button
                 title="Delete"
+                color={colors.danger}
                 onPress={() => handleDelete(item.id, item.code)}
               />
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No currencies yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No currencies yet.
+          </Text>
         }
       />
     </View>
@@ -189,7 +212,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -213,7 +235,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   rowDetails: {
     flex: 1,
@@ -229,9 +250,7 @@ const styles = StyleSheet.create({
   defaultBadge: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2e7d32',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#2e7d32',
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,

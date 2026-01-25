@@ -6,6 +6,7 @@ import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import { getTransactionById, updateTransaction } from '../db/queries';
+import { useTheme } from '../contexts/ThemeContext';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'EditTransaction'>;
 
@@ -13,6 +14,7 @@ function EditTransactionScreen({
   route,
   navigation,
 }: Props): React.JSX.Element {
+  const { colors } = useTheme();
   const { id } = route.params;
   const [transaction, setTransaction] = useState<
     Awaited<ReturnType<typeof getTransactionById>>
@@ -41,7 +43,7 @@ function EditTransactionScreen({
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" />
       </View>
     );
@@ -49,14 +51,14 @@ function EditTransactionScreen({
 
   if (!transaction) {
     return (
-      <View style={styles.center}>
-        <Text>Transaction not found.</Text>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text }}>Transaction not found.</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TransactionForm
         initialValues={{
           date: transaction.date,

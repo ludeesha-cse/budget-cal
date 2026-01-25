@@ -1,28 +1,39 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import IncomeForm, { IncomeFormSubmitValues } from '../components/IncomeForm';
-import LoanSettlementForm from '../components/LoanSettlementForm';
 import { addIncome, addTransaction } from '../db/queries';
+import { useTheme } from '../contexts/ThemeContext';
+import type { RootTabParamList } from '../navigation/types';
 
-type AddTab = 'Expense' | 'Income' | 'LiabilityRepayment' | 'ReceivableIncome';
+type AddScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Add'>;
+
+type AddTab = 'Expense' | 'Income';
 
 const TABS: { key: AddTab; label: string }[] = [
   { key: 'Expense', label: 'Expense' },
   { key: 'Income', label: 'Income' },
-  { key: 'LiabilityRepayment', label: 'Liability Repayment' },
-  { key: 'ReceivableIncome', label: 'Receivable Income' },
 ];
 
 // This is the Add tab's screen — it lives at screens/AddTransactionScreen.tsx
 // (the filename predates this restructure and can't be renamed in the
-// connected project folder) but the component itself is now a 4-way
-// hub, not a single transaction form, hence the internal rename to
-// AddScreen and the removal of the old "Add Transaction" header: the tab
-// navigator's own header already shows "Add".
+// connected project folder) but the component itself is a 2-way hub
+// (Expense/Income), not a single transaction form, hence the internal
+// rename to AddScreen and the removal of the old "Add Transaction" header:
+// the tab navigator's own header already shows "Add".
+//
+// Liability Repayment / Receivable Income used to live here as two more
+// tabs, but were removed: settling a loan is already fully reachable from
+// the Liabilities & Receivables screen's own "Settle / Pay Off" action
+// (see LiabilitiesReceivablesScreen.tsx), so this was a duplicate entry
+// point, not a distinct capability.
 function AddScreen(): React.JSX.Element {
+  const { colors } = useTheme();
+  const navigation = useNavigation<AddScreenNavigationProp>();
   const [activeTab, setActiveTab] = useState<AddTab>('Expense');
   const [formKey, setFormKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -58,30 +69,27 @@ function AddScreen(): React.JSX.Element {
     setFormKey(key => key + 1);
   };
 
-  const handleSettled = (message: string) => {
-    setSuccessMessage(message);
-    setFormKey(key => key + 1);
-  };
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.tabRow}
+        style={[styles.tabRow, { borderBottomColor: colors.border }]}
         contentContainerStyle={styles.tabRowContent}>
         {TABS.map(tab => (
           <Pressable
             key={tab.key}
             style={[
               styles.tabButton,
-              activeTab === tab.key && styles.tabButtonActive,
+              { backgroundColor: colors.surface },
+              activeTab === tab.key && { backgroundColor: colors.primary },
             ]}
             onPress={() => switchTab(tab.key)}>
             <Text
               style={[
                 styles.tabButtonText,
-                activeTab === tab.key && styles.tabButtonTextActive,
+                { color: colors.text },
+                activeTab === tab.key && { color: colors.primaryText },
               ]}>
               {tab.label}
             </Text>
@@ -89,7 +97,11 @@ function AddScreen(): React.JSX.Element {
         ))}
       </ScrollView>
 
-      {successMessage && <Text style={styles.success}>{successMessage}</Text>}
+      {successMessage && (
+        <Text style={[styles.success, { color: colors.success }]}>
+          {successMessage}
+        </Text>
+      )}
 
       <View style={styles.formArea}>
         {activeTab === 'Expense' && (
@@ -107,21 +119,27 @@ function AddScreen(): React.JSX.Element {
             submitLabel="Add"
           />
         )}
-        {activeTab === 'LiabilityRepayment' && (
-          <LoanSettlementForm
-            key={`liability-${formKey}`}
-            type="Liability"
-            onSettled={() => handleSettled('Repayment recorded')}
-          />
-        )}
-        {activeTab === 'ReceivableIncome' && (
-          <LoanSettlementForm
-            key={`receivable-${formKey}`}
-            type="Receivable"
-            onSettled={() => handleSettled('Payment received')}
-          />
-        )}
       </View>
+
+      {/* Common to both tabs, not tied to activeTab — sits below whichever
+          form is showing. Settling a loan repayment/receivable used to be
+          two separate tabs right here; now it's one tap through to the
+          screen that actually owns that flow (see
+          LiabilitiesReceivablesScreen's Settle / Pay Off action). */}
+      <Pressable
+        style={[
+          styles.shortcut,
+          { backgroundColor: colors.surface, borderTopColor: colors.border },
+        ]}
+        onPress={() =>
+          navigation.navigate('Settings', {
+            screen: 'LiabilitiesReceivables',
+          })
+        }>
+        <Text style={[styles.shortcutText, { color: colors.primary }]}>
+          Liabilities & Receivables
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -133,7 +151,6 @@ const styles = StyleSheet.create({
   tabRow: {
     flexGrow: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   tabRowContent: {
     paddingHorizontal: 12,
@@ -144,26 +161,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
-    backgroundColor: '#eee',
-  },
-  tabButtonActive: {
-    backgroundColor: '#1565c0',
   },
   tabButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
-  },
-  tabButtonTextActive: {
-    color: '#fff',
   },
   success: {
-    color: '#2e7d32',
     paddingHorizontal: 16,
     paddingTop: 8,
   },
   formArea: {
     flex: 1,
+  },
+  shortcut: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  shortcutText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 

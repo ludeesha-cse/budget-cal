@@ -19,11 +19,17 @@ import {
   deleteAccount,
   getAccountBalance,
   getAccountBalances,
+  getActiveAccountCountByType,
   getAccounts,
   getCurrencies,
   updateAccount,
   updateAccountBalanceWithAudit,
 } from '../db/queries';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { usePaywall } from '../contexts/PaywallContext';
+import { canAddAccount } from '../utils/entitlementChecks';
+import { FREE_ACCOUNT_TYPES } from '../config/entitlements';
+import { useTheme } from '../contexts/ThemeContext';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -47,6 +53,9 @@ type AccountWithBalances = Awaited<ReturnType<typeof getAccounts>>[number] & {
 };
 
 function AccountsScreen(): React.JSX.Element {
+  const { colors } = useTheme();
+  const { tier } = useEntitlement();
+  const { openPaywall } = usePaywall();
   const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
@@ -141,26 +150,50 @@ function AccountsScreen(): React.JSX.Element {
       return;
     }
     if (editingId) {
+      // Editing an existing account is never gated — entitlement only
+      // ever governs creating new items, per the standing rule that
+      // existing data stays fully usable regardless of tier.
       await updateAccount(editingId, { name: name.trim(), type });
-    } else {
-      const parsedBalance = Number(initialBalance);
-      if (
-        !initialCurrencyId ||
-        !initialBalance ||
-        Number.isNaN(parsedBalance)
-      ) {
-        return;
-      }
+      setFormVisible(false);
+      resetForm();
+      load();
+      return;
+    }
+
+    const parsedBalance = Number(initialBalance);
+    if (!initialCurrencyId || !initialBalance || Number.isNaN(parsedBalance)) {
+      return;
+    }
+
+    // Form is fully valid at this point — the paywall (if it appears at
+    // all) is the very last thing standing between the user and Create,
+    // not the first thing they see.
+    const performCreate = async () => {
       await addAccountWithBalance(
         name.trim(),
         type,
         Number(initialCurrencyId),
         parsedBalance,
       );
+      setFormVisible(false);
+      resetForm();
+      load();
+    };
+
+    const activeCountForType = await getActiveAccountCountByType(type);
+    const check = canAddAccount(type, activeCountForType, tier);
+    if (!check.allowed) {
+      // performCreate is stored, not run — it becomes the pending action
+      // a future successful purchase (Stage 19) completes automatically,
+      // and dismissing the paywall now just leaves the form exactly as
+      // filled in, since nothing here has cleared or unmounted it.
+      openPaywall({
+        reason: check.reason ?? `${type} accounts require Premium.`,
+        onPurchaseSuccess: performCreate,
+      });
+      return;
     }
-    setFormVisible(false);
-    resetForm();
-    load();
+    await performCreate();
   };
 
   const handleDelete = (id: number) => {
@@ -313,25 +346,43 @@ function AccountsScreen(): React.JSX.Element {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.containerContent}
       keyboardShouldPersistTaps="handled">
       {formVisible ? (
         <View style={styles.form}>
-          <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} />
+          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor={colors.textSecondary}
+          />
 
-          <Text style={styles.label}>Type</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Type</Text>
           <CollapsiblePicker
             displayLabel={type}
             selectedValue={type}
             onValueChange={setType}
             items={ACCOUNT_TYPES.map(t => ({ label: t, value: t }))}
           />
+          {/* Only while creating — editing an existing account of a
+              premium type is never blocked, so flagging it here would be
+              misleading about what's actually gated. */}
+          {!editingId && tier === 'free' && !FREE_ACCOUNT_TYPES.includes(type) && (
+            <Text style={[styles.premiumBadge, { color: colors.warning }]}>
+              🔒 Premium — {type}
+            </Text>
+          )}
 
           {!editingId && (
             <>
-              <Text style={styles.label}>Initial currency</Text>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Initial currency
+              </Text>
               <CollapsiblePicker
                 displayLabel={currencyLabel(initialCurrencyId)}
                 selectedValue={initialCurrencyId}
@@ -342,13 +393,19 @@ function AccountsScreen(): React.JSX.Element {
                 }))}
               />
 
-              <Text style={styles.label}>Initial balance</Text>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Initial balance
+              </Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                ]}
                 value={initialBalance}
                 onChangeText={setInitialBalance}
                 keyboardType="numeric"
                 placeholder="0.00"
+                placeholderTextColor={colors.textSecondary}
               />
             </>
           )}
@@ -356,6 +413,7 @@ function AccountsScreen(): React.JSX.Element {
           <View style={styles.formActions}>
             <Button
               title="Cancel"
+              color={colors.primary}
               onPress={() => {
                 setFormVisible(false);
                 resetForm();
@@ -363,62 +421,80 @@ function AccountsScreen(): React.JSX.Element {
             />
             <Button
               title={editingId ? 'Update' : 'Add'}
+              color={colors.primary}
               onPress={handleSubmit}
             />
           </View>
         </View>
       ) : (
-        <Button title="Add Account" onPress={handleAddPress} />
+        <Button title="Add Account" color={colors.primary} onPress={handleAddPress} />
       )}
 
       <View style={styles.list}>
         {activeAccounts.length === 0 ? (
-          <Text style={styles.empty}>No accounts yet.</Text>
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            No accounts yet.
+          </Text>
         ) : (
           activeAccounts.map(item => {
             const availableCurrencies = currencies.filter(
               c => !item.balances.some(b => b.currencyId === c.id),
             );
             return (
-              <View key={item.id} style={styles.rowContainer}>
+              <View
+                key={item.id}
+                style={[styles.rowContainer, { borderBottomColor: colors.border }]}>
                 <View style={styles.row}>
                   <View style={styles.rowDetails}>
-                    <Text style={styles.rowName}>{item.name}</Text>
-                    <Text>{item.type}</Text>
+                    <Text style={[styles.rowName, { color: colors.text }]}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ color: colors.textSecondary }}>
+                      {item.type}
+                    </Text>
                     {item.balances.length > 0 ? (
                       <View style={styles.balanceChips}>
                         {item.balances.map(b => (
                           <Pressable
                             key={b.currencyId}
                             onPress={() => openUpdateBalance(item, b)}>
-                            <Text style={styles.balanceChip}>
+                            <Text
+                              style={[
+                                styles.balanceChip,
+                                { borderColor: colors.primary, color: colors.primary },
+                              ]}>
                               {b.currencyCode} {b.currentBalance.toFixed(2)}
                             </Text>
                           </Pressable>
                         ))}
                       </View>
                     ) : (
-                      <Text style={styles.rowBalance}>No balances yet</Text>
+                      <Text style={[styles.rowBalance, { color: colors.textSecondary }]}>
+                        No balances yet
+                      </Text>
                     )}
                   </View>
                   <View style={styles.rowActions}>
                     <Button
                       title="Edit"
+                      color={colors.primary}
                       onPress={() => handleEditPress(item)}
                     />
                     <Button
                       title="Close"
+                      color={colors.primary}
                       onPress={() => handleClose(item)}
                     />
                     <Button
                       title="Delete"
+                      color={colors.danger}
                       onPress={() => handleDelete(item.id)}
                     />
                   </View>
                 </View>
 
                 <Pressable onPress={() => toggleAddCurrency(item.id)}>
-                  <Text style={styles.addCurrencyLink}>
+                  <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
                     {addCurrencyAccountId === item.id
                       ? 'Cancel'
                       : '+ Add Currency'}
@@ -428,7 +504,7 @@ function AccountsScreen(): React.JSX.Element {
                 {addCurrencyAccountId === item.id && (
                   <View style={styles.addCurrencyForm}>
                     {availableCurrencies.length === 0 ? (
-                      <Text style={styles.empty}>
+                      <Text style={[styles.empty, { color: colors.textSecondary }]}>
                         This account already has a balance in every currency.
                       </Text>
                     ) : (
@@ -447,14 +523,19 @@ function AccountsScreen(): React.JSX.Element {
                           }))}
                         />
                         <TextInput
-                          style={styles.input}
+                          style={[
+                            styles.input,
+                            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                          ]}
                           value={addCurrencyBalance}
                           onChangeText={setAddCurrencyBalance}
                           keyboardType="numeric"
                           placeholder="Starting balance"
+                          placeholderTextColor={colors.textSecondary}
                         />
                         <Button
                           title="Add"
+                          color={colors.primary}
                           onPress={() => handleAddCurrencySubmit(item.id)}
                         />
                       </>
@@ -473,40 +554,57 @@ function AccountsScreen(): React.JSX.Element {
         animationType="fade"
         onRequestClose={() => setUpdateBalanceTarget(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {updateBalanceTarget && (
               <>
-                <Text style={styles.label}>
+                <Text style={[styles.label, { color: colors.text }]}>
                   Update balance — {updateBalanceTarget.accountName} (
                   {updateBalanceTarget.currencyCode})
                 </Text>
-                <Text style={styles.modalCurrent}>
+                <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
                   Current: {updateBalanceTarget.currentBalance.toFixed(2)}
                 </Text>
 
-                <Text style={styles.label}>New balance</Text>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  New balance
+                </Text>
                 <TextInput
-                  style={styles.input}
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                  ]}
                   value={updateBalanceNewValue}
                   onChangeText={setUpdateBalanceNewValue}
                   keyboardType="numeric"
                   placeholder="0.00"
+                  placeholderTextColor={colors.textSecondary}
                 />
 
-                <Text style={styles.label}>Description (required)</Text>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Description (required)
+                </Text>
                 <TextInput
-                  style={styles.input}
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                  ]}
                   value={updateBalanceDescription}
                   onChangeText={setUpdateBalanceDescription}
                   placeholder="Why is this balance being corrected?"
+                  placeholderTextColor={colors.textSecondary}
                 />
 
                 <View style={styles.formActions}>
                   <Button
                     title="Cancel"
+                    color={colors.primary}
                     onPress={() => setUpdateBalanceTarget(null)}
                   />
-                  <Button title="Save" onPress={handleUpdateBalanceSubmit} />
+                  <Button
+                    title="Save"
+                    color={colors.primary}
+                    onPress={handleUpdateBalanceSubmit}
+                  />
                 </View>
               </>
             )}
@@ -535,7 +633,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#999',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -545,6 +642,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 16,
+  },
+  premiumBadge: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
   },
   list: {
     marginTop: 8,
@@ -556,7 +658,6 @@ const styles = StyleSheet.create({
   rowContainer: {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   row: {
     flexDirection: 'row',
@@ -580,8 +681,6 @@ const styles = StyleSheet.create({
   },
   balanceChip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1565c0',
-    color: '#1565c0',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -595,7 +694,6 @@ const styles = StyleSheet.create({
   },
   addCurrencyLink: {
     marginTop: 8,
-    color: '#1565c0',
     fontWeight: '600',
   },
   addCurrencyForm: {
@@ -608,7 +706,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   modalCard: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,
@@ -616,7 +713,6 @@ const styles = StyleSheet.create({
   },
   modalCurrent: {
     fontSize: 14,
-    color: '#555',
     marginBottom: 4,
   },
 });

@@ -445,7 +445,6 @@ const styles = StyleSheet.create({
   categoryRow: {
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
   },
   categoryName: {
     fontSize: 16,
@@ -455,9 +454,7 @@ const styles = StyleSheet.create({
   // Deliberately loud (solid fill, not just colored text) — this needs to
   // stand out from the rest of the Dashboard's plain rows, not blend in.
   dueSoonBox: {
-    backgroundColor: '#fff3e0',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e65100',
     borderRadius: 6,
     padding: 10,
     marginBottom: 8,
@@ -465,7 +462,6 @@ const styles = StyleSheet.create({
   dueSoonTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#e65100',
     marginBottom: 4,
   },
   dueSoonRow: {
