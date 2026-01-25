@@ -48,6 +48,13 @@ export const accountBalances = sqliteTable(
 export const categories = sqliteTable('categories', {
   id: int('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
+  // Marks system-created categories (currently just the reserved "Bank"
+  // category used by balance-correction audit entries) so the free-tier
+  // category limit can exclude them by flag rather than by matching the
+  // name string, which would break the moment someone renames it.
+  isSystemReserved: integer('is_system_reserved', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   createdAt: int('created_at').notNull(),
 });
 
@@ -128,6 +135,20 @@ export const budgets = sqliteTable('budgets', {
   startDate: int('start_date').notNull(),
   month: text('month'), // 'YYYY-MM', set for the overall monthly budget
   createdAt: int('created_at').notNull(),
+});
+
+// Singleton row (always id=1) holding app-wide preferences that aren't
+// tied to any account/category/etc. Currently just the theme, but shaped
+// as a table rather than a one-off key so future app-level settings can
+// be added as columns without another migration pattern change.
+export const appSettings = sqliteTable('app_settings', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  // 'system' follows the device's OS-level light/dark setting; 'light'
+  // and 'dark' pin the app regardless of the device setting.
+  themeMode: text('theme_mode')
+    .notNull()
+    .default('system')
+    .$type<'light' | 'dark' | 'system'>(),
 });
 
 export const categoryBudgets = sqliteTable(

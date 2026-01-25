@@ -3,7 +3,13 @@ import { open } from '@op-engineering/op-sqlite';
 import { drizzle } from 'drizzle-orm/op-sqlite';
 import { migrate } from 'drizzle-orm/op-sqlite/migrator';
 import migrations from '../drizzle/migrations';
-import { accountBalances, accounts, categories, currencies } from './schema';
+import {
+  accountBalances,
+  accounts,
+  appSettings,
+  categories,
+  currencies,
+} from './schema';
 
 const opsqliteDb = open({ name: 'budget-tracker.db' });
 
@@ -38,18 +44,34 @@ const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 // spending later. Checked by name specifically, not by table-emptiness
 // like seedDefaultCategories — this needs to exist even on databases
 // that already have their five original categories from Stage 5.
+//
+// Also responsible for isSystemReserved being true on this row: on a
+// fresh install the insert below sets it directly, but a database that
+// already has a "Bank" category from before that column existed would
+// otherwise sit at the integer default (false) forever — the free-tier
+// category count needs the flag set correctly either way, so an
+// existing row gets updated in place rather than left stale or
+// duplicated.
 async function seedReservedBankCategory(): Promise<void> {
-  const existing = await db
+  const [existing] = await db
     .select()
     .from(categories)
     .where(eq(categories.name, RESERVED_BANK_CATEGORY_NAME))
     .limit(1);
-  if (existing.length > 0) {
+  if (existing) {
+    if (!existing.isSystemReserved) {
+      await db
+        .update(categories)
+        .set({ isSystemReserved: true })
+        .where(eq(categories.id, existing.id));
+    }
     return;
   }
-  await db
-    .insert(categories)
-    .values({ name: RESERVED_BANK_CATEGORY_NAME, createdAt: Date.now() });
+  await db.insert(categories).values({
+    name: RESERVED_BANK_CATEGORY_NAME,
+    isSystemReserved: true,
+    createdAt: Date.now(),
+  });
 }
 
 const DEFAULT_CURRENCIES = [
@@ -152,10 +174,23 @@ async function runCurrencyMigration(
   }
 }
 
+// app_settings is a singleton (always exactly one row) holding app-wide
+// preferences like the theme. Seeded once here, same pattern as the other
+// seed* functions — gated on table-emptiness so re-running on every app
+// start stays a no-op after the first.
+async function seedAppSettings(): Promise<void> {
+  const existing = await db.select().from(appSettings).limit(1);
+  if (existing.length > 0) {
+    return;
+  }
+  await db.insert(appSettings).values({ themeMode: 'system' });
+}
+
 export async function runMigrations(): Promise<void> {
   const legacyBalances = await captureLegacyAccountBalances();
   await migrate(db, migrations);
   await seedDefaultCategories();
   await seedReservedBankCategory();
   await runCurrencyMigration(legacyBalances);
+  await seedAppSettings();
 }

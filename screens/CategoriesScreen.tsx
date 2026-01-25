@@ -13,12 +13,18 @@ import {
   addCategory,
   deleteCategory,
   getCategories,
+  getUserCategoryCount,
   updateCategory,
 } from '../db/queries';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { usePaywall } from '../contexts/PaywallContext';
+import { canAddCategory } from '../utils/entitlementChecks';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoriesScreen(): React.JSX.Element {
+  const { tier } = useEntitlement();
+  const { openPaywall } = usePaywall();
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -57,13 +63,32 @@ function CategoriesScreen(): React.JSX.Element {
     }
     try {
       if (editingId) {
+        // Editing an existing category is never gated — see the same
+        // rule applied in AccountsScreen.
         await updateCategory(editingId, name.trim());
-      } else {
-        await addCategory(name.trim());
+        setFormVisible(false);
+        resetForm();
+        load();
+        return;
       }
-      setFormVisible(false);
-      resetForm();
-      load();
+
+      const performCreate = async () => {
+        await addCategory(name.trim());
+        setFormVisible(false);
+        resetForm();
+        load();
+      };
+
+      const userCategoryCount = await getUserCategoryCount();
+      const check = canAddCategory(userCategoryCount, tier);
+      if (!check.allowed) {
+        openPaywall({
+          reason: check.reason ?? 'Additional categories require Premium.',
+          onPurchaseSuccess: performCreate,
+        });
+        return;
+      }
+      await performCreate();
     } catch (error) {
       Alert.alert(
         'Cannot save category',

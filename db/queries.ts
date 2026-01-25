@@ -4,6 +4,7 @@ import { db } from './index';
 import {
   accountBalances,
   accounts,
+  appSettings,
   budgets,
   categories,
   categoryBudgets,
@@ -1513,6 +1514,88 @@ export async function getLoanPaymentsByYear(year: string) {
       `getLoanPaymentsByYear: failed to load loan payments for year=${year}`,
       error,
     );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/active-count?type=, keeping the same return
+// type. Counts ACTIVE accounts only — canAddAccount()'s free-tier slot
+// must not be occupied by a closed account, since closing one was the
+// user deliberately giving that slot back.
+export async function getActiveAccountCountByType(
+  type: string,
+): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(accounts)
+      .where(and(eq(accounts.type, type), eq(accounts.active, true)));
+    return row?.count ?? 0;
+  } catch (error) {
+    console.error(
+      `getActiveAccountCountByType: failed to count active accounts of type=${type}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/categories/user-count, keeping the same return type.
+// Excludes isSystemReserved categories (currently just "Bank") — the
+// free-tier category limit only ever counts categories the user actually
+// created.
+export async function getUserCategoryCount(): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(categories)
+      .where(eq(categories.isSystemReserved, false));
+    return row?.count ?? 0;
+  } catch (error) {
+    console.error(
+      'getUserCategoryCount: failed to count user (non-reserved) categories',
+      error,
+    );
+    throw error;
+  }
+}
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/settings, keeping the same return type. app_settings
+// is seeded with exactly one row (id=1) by ensureAppSettingsRow() in
+// db/index.ts, so this always resolves — the 'system' fallback only
+// covers the theoretical case where that seeding hasn't run yet.
+export async function getThemeMode(): Promise<ThemeMode> {
+  try {
+    const [row] = await db.select().from(appSettings).limit(1);
+    return row?.themeMode ?? 'system';
+  } catch (error) {
+    console.error('getThemeMode: failed to read theme mode', error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to PATCH /api/settings, keeping the same input shape. Updates the
+// singleton row in place; falls back to inserting it if seeding somehow
+// hasn't run yet, so this never silently no-ops.
+export async function setThemeMode(mode: ThemeMode): Promise<void> {
+  try {
+    const [row] = await db.select().from(appSettings).limit(1);
+    if (row) {
+      await db
+        .update(appSettings)
+        .set({ themeMode: mode })
+        .where(eq(appSettings.id, row.id));
+    } else {
+      await db.insert(appSettings).values({ themeMode: mode });
+    }
+  } catch (error) {
+    console.error('setThemeMode: failed to save theme mode', mode, error);
     throw error;
   }
 }

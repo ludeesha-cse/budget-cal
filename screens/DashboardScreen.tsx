@@ -26,6 +26,7 @@ import {
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
+import { useTheme } from '../contexts/ThemeContext';
 
 const DUE_SOON_WINDOW_DAYS = 7;
 
@@ -82,16 +83,21 @@ type CategoryBreakdownRow = {
   averageLeftPerDay: number | null;
 };
 
-function amountLeftStyleFor(spent: number, budgetAmount: number) {
+function amountLeftStyleFor(
+  spent: number,
+  budgetAmount: number,
+  colors: { danger: string; warning: string; success: string },
+) {
   const percentUsed = budgetAmount > 0 ? spent / budgetAmount : 0;
   return percentUsed > 1
-    ? styles.red
+    ? { color: colors.danger }
     : percentUsed >= 0.9
-      ? styles.amber
-      : styles.green;
+      ? { color: colors.warning }
+      : { color: colors.success };
 }
 
 function DashboardScreen(): React.JSX.Element {
+  const { colors } = useTheme();
   const [total, setTotal] = useState(0);
   const [totalIncome, setTotalIncome] = useState(0);
   const [budget, setBudget] = useState<
@@ -269,70 +275,90 @@ function DashboardScreen(): React.JSX.Element {
   const percentUsed =
     budget && budget.limitAmount > 0 ? total / budget.limitAmount : 0;
   const amountLeftStyle =
-    percentUsed > 1 ? styles.red : percentUsed >= 0.9 ? styles.amber : styles.green;
+    percentUsed > 1
+      ? { color: colors.danger }
+      : percentUsed >= 0.9
+        ? { color: colors.warning }
+        : { color: colors.success };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Dashboard</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.title, { color: colors.text }]}>Dashboard</Text>
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (
         <>
           {/* One line per currency — amounts are never summed across currencies. */}
-          <Text style={styles.subtitle}>Total cash in hand</Text>
+          <Text style={[styles.subtitle, { color: colors.text }]}>
+            Total cash in hand
+          </Text>
           {Object.keys(cashInHandByCurrency).length > 0 ? (
             Object.entries(cashInHandByCurrency)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([currencyCode, amount]) => (
-                <Text style={styles.row} key={currencyCode}>
+                <Text
+                  style={[styles.row, { color: colors.text }]}
+                  key={currencyCode}>
                   {currencyCode} {amount.toFixed(2)}
                 </Text>
               ))
           ) : (
-            <Text style={styles.row}>No cash accounts yet</Text>
+            <Text style={[styles.row, { color: colors.text }]}>
+              No cash accounts yet
+            </Text>
           )}
 
-          <Text style={[styles.row, styles.red]}>
+          <Text style={[styles.row, { color: colors.danger }]}>
             Credit card debt: {creditCardDebt.toFixed(2)}
           </Text>
-          <Text style={styles.row}>
+          <Text style={[styles.row, { color: colors.text }]}>
             Total spent this month: {total.toFixed(2)}
           </Text>
-          <Text style={[styles.row, styles.green]}>
+          <Text style={[styles.row, { color: colors.success }]}>
             Total income this month: {totalIncome.toFixed(2)}
           </Text>
           {budget && amountLeft !== null ? (
             <>
-              <Text style={styles.row}>
+              <Text style={[styles.row, { color: colors.text }]}>
                 Budget allocated: {budget.limitAmount.toFixed(2)}
               </Text>
               <Text style={[styles.row, amountLeftStyle]}>
                 Amount left: {amountLeft.toFixed(2)}
               </Text>
               {averageLeftPerDay !== null && (
-                <Text style={styles.row}>
+                <Text style={[styles.row, { color: colors.text }]}>
                   Average left per day: {averageLeftPerDay.toFixed(2)}
                 </Text>
               )}
             </>
           ) : (
-            <Text style={styles.row}>No budget set for this month yet</Text>
+            <Text style={[styles.row, { color: colors.text }]}>
+              No budget set for this month yet
+            </Text>
           )}
 
-          <Text style={styles.subtitle}>Liabilities &amp; Receivables</Text>
-          <Text style={[styles.row, styles.red]}>
+          <Text style={[styles.subtitle, { color: colors.text }]}>
+            Liabilities &amp; Receivables
+          </Text>
+          <Text style={[styles.row, { color: colors.danger }]}>
             Total owed: {formatCurrencyTotals(liabilityTotals)}
           </Text>
-          <Text style={[styles.row, styles.green]}>
+          <Text style={[styles.row, { color: colors.success }]}>
             Total owed to you: {formatCurrencyTotals(receivableTotals)}
           </Text>
           {upcomingLoans.length > 0 && (
-            <View style={styles.dueSoonBox}>
-              <Text style={styles.dueSoonTitle}>
+            <View
+              style={[
+                styles.dueSoonBox,
+                { backgroundColor: colors.surface, borderColor: colors.warning },
+              ]}>
+              <Text style={[styles.dueSoonTitle, { color: colors.warning }]}>
                 Due soon / overdue
               </Text>
               {upcomingLoans.map(loan => (
-                <Text key={loan.accountId} style={styles.dueSoonRow}>
+                <Text
+                  key={loan.accountId}
+                  style={[styles.dueSoonRow, { color: colors.textSecondary }]}>
                   {loan.daysUntilDue < 0
                     ? `Overdue by ${Math.abs(loan.daysUntilDue)}d`
                     : loan.daysUntilDue === 0
@@ -346,39 +372,48 @@ function DashboardScreen(): React.JSX.Element {
             </View>
           )}
 
-          <Text style={styles.subtitle}>By Category</Text>
+          <Text style={[styles.subtitle, { color: colors.text }]}>
+            By Category
+          </Text>
           <FlatList
             data={categoryBreakdown}
             keyExtractor={item => String(item.categoryId)}
             renderItem={({ item }) => (
-              <View style={styles.categoryRow}>
-                <Text style={styles.categoryName}>{item.categoryName}</Text>
-                <Text style={styles.row}>Spent: {item.spent.toFixed(2)}</Text>
+              <View
+                style={[styles.categoryRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.categoryName, { color: colors.text }]}>
+                  {item.categoryName}
+                </Text>
+                <Text style={[styles.row, { color: colors.text }]}>
+                  Spent: {item.spent.toFixed(2)}
+                </Text>
                 {item.budgetAmount !== null && item.amountLeft !== null ? (
                   <>
                     <Text
                       style={[
                         styles.row,
-                        amountLeftStyleFor(item.spent, item.budgetAmount),
+                        amountLeftStyleFor(item.spent, item.budgetAmount, colors),
                       ]}>
                       Left: {item.amountLeft.toFixed(2)}
                     </Text>
                     {item.averageLeftPerDay !== null && (
-                      <Text style={styles.row}>
+                      <Text style={[styles.row, { color: colors.text }]}>
                         Average left per day:{' '}
                         {item.averageLeftPerDay.toFixed(2)}
                       </Text>
                     )}
                   </>
                 ) : (
-                  <Text style={styles.row}>
+                  <Text style={[styles.row, { color: colors.text }]}>
                     No budget set for this category yet
                   </Text>
                 )}
               </View>
             )}
             ListEmptyComponent={
-              <Text style={styles.row}>No category activity this month.</Text>
+              <Text style={[styles.row, { color: colors.text }]}>
+                No category activity this month.
+              </Text>
             }
           />
         </>
@@ -435,17 +470,7 @@ const styles = StyleSheet.create({
   },
   dueSoonRow: {
     fontSize: 13,
-    color: '#4e342e',
     marginTop: 2,
-  },
-  green: {
-    color: '#2e7d32',
-  },
-  amber: {
-    color: '#f9a825',
-  },
-  red: {
-    color: '#c62828',
   },
 });
 

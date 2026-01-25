@@ -5,16 +5,14 @@
  * @format
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
 import {
-  ActivityIndicator,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+  DarkTheme as NavigationDarkTheme,
+  DefaultTheme as NavigationDefaultTheme,
+  NavigationContainer,
+} from '@react-navigation/native';
+import type { Theme as NavigationTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -32,6 +30,10 @@ import LiabilitiesReceivablesScreen from './screens/LiabilitiesReceivablesScreen
 import CategoriesScreen from './screens/CategoriesScreen';
 import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
+import PaywallModal from './screens/PaywallModal';
+import { EntitlementProvider } from './hooks/useEntitlement';
+import { PaywallProvider } from './contexts/PaywallContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import type {
   HistoryStackParamList,
   RootTabParamList,
@@ -65,7 +67,7 @@ function SettingsStackNavigator(): React.JSX.Element {
       <SettingsStack.Screen
         name="SettingsHome"
         component={SettingsHomeScreen}
-        options={{ title: 'Settings' }}
+        options={{ title: 'More' }}
       />
       <SettingsStack.Screen
         name="BudgetSettings"
@@ -101,8 +103,62 @@ function SettingsStackNavigator(): React.JSX.Element {
   );
 }
 
+// Split out from App so it can call useTheme() — that hook only works
+// inside ThemeProvider, which itself can only mount once the DB is ready
+// (see App's `ready` gate below), so this can't just live at the top of
+// App() alongside the loading-screen early returns.
+function AppShell(): React.JSX.Element {
+  const { scheme, colors } = useTheme();
+
+  // Maps our own token palette onto React Navigation's theme shape so the
+  // tab bar / header chrome and screen backgrounds follow the same
+  // light/dark choice as everything else, instead of defaulting to
+  // Navigation's built-in light theme regardless of `scheme`. Based on
+  // Navigation's own Default/Dark themes (rather than built from scratch)
+  // so the required `fonts` block comes along for free.
+  const navigationTheme: NavigationTheme = useMemo(() => {
+    const base = scheme === 'dark' ? NavigationDarkTheme : NavigationDefaultTheme;
+    return {
+      ...base,
+      dark: scheme === 'dark',
+      colors: {
+        ...base.colors,
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.primary,
+      },
+    };
+  }, [scheme, colors]);
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <NavigationContainer theme={navigationTheme}>
+        <Tab.Navigator>
+          <Tab.Screen name="Dashboard" component={DashboardScreen} />
+          <Tab.Screen
+            name="History"
+            component={HistoryStackNavigator}
+            options={{ headerShown: false }}
+          />
+          <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
+          <Tab.Screen name="Add" component={AddTransactionScreen} />
+          <Tab.Screen
+            name="Settings"
+            component={SettingsStackNavigator}
+            options={{ headerShown: false, tabBarLabel: 'More' }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+      <PaywallModal />
+    </SafeAreaProvider>
+  );
+}
+
 function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<Error | null>(null);
 
@@ -131,26 +187,18 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <NavigationContainer>
-        <Tab.Navigator>
-          <Tab.Screen name="Dashboard" component={DashboardScreen} />
-          <Tab.Screen
-            name="History"
-            component={HistoryStackNavigator}
-            options={{ headerShown: false }}
-          />
-          <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
-          <Tab.Screen name="Add" component={AddTransactionScreen} />
-          <Tab.Screen
-            name="Settings"
-            component={SettingsStackNavigator}
-            options={{ headerShown: false }}
-          />
-        </Tab.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    // EntitlementProvider and PaywallProvider wrap the whole navigator so
+    // any screen can call useEntitlement()/usePaywall() without prop
+    // drilling. ThemeProvider is mounted here (not earlier) because its
+    // initial getThemeMode() read assumes app_settings has already been
+    // seeded, which only happens once runMigrations() above has resolved.
+    <EntitlementProvider>
+      <PaywallProvider>
+        <ThemeProvider>
+          <AppShell />
+        </ThemeProvider>
+      </PaywallProvider>
+    </EntitlementProvider>
   );
 }
 
