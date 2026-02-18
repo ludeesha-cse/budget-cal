@@ -151,6 +151,28 @@ export const appSettings = sqliteTable('app_settings', {
     .$type<'light' | 'dark' | 'system'>(),
 });
 
+// One row per payoff payment against a credit card. Deliberately separate
+// from `transactions` — a payoff is money moving between two accounts
+// you already own, not a purchase, so it must never carry a category or
+// count toward a budget the way a real Expense would (the spending was
+// already recorded as an Expense when it happened; recording the payoff
+// too would double-count it).
+export const creditCardPayoffs = sqliteTable('credit_card_payoffs', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  creditCardAccountId: int('credit_card_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  payingAccountId: int('paying_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  amount: real('amount').notNull(),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  date: text('date').notNull(), // 'YYYY-MM-DD'
+  createdAt: int('created_at').notNull(),
+});
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

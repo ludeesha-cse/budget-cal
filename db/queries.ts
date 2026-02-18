@@ -8,6 +8,7 @@ import {
   budgets,
   categories,
   categoryBudgets,
+  creditCardPayoffs,
   currencies,
   loanDetails,
   loanPayments,
@@ -15,6 +16,7 @@ import {
 } from './schema';
 import { getCurrentDateString } from '../utils/date';
 import { getTotalOwed } from '../utils/interestCalculations';
+import { getBalanceDelta } from '../utils/balanceMath';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 
@@ -66,7 +68,11 @@ export async function getTransactions() {
 // to POST /api/transactions, keeping the same input/return shape. Used
 // for Expense entries; Income goes through addIncome instead, even
 // though the two share the same underlying insert shape — kept as
-// separate named functions per Stage 8's spec.
+// separate named functions per Stage 8's spec. No balance arithmetic
+// happens here — this just records the row; getNetSpentForAccount is
+// the only place that later decides what effect entryType has on the
+// balance (via getBalanceDelta in utils/balanceMath.ts), so there's
+// nothing here that could disagree with it.
 export async function addTransaction(data: NewTransaction) {
   try {
     return await db
@@ -87,9 +93,9 @@ export async function addTransaction(data: NewTransaction) {
 // shape. This is the single insert for the whole operation — account
 // balances are never stored as a running total, they're always derived
 // on read (getAccountBalance nets every transaction for the account
-// against its stored baseline), so there's no second write to
-// account_balances that could fall out of sync with this one: the
-// "balance effect" and "recording the transaction" are the same write.
+// against its stored baseline via getBalanceDelta), so there's no second
+// write to account_balances that could fall out of sync with this one:
+// the "balance effect" and "recording the transaction" are the same write.
 // categoryId is always written as null — Income never gets a category.
 export async function addIncome(data: NewIncome) {
   try {
@@ -292,7 +298,13 @@ export async function getTransactionById(
 }
 
 // If a backend is added later, replace this with fetch(PATCH
-// /api/transactions/:id), keeping the same input/return shape.
+// /api/transactions/:id), keeping the same input/return shape. There's no
+// "reverse the old effect, apply the new one" step here — unlike a stored
+// running-total balance, this app's balance is recomputed from scratch on
+// every read (getAccountBalance -> getNetSpentForAccount), so editing this
+// row is itself the entire update: the next read just nets a different
+// set of transactions and gets the right answer for free, through the
+// same getBalanceDelta direction logic as everything else.
 export async function updateTransaction(
   id: number,
   data: Partial<NewTransaction>,
@@ -305,7 +317,10 @@ export async function updateTransaction(
 }
 
 // If a backend is added later, replace this with fetch(DELETE
-// /api/transactions/:id), keeping the same return shape.
+// /api/transactions/:id), keeping the same return shape. Same reasoning
+// as updateTransaction above — deleting the row removes its effect from
+// the next getNetSpentForAccount computation automatically, since nothing
+// about the balance is ever stored per-transaction.
 export async function deleteTransaction(id: number) {
   return db.delete(transactions).where(eq(transactions.id, id)).returning();
 }
@@ -500,6 +515,34 @@ export async function deleteAccount(id: number): Promise<Account[]> {
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
+// Liability/Receivable accounts never carry ordinary transactions (their
+// balances belong entirely to createLoanAccount()/settleLoan()), so
+// getBalanceDelta refuses to answer for them. Both call sites below check
+// this first so a stray loan-type account never reaches getBalanceDelta
+// and throws where nothing used to throw.
+function isLoanManagedAccountType(accountType: string): boolean {
+  return accountType === 'Liability' || accountType === 'Receivable';
+}
+
+// getBalanceDelta speaks in real-world terms: for a CreditCard, "Expense"
+// means "you owe more," which it represents as a *positive* number. But
+// this app stores every account's balance as a single signed number in
+// account_balances, and for a CreditCard that stored number is the
+// negative of what's owed (see getTotalCreditCardDebt's final negation
+// below) — not the debt itself. So the real-world delta from
+// getBalanceDelta has to be flipped before it's applied to that stored
+// number. This is the only place that conversion happens; getBalanceDelta
+// is still the only place that decides which direction Expense/Income go
+// — this just translates that decision into the storage representation.
+function getStoredBalanceDelta(
+  accountType: string,
+  entryType: 'Expense' | 'Income',
+  amount: number,
+): number {
+  const realWorldDelta = getBalanceDelta(accountType, entryType, amount);
+  return accountType === CREDIT_CARD_TYPE ? -realWorldDelta : realWorldDelta;
+}
+
 // Net "spent" for one (account, currency) pair: Expense entries add to
 // it, Income entries subtract from it, so getAccountBalance can do a
 // single subtraction (openingBalance - netSpent) and have Income
@@ -507,14 +550,35 @@ const CREDIT_CARD_TYPE = 'CreditCard';
 // an Expense would. Now filtered by currencyId too — closing the "known
 // simplification" flagged back in Stage 7b/7c now that transactions
 // finally carry their own currency.
+//
+// Computed in JS (fetch rows, then reduce) rather than a SQL CASE
+// expression as before, specifically so the sign decision goes through
+// getStoredBalanceDelta/getBalanceDelta instead of being re-typed here —
+// this and updateAccountBalanceWithAudit are the only two places in the
+// app that ever decide which way an Expense/Income moves a balance, and
+// both now defer to the same function. netSpent is kept as its own
+// quantity (the negative of the total balance effect) purely because
+// getAccountBalance's "openingBalance - netSpent" shape, and
+// settleCreditCardAccount's use of this same return value as a new
+// baseline, both predate this refactor and still expect it.
 async function getNetSpentForAccount(
   accountId: number,
   currencyId: number,
 ): Promise<number> {
   try {
-    const [row] = await db
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .limit(1);
+    // Falls back to a plain asset account if the account row is somehow
+    // missing — matches the old SQL formula's behavior, which never
+    // looked at account type at all.
+    const accountType = account?.type ?? 'Bank';
+    const rows = await db
       .select({
-        total: sql<number>`sum(CASE WHEN ${transactions.entryType} = 'Expense' THEN ${transactions.amount} ELSE -${transactions.amount} END)`,
+        entryType: transactions.entryType,
+        amount: transactions.amount,
       })
       .from(transactions)
       .where(
@@ -523,7 +587,12 @@ async function getNetSpentForAccount(
           eq(transactions.currencyId, currencyId),
         ),
       );
-    return row?.total ?? 0;
+    const netBalanceEffect = rows.reduce(
+      (sum, row) =>
+        sum + getStoredBalanceDelta(accountType, row.entryType, row.amount),
+      0,
+    );
+    return -netBalanceEffect;
   } catch (error) {
     console.error(
       `getNetSpentForAccount: failed to compute net expense/income for account id=${accountId} currency id=${currencyId}`,
@@ -623,6 +692,28 @@ export async function getTotalCreditCardDebt(): Promise<number> {
   return -totalBalance;
 }
 
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/:id/credit-card-debt?currencyId=, keeping the
+// same return type. Single-card, single-currency version of
+// getTotalCreditCardDebt — same "stored balance is the negative of what's
+// owed" convention (see getStoredBalanceDelta above), just for one card
+// instead of summed across every card in the default currency.
+export async function getCreditCardDebt(
+  accountId: number,
+  currencyId: number,
+): Promise<number> {
+  try {
+    const balance = await getAccountBalance(accountId, currencyId);
+    return -balance;
+  } catch (error) {
+    console.error(
+      `getCreditCardDebt: failed to compute debt for account id=${accountId} currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
 // If a backend is added later, replace this with fetch(POST
 // /api/accounts/:id/settle), keeping the same return type. Settling a
 // credit card doesn't delete its transaction history — it raises the
@@ -704,14 +795,39 @@ export async function updateAccountBalanceWithAudit(
       return;
     }
     const bankCategoryId = await getOrCreateBankCategoryId();
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .limit(1);
+    const accountType = account?.type ?? 'Bank';
+    // Same direction rule getNetSpentForAccount reads forward (entryType
+    // -> stored delta), used backward here (desired delta -> entryType):
+    // whichever entryType makes getStoredBalanceDelta produce this exact
+    // signed delta is the one that belongs on the audit transaction.
+    // Liability/Receivable accounts are excluded from that lookup — same
+    // accounts getBalanceDelta refuses to handle — and fall back to the
+    // plain sign check so a stray loan-type account (never expected here,
+    // but not guarded against before this refactor either) keeps behaving
+    // exactly as it did before, instead of suddenly throwing.
+    const amount = Math.abs(delta);
+    const entryType: 'Expense' | 'Income' = isLoanManagedAccountType(
+      accountType,
+    )
+      ? delta > 0
+        ? 'Income'
+        : 'Expense'
+      : getStoredBalanceDelta(accountType, 'Income', amount) === delta
+        ? 'Income'
+        : 'Expense';
     await db.insert(transactions).values({
       accountId,
-      amount: Math.abs(delta),
+      amount,
       categoryId: bankCategoryId,
       description: description.trim(),
       date: getCurrentDateString(),
       currencyId,
-      entryType: delta > 0 ? 'Income' : 'Expense',
+      entryType,
       createdAt: Date.now(),
     });
     const [existingBalanceRow] = await db
@@ -1434,6 +1550,102 @@ export async function settleLoan(params: SettleLoanParams): Promise<void> {
   } catch (error) {
     console.error(
       `settleLoan: failed to settle a payment of ${params.paymentAmount} against loan account id=${params.loanAccountId}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+export type PayOffCreditCardParams = {
+  creditCardAccountId: number;
+  payingAccountId: number;
+  amount: number;
+  currencyId: number;
+  date: string; // 'YYYY-MM-DD'
+};
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/credit-cards/:id/payoffs), keeping the same input/return shape.
+// Moves `amount` off the card's debt and out of the paying account in one
+// atomic step, using the same baseline-shifting trick as settleLoan
+// (shiftAccountBaselineWithin) rather than posting an Expense/Income
+// transaction — a payoff isn't new spending or income, it's money moving
+// between two accounts the user already owns, and the purchases it's
+// paying down were already expensed (and already counted toward a
+// budget) when they happened. Recording this as a transaction too would
+// double-count them. Never closes the card even if this pays it off
+// exactly to zero — unlike a settled loan, a paid-off credit card's
+// normal resting state is active, ready for the next purchase.
+export async function payOffCreditCard(
+  params: PayOffCreditCardParams,
+): Promise<void> {
+  try {
+    if (params.amount <= 0) {
+      throw new Error('Enter a payment amount greater than zero.');
+    }
+    const [creditCardAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, params.creditCardAccountId))
+      .limit(1);
+    if (!creditCardAccount || creditCardAccount.type !== CREDIT_CARD_TYPE) {
+      throw new Error('That account is not a credit card.');
+    }
+    const [payingAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, params.payingAccountId))
+      .limit(1);
+    if (!payingAccount) {
+      throw new Error('The paying account no longer exists.');
+    }
+    if (payingAccount.type === CREDIT_CARD_TYPE) {
+      throw new Error(
+        'You cannot pay off a credit card with another credit card.',
+      );
+    }
+    const currentDebt = await getCreditCardDebt(
+      params.creditCardAccountId,
+      params.currencyId,
+    );
+    if (params.amount > currentDebt) {
+      throw new Error(
+        `That payment (${params.amount.toFixed(2)}) is more than the ` +
+          `current debt (${currentDebt.toFixed(2)}). Overpaying a card ` +
+          'into a credit balance is not supported.',
+      );
+    }
+    await db.transaction(async tx => {
+      // Paying down debt raises the card's stored balance toward zero
+      // (that balance is the negative of what's owed — see
+      // getStoredBalanceDelta above) and drains the paying account by the
+      // same amount, the same two-sided move settleLoan makes for a loan
+      // repayment.
+      await shiftAccountBaselineWithin(
+        tx,
+        params.creditCardAccountId,
+        params.currencyId,
+        params.amount,
+      );
+      await shiftAccountBaselineWithin(
+        tx,
+        params.payingAccountId,
+        params.currencyId,
+        -params.amount,
+      );
+      await tx.insert(creditCardPayoffs).values({
+        creditCardAccountId: params.creditCardAccountId,
+        payingAccountId: params.payingAccountId,
+        amount: params.amount,
+        currencyId: params.currencyId,
+        date: params.date,
+        createdAt: Date.now(),
+      });
+    });
+  } catch (error) {
+    console.error(
+      `payOffCreditCard: failed to pay off ${params.amount} against credit card account id=${params.creditCardAccountId}`,
       params,
       error,
     );

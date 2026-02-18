@@ -26,6 +26,7 @@ import {
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
+import { getNetWorthByCurrency, NetWorthByCurrency } from '../utils/netWorth';
 import { useTheme } from '../contexts/ThemeContext';
 
 const DUE_SOON_WINDOW_DAYS = 7;
@@ -121,6 +122,9 @@ function DashboardScreen(): React.JSX.Element {
     Record<string, number>
   >({});
   const [upcomingLoans, setUpcomingLoans] = useState<UpcomingLoanRow[]>([]);
+  const [netWorthByCurrency, setNetWorthByCurrency] = useState<
+    Record<string, NetWorthByCurrency>
+  >({});
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -141,6 +145,7 @@ function DashboardScreen(): React.JSX.Element {
         getTransactionsByMonth(month),
         getActiveLoanAccounts('Liability'),
         getActiveLoanAccounts('Receivable'),
+        getNetWorthByCurrency(),
       ]).then(
         async ([
           monthlyTotal,
@@ -155,6 +160,7 @@ function DashboardScreen(): React.JSX.Element {
           monthTransactions,
           liabilities,
           receivables,
+          netWorth,
         ]) => {
           // Expense-only, same as getMonthlyTotal — an Income entry
           // filed under a category shouldn't reduce how "spent" it looks.
@@ -262,6 +268,7 @@ function DashboardScreen(): React.JSX.Element {
             setLiabilityTotals(totalsByCurrency(liabilitiesWithTotals));
             setReceivableTotals(totalsByCurrency(receivablesWithTotals));
             setUpcomingLoans(upcoming);
+            setNetWorthByCurrency(netWorth);
             setLoading(false);
           }
         },
@@ -373,6 +380,46 @@ function DashboardScreen(): React.JSX.Element {
           )}
 
           <Text style={[styles.subtitle, { color: colors.text }]}>
+            Net Worth
+          </Text>
+          {Object.keys(netWorthByCurrency).length > 0 ? (
+            Object.values(netWorthByCurrency)
+              .sort((a, b) => a.currencyCode.localeCompare(b.currencyCode))
+              .map(row => (
+                <View
+                  key={row.currencyCode}
+                  style={[
+                    styles.netWorthBox,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}>
+                  <Text style={[styles.netWorthCurrency, { color: colors.text }]}>
+                    {row.currencyCode}
+                  </Text>
+                  <Text style={[styles.row, { color: colors.success }]}>
+                    Assets: {row.assets.toFixed(2)}
+                  </Text>
+                  <Text style={[styles.row, { color: colors.danger }]}>
+                    Liabilities: {row.liabilities.toFixed(2)}
+                  </Text>
+                  <Text style={[styles.row, { color: colors.danger }]}>
+                    Credit card debt: {row.creditCardDebt.toFixed(2)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.netWorthTotal,
+                      { color: row.netWorth >= 0 ? colors.success : colors.danger },
+                    ]}>
+                    Net worth: {row.netWorth.toFixed(2)}
+                  </Text>
+                </View>
+              ))
+          ) : (
+            <Text style={[styles.row, { color: colors.text }]}>
+              No accounts to calculate net worth from yet
+            </Text>
+          )}
+
+          <Text style={[styles.subtitle, { color: colors.text }]}>
             By Category
           </Text>
           <FlatList
@@ -467,6 +514,22 @@ const styles = StyleSheet.create({
   dueSoonRow: {
     fontSize: 13,
     marginTop: 2,
+  },
+  netWorthBox: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 8,
+  },
+  netWorthCurrency: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  netWorthTotal: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 4,
   },
 });
 

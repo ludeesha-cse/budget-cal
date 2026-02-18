@@ -78,6 +78,13 @@
       "when": 1785481929662,
       "tag": "0010_add_app_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785494233949,
+      "tag": "0011_add_credit_card_payoffs",
+      "breakpoints": true
     }
   ]
 }

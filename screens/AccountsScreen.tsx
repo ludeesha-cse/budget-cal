@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +12,11 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import PremiumGate from '../components/PremiumGate';
 import {
   addAccountWithBalance,
   addCurrencyToAccount,
@@ -22,6 +27,7 @@ import {
   getActiveAccountCountByType,
   getAccounts,
   getCurrencies,
+  payOffCreditCard,
   updateAccount,
   updateAccountBalanceWithAudit,
 } from '../db/queries';
@@ -30,6 +36,7 @@ import { usePaywall } from '../contexts/PaywallContext';
 import { canAddAccount } from '../utils/entitlementChecks';
 import { FREE_ACCOUNT_TYPES } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatDateString } from '../utils/date';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -39,6 +46,13 @@ const ACCOUNT_TYPES = [
   'Receivable',
   'Liability',
 ] as const;
+
+const CREDIT_CARD_TYPE = 'CreditCard';
+
+// Only ordinary asset accounts can fund a card payoff — paying a credit
+// card off with another credit card, a liability, or a receivable isn't
+// a real payment, it's just moving debt around.
+const PAYOFF_SOURCE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type AccountBalanceRow = Awaited<
@@ -84,6 +98,21 @@ function AccountsScreen(): React.JSX.Element {
   const [updateBalanceNewValue, setUpdateBalanceNewValue] = useState('');
   const [updateBalanceDescription, setUpdateBalanceDescription] =
     useState('');
+
+  // Separate from the generic Update Balance modal above — a payoff moves
+  // real money out of a paying account via payOffCreditCard(), it doesn't
+  // just overwrite a stored number the way an audit correction does.
+  const [payOffTarget, setPayOffTarget] = useState<{
+    accountId: number;
+    accountName: string;
+    currencyId: number;
+    currencyCode: string;
+    currentDebt: number;
+  } | null>(null);
+  const [payOffAmount, setPayOffAmount] = useState('');
+  const [payOffPayingAccountId, setPayOffPayingAccountId] = useState('');
+  const [payOffDate, setPayOffDate] = useState(formatDateString(new Date()));
+  const [showPayOffDatePicker, setShowPayOffDatePicker] = useState(false);
 
   const load = useCallback(async () => {
     const [rows, currencyRows] = await Promise.all([
@@ -340,9 +369,94 @@ function AccountsScreen(): React.JSX.Element {
     }
   };
 
+  const openPayOffCard = (
+    account: AccountWithBalances,
+    balance: AccountBalanceRow,
+  ) => {
+    // The card's stored balance is the negative of what's owed (see
+    // db/queries.ts's getCreditCardDebt) — currentBalance is already
+    // computed via getAccountBalance in load(), so no extra DB round trip
+    // is needed just to show the debt here.
+    const currentDebt = -balance.currentBalance;
+    const eligiblePayingAccounts = activeAccounts.filter(
+      a => a.id !== account.id && PAYOFF_SOURCE_ACCOUNT_TYPES.includes(a.type),
+    );
+    const eligiblePayingAccount = eligiblePayingAccounts.find(a =>
+      a.balances.some(b => b.currencyId === balance.currencyId),
+    );
+    setPayOffTarget({
+      accountId: account.id,
+      accountName: account.name,
+      currencyId: balance.currencyId,
+      currencyCode: balance.currencyCode,
+      currentDebt,
+    });
+    setPayOffAmount('');
+    setPayOffPayingAccountId(
+      eligiblePayingAccount ? String(eligiblePayingAccount.id) : '',
+    );
+    setPayOffDate(formatDateString(new Date()));
+    setShowPayOffDatePicker(false);
+  };
+
+  const handlePayOffDateChange = (
+    _event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (selectedDate) {
+      setPayOffDate(formatDateString(selectedDate));
+    }
+    if (Platform.OS === 'android') {
+      setShowPayOffDatePicker(false);
+    }
+  };
+
+  const handlePayOffSubmit = async () => {
+    if (!payOffTarget) {
+      return;
+    }
+    const parsedAmount = Number(payOffAmount);
+    if (!payOffAmount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert('Invalid amount', 'Enter a payment amount greater than zero.');
+      return;
+    }
+    if (!payOffPayingAccountId) {
+      Alert.alert(
+        'Select a paying account',
+        'Choose the Bank, Cash, or Crypto Wallet account this payment is coming from.',
+      );
+      return;
+    }
+    try {
+      await payOffCreditCard({
+        creditCardAccountId: payOffTarget.accountId,
+        payingAccountId: Number(payOffPayingAccountId),
+        amount: parsedAmount,
+        currencyId: payOffTarget.currencyId,
+        date: payOffDate,
+      });
+      setPayOffTarget(null);
+      load();
+    } catch (error) {
+      Alert.alert(
+        'Cannot pay off card',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
   // Closed accounts stay in the DB (and in `accounts` state, for anything
   // that still needs to look one up) but drop out of the visible list.
   const activeAccounts = accounts.filter(a => a.active);
+
+  const payOffPayingAccountOptions = payOffTarget
+    ? activeAccounts.filter(
+        a =>
+          a.id !== payOffTarget.accountId &&
+          PAYOFF_SOURCE_ACCOUNT_TYPES.includes(a.type) &&
+          a.balances.some(b => b.currencyId === payOffTarget.currencyId),
+      )
+    : [];
 
   return (
     <ScrollView
@@ -440,10 +554,9 @@ function AccountsScreen(): React.JSX.Element {
             const availableCurrencies = currencies.filter(
               c => !item.balances.some(b => b.currencyId === c.id),
             );
-            return (
-              <View
-                key={item.id}
-                style={[styles.rowContainer, { borderBottomColor: colors.border }]}>
+            const isCreditCard = item.type === CREDIT_CARD_TYPE;
+            const rowContent = (
+              <>
                 <View style={styles.row}>
                   <View style={styles.rowDetails}>
                     <Text style={[styles.rowName, { color: colors.text }]}>
@@ -463,7 +576,9 @@ function AccountsScreen(): React.JSX.Element {
                                 styles.balanceChip,
                                 { borderColor: colors.primary, color: colors.primary },
                               ]}>
-                              {b.currencyCode} {b.currentBalance.toFixed(2)}
+                              {isCreditCard
+                                ? `${b.currencyCode} owes ${(-b.currentBalance).toFixed(2)}`
+                                : `${b.currencyCode} ${b.currentBalance.toFixed(2)}`}
                             </Text>
                           </Pressable>
                         ))}
@@ -492,6 +607,19 @@ function AccountsScreen(): React.JSX.Element {
                     />
                   </View>
                 </View>
+
+                {isCreditCard && item.balances.length > 0 && (
+                  <View style={styles.payOffRow}>
+                    {item.balances.map(b => (
+                      <Button
+                        key={b.currencyId}
+                        title={`Pay Off Card (${b.currencyCode})`}
+                        color={colors.primary}
+                        onPress={() => openPayOffCard(item, b)}
+                      />
+                    ))}
+                  </View>
+                )}
 
                 <Pressable onPress={() => toggleAddCurrency(item.id)}>
                   <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
@@ -541,6 +669,19 @@ function AccountsScreen(): React.JSX.Element {
                       </>
                     )}
                   </View>
+                )}
+              </>
+            );
+            return (
+              <View
+                key={item.id}
+                style={[styles.rowContainer, { borderBottomColor: colors.border }]}>
+                {isCreditCard ? (
+                  <PremiumGate label="Credit cards are a Premium feature.">
+                    {rowContent}
+                  </PremiumGate>
+                ) : (
+                  rowContent
                 )}
               </View>
             );
@@ -604,6 +745,129 @@ function AccountsScreen(): React.JSX.Element {
                     title="Save"
                     color={colors.primary}
                     onPress={handleUpdateBalanceSubmit}
+                  />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={payOffTarget != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPayOffTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            {payOffTarget && (
+              <>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Pay off {payOffTarget.accountName} ({payOffTarget.currencyCode})
+                </Text>
+                <Text style={[styles.modalCurrent, { color: colors.danger }]}>
+                  Current debt: {payOffTarget.currentDebt.toFixed(2)}{' '}
+                  {payOffTarget.currencyCode}
+                </Text>
+
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Pay from
+                </Text>
+                {payOffPayingAccountOptions.length === 0 ? (
+                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                    No eligible Bank, Cash, or Crypto Wallet account with a
+                    balance in {payOffTarget.currencyCode} was found.
+                  </Text>
+                ) : (
+                  <CollapsiblePicker
+                    displayLabel={
+                      payOffPayingAccountOptions.find(
+                        a => String(a.id) === payOffPayingAccountId,
+                      )?.name ?? 'Select account'
+                    }
+                    selectedValue={payOffPayingAccountId}
+                    onValueChange={setPayOffPayingAccountId}
+                    items={payOffPayingAccountOptions.map(a => ({
+                      label: `${a.name} (${a.type})`,
+                      value: String(a.id),
+                    }))}
+                  />
+                )}
+
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Amount
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                  ]}
+                  value={payOffAmount}
+                  onChangeText={setPayOffAmount}
+                  keyboardType="numeric"
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textSecondary}
+                />
+
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Date
+                </Text>
+                <View style={styles.payOffDateRow}>
+                  <View style={styles.dueDateButton}>
+                    <Button
+                      title={payOffDate}
+                      color={colors.primary}
+                      onPress={() => setShowPayOffDatePicker(true)}
+                    />
+                  </View>
+                </View>
+                {Platform.OS === 'android' ? (
+                  showPayOffDatePicker && (
+                    <DateTimePicker
+                      value={new Date(payOffDate)}
+                      mode="date"
+                      display="default"
+                      onChange={handlePayOffDateChange}
+                    />
+                  )
+                ) : (
+                  <Modal
+                    visible={showPayOffDatePicker}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setShowPayOffDatePicker(false)}>
+                    <Pressable
+                      style={styles.modalBackdrop}
+                      onPress={() => setShowPayOffDatePicker(false)}>
+                      <Pressable
+                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                        onPress={() => {}}>
+                        <DateTimePicker
+                          value={new Date(payOffDate)}
+                          mode="date"
+                          display="spinner"
+                          onChange={handlePayOffDateChange}
+                        />
+                        <Button
+                          title="Done"
+                          color={colors.primary}
+                          onPress={() => setShowPayOffDatePicker(false)}
+                        />
+                      </Pressable>
+                    </Pressable>
+                  </Modal>
+                )}
+
+                <View style={styles.formActions}>
+                  <Button
+                    title="Cancel"
+                    color={colors.primary}
+                    onPress={() => setPayOffTarget(null)}
+                  />
+                  <Button
+                    title="Pay Off"
+                    color={colors.primary}
+                    onPress={handlePayOffSubmit}
                   />
                 </View>
               </>
@@ -714,6 +978,19 @@ const styles = StyleSheet.create({
   modalCurrent: {
     fontSize: 14,
     marginBottom: 4,
+  },
+  payOffRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  payOffDateRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+  },
+  dueDateButton: {
+    flex: 1,
   },
 });
 

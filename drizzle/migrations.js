@@ -12,6 +12,7 @@ import m0007 from './0007_add_loan_details_and_loan_payments.sql';
 import m0008 from './0008_make_transaction_category_nullable.sql';
 import m0009 from './0009_add_category_system_reserved.sql';
 import m0010 from './0010_add_app_settings.sql';
+import m0011 from './0011_add_credit_card_payoffs.sql';
 
   export default {
     journal,
@@ -26,7 +27,8 @@ m0006,
 m0007,
 m0008,
 m0009,
-m0010
+m0010,
+m0011
     }
   }
   
