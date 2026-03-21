@@ -85,6 +85,13 @@
       "when": 1785494233949,
       "tag": "0011_add_credit_card_payoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785507181616,
+      "tag": "0012_add_transfers",
+      "breakpoints": true
     }
   ]
 }

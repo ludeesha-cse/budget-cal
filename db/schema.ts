@@ -173,6 +173,29 @@ export const creditCardPayoffs = sqliteTable('credit_card_payoffs', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per account-to-account transfer. Deliberately separate from
+// `transactions` — moving money between two accounts you already own is
+// neither spending (Expense) nor income (Income), so it must never carry
+// a category or count toward a budget. Same shape/reasoning as
+// `creditCardPayoffs` above; both are "money movement" events rather
+// than transactions, and both get merged into the History list display
+// without affecting spending totals.
+export const transfers = sqliteTable('transfers', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  fromAccountId: int('from_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  toAccountId: int('to_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  amount: real('amount').notNull(),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  date: text('date').notNull(), // 'YYYY-MM-DD'
+  createdAt: int('created_at').notNull(),
+});
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

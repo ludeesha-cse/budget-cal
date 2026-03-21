@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -21,12 +21,14 @@ import {
   addAccountWithBalance,
   addCurrencyToAccount,
   closeAccount,
+  createTransfer,
   deleteAccount,
   getAccountBalance,
   getAccountBalances,
   getActiveAccountCountByType,
   getAccounts,
   getCurrencies,
+  getTransferableAccounts,
   payOffCreditCard,
   updateAccount,
   updateAccountBalanceWithAudit,
@@ -114,6 +116,22 @@ function AccountsScreen(): React.JSX.Element {
   const [payOffDate, setPayOffDate] = useState(formatDateString(new Date()));
   const [showPayOffDatePicker, setShowPayOffDatePicker] = useState(false);
 
+  // Transfers are a free-tier feature (Stage 11) — no PremiumGate around
+  // any of this, unlike the credit-card state above.
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferFromOptions, setTransferFromOptions] = useState<
+    Awaited<ReturnType<typeof getTransferableAccounts>>
+  >([]);
+  const [transferFromAccountId, setTransferFromAccountId] = useState('');
+  const [transferCurrencyId, setTransferCurrencyId] = useState('');
+  const [transferToOptions, setTransferToOptions] = useState<
+    Awaited<ReturnType<typeof getTransferableAccounts>>
+  >([]);
+  const [transferToAccountId, setTransferToAccountId] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferDate, setTransferDate] = useState(formatDateString(new Date()));
+  const [showTransferDatePicker, setShowTransferDatePicker] = useState(false);
+
   const load = useCallback(async () => {
     const [rows, currencyRows] = await Promise.all([
       getAccounts(),
@@ -143,6 +161,38 @@ function AccountsScreen(): React.JSX.Element {
       load();
     }, [load]),
   );
+
+  // Switching the from-account resets currency/to-account rather than
+  // leaving a stale, possibly-invalid selection — mirrors
+  // TransactionForm's account-switch effect (Stage 7c).
+  useEffect(() => {
+    setTransferCurrencyId('');
+    setTransferToAccountId('');
+  }, [transferFromAccountId]);
+
+  // Re-fetches the to-account list from the query layer itself (not
+  // derived from local state) every time the chosen currency changes —
+  // this is the exact call the build order specifies
+  // (getTransferableAccounts(currencyId)), so the currency-holding filter
+  // is always the query's own rules, not a client-side re-guess of them.
+  useEffect(() => {
+    if (!transferCurrencyId) {
+      setTransferToOptions([]);
+      return;
+    }
+    let cancelled = false;
+    getTransferableAccounts(Number(transferCurrencyId)).then(rows => {
+      if (cancelled) {
+        return;
+      }
+      setTransferToOptions(
+        rows.filter(row => String(row.id) !== transferFromAccountId),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [transferCurrencyId, transferFromAccountId]);
 
   const defaultCurrencyId = () => {
     const defaultCurrency = currencies.find(c => c.isDefault);
@@ -445,6 +495,90 @@ function AccountsScreen(): React.JSX.Element {
     }
   };
 
+  const openTransferModal = async () => {
+    setTransferFromAccountId('');
+    setTransferCurrencyId('');
+    setTransferToAccountId('');
+    setTransferAmount('');
+    setTransferDate(formatDateString(new Date()));
+    setShowTransferDatePicker(false);
+    const options = await getTransferableAccounts();
+    setTransferFromOptions(options);
+    setTransferModalVisible(true);
+  };
+
+  const handleTransferDateChange = (
+    _event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (selectedDate) {
+      setTransferDate(formatDateString(selectedDate));
+    }
+    if (Platform.OS === 'android') {
+      setShowTransferDatePicker(false);
+    }
+  };
+
+  const performTransfer = async (amount: number) => {
+    try {
+      await createTransfer({
+        fromAccountId: Number(transferFromAccountId),
+        toAccountId: Number(transferToAccountId),
+        amount,
+        currencyId: Number(transferCurrencyId),
+        date: transferDate,
+      });
+      setTransferModalVisible(false);
+      load();
+    } catch (error) {
+      Alert.alert(
+        'Cannot transfer',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
+  const handleTransferSubmit = () => {
+    if (!transferFromAccountId || !transferToAccountId || !transferCurrencyId) {
+      Alert.alert(
+        'Missing information',
+        'Select both accounts and a currency.',
+      );
+      return;
+    }
+    const parsedAmount = Number(transferAmount);
+    if (!transferAmount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert(
+        'Invalid amount',
+        'Enter a transfer amount greater than zero.',
+      );
+      return;
+    }
+    // Real accounts can go negative — this is a warning, not a hard
+    // block, per the Stage 11 spec. Computed from the same currentBalance
+    // already loaded for display, not a fresh query.
+    const fromAccount = accounts.find(
+      a => String(a.id) === transferFromAccountId,
+    );
+    const fromBalance =
+      fromAccount?.balances.find(
+        b => String(b.currencyId) === transferCurrencyId,
+      )?.currentBalance ?? 0;
+    const resultingBalance = fromBalance - parsedAmount;
+    if (resultingBalance < 0) {
+      Alert.alert(
+        'This will leave the account negative',
+        `This will leave ${fromAccount?.name ?? 'the account'} at ${resultingBalance.toFixed(2)}. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', onPress: () => performTransfer(parsedAmount) },
+        ],
+      );
+      return;
+    }
+    performTransfer(parsedAmount);
+  };
+
   // Closed accounts stay in the DB (and in `accounts` state, for anything
   // that still needs to look one up) but drop out of the visible list.
   const activeAccounts = accounts.filter(a => a.active);
@@ -541,7 +675,10 @@ function AccountsScreen(): React.JSX.Element {
           </View>
         </View>
       ) : (
-        <Button title="Add Account" color={colors.primary} onPress={handleAddPress} />
+        <View style={styles.topActionsRow}>
+          <Button title="Add Account" color={colors.primary} onPress={handleAddPress} />
+          <Button title="Transfer" color={colors.primary} onPress={openTransferModal} />
+        </View>
       )}
 
       <View style={styles.list}>
@@ -875,6 +1012,201 @@ function AccountsScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={transferModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTransferModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Transfer between accounts
+            </Text>
+
+            <Text style={[styles.label, { color: colors.text }]}>From</Text>
+            {transferFromOptions.length === 0 ? (
+              <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                No Bank, Cash, or Crypto Wallet accounts available.
+              </Text>
+            ) : (
+              <CollapsiblePicker
+                displayLabel={
+                  transferFromOptions.find(
+                    a => String(a.id) === transferFromAccountId,
+                  )?.name ?? 'Select account'
+                }
+                selectedValue={transferFromAccountId}
+                onValueChange={setTransferFromAccountId}
+                items={transferFromOptions.map(a => ({
+                  label: `${a.name} (${a.type})`,
+                  value: String(a.id),
+                }))}
+              />
+            )}
+
+            {transferFromAccountId ? (
+              <>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Currency
+                </Text>
+                {(() => {
+                  const fromAccount = accounts.find(
+                    a => String(a.id) === transferFromAccountId,
+                  );
+                  const fromCurrencyOptions = fromAccount?.balances ?? [];
+                  return fromCurrencyOptions.length === 0 ? (
+                    <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                      This account has no currency balances yet.
+                    </Text>
+                  ) : (
+                    <CollapsiblePicker
+                      displayLabel={
+                        fromCurrencyOptions.find(
+                          b => String(b.currencyId) === transferCurrencyId,
+                        )?.currencyCode ?? 'Select currency'
+                      }
+                      selectedValue={transferCurrencyId}
+                      onValueChange={setTransferCurrencyId}
+                      items={fromCurrencyOptions.map(b => ({
+                        label: `${b.currencyCode} — ${b.currencyName}`,
+                        value: String(b.currencyId),
+                      }))}
+                    />
+                  );
+                })()}
+              </>
+            ) : null}
+
+            {transferCurrencyId ? (
+              <>
+                <Text style={[styles.label, { color: colors.text }]}>To</Text>
+                {transferToOptions.length === 0 ? (
+                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                    No other account holds this currency yet.
+                  </Text>
+                ) : (
+                  <CollapsiblePicker
+                    displayLabel={
+                      transferToOptions.find(
+                        a => String(a.id) === transferToAccountId,
+                      )?.name ?? 'Select account'
+                    }
+                    selectedValue={transferToAccountId}
+                    onValueChange={setTransferToAccountId}
+                    items={transferToOptions.map(a => ({
+                      label: `${a.name} (${a.type})`,
+                      value: String(a.id),
+                    }))}
+                  />
+                )}
+              </>
+            ) : null}
+
+            {transferFromAccountId && transferCurrencyId && (
+              <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
+                {(() => {
+                  const fromAccount = accounts.find(
+                    a => String(a.id) === transferFromAccountId,
+                  );
+                  const fromBalanceRow = fromAccount?.balances.find(
+                    b => String(b.currencyId) === transferCurrencyId,
+                  );
+                  const toAccount = transferToAccountId
+                    ? accounts.find(a => String(a.id) === transferToAccountId)
+                    : undefined;
+                  const toBalanceRow = toAccount?.balances.find(
+                    b => String(b.currencyId) === transferCurrencyId,
+                  );
+                  const currencyCode = fromBalanceRow?.currencyCode ?? '';
+                  const fromLine = `${fromAccount?.name ?? 'From'}: ${
+                    fromBalanceRow?.currentBalance?.toFixed(2) ?? '—'
+                  } ${currencyCode}`;
+                  const toLine = toAccount
+                    ? `  ·  ${toAccount.name}: ${
+                        toBalanceRow?.currentBalance?.toFixed(2) ?? '—'
+                      } ${currencyCode}`
+                    : '';
+                  return `${fromLine}${toLine}`;
+                })()}
+              </Text>
+            )}
+
+            <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
+            <TextInput
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
+              value={transferAmount}
+              onChangeText={setTransferAmount}
+              keyboardType="numeric"
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+
+            <Text style={[styles.label, { color: colors.text }]}>Date</Text>
+            <View style={styles.payOffDateRow}>
+              <View style={styles.dueDateButton}>
+                <Button
+                  title={transferDate}
+                  color={colors.primary}
+                  onPress={() => setShowTransferDatePicker(true)}
+                />
+              </View>
+            </View>
+            {Platform.OS === 'android' ? (
+              showTransferDatePicker && (
+                <DateTimePicker
+                  value={new Date(transferDate)}
+                  mode="date"
+                  display="default"
+                  onChange={handleTransferDateChange}
+                />
+              )
+            ) : (
+              <Modal
+                visible={showTransferDatePicker}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowTransferDatePicker(false)}>
+                <Pressable
+                  style={styles.modalBackdrop}
+                  onPress={() => setShowTransferDatePicker(false)}>
+                  <Pressable
+                    style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                    onPress={() => {}}>
+                    <DateTimePicker
+                      value={new Date(transferDate)}
+                      mode="date"
+                      display="spinner"
+                      onChange={handleTransferDateChange}
+                    />
+                    <Button
+                      title="Done"
+                      color={colors.primary}
+                      onPress={() => setShowTransferDatePicker(false)}
+                    />
+                  </Pressable>
+                </Pressable>
+              </Modal>
+            )}
+
+            <View style={styles.formActions}>
+              <Button
+                title="Cancel"
+                color={colors.primary}
+                onPress={() => setTransferModalVisible(false)}
+              />
+              <Button
+                title="Transfer"
+                color={colors.primary}
+                onPress={handleTransferSubmit}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -888,6 +1220,10 @@ const styles = StyleSheet.create({
   },
   form: {
     marginBottom: 16,
+  },
+  topActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
   label: {
     fontSize: 14,
