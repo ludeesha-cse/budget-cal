@@ -90,6 +90,14 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       </Pressable>
       <Pressable
         style={[styles.row, { borderBottomColor: colors.border }]}
+        onPress={() => navigation.navigate('InstallmentPlans')}>
+        <Text style={[styles.rowLabel, { color: colors.text }]}>
+          Installments
+        </Text>
+        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.row, { borderBottomColor: colors.border }]}
         onPress={() => navigation.navigate('AppSettings')}>
         <Text style={[styles.rowLabel, { color: colors.text }]}>
           App Settings

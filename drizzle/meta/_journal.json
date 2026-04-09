@@ -92,6 +92,13 @@
       "when": 1785507181616,
       "tag": "0012_add_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1785508066316,
+      "tag": "0013_add_installment_plans",
+      "breakpoints": true
     }
   ]
 }

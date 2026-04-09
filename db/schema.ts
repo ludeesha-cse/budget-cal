@@ -196,6 +196,36 @@ export const transfers = sqliteTable('transfers', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per installment plan (Stage 12a: schedule only, no payment
+// tracking yet — that's Stage 12b). Both principalAmount and
+// interestRate are nullable because a plan created in "Mode B" (a fixed
+// monthly amount the user already knows, e.g. a phone installment plan)
+// never has either value — there's no principal/rate to derive the
+// schedule from, only a monthly figure and a count. monthlyAmount,
+// finalInstallmentAmount, and totalRepayable are computed once at
+// creation time by utils/installmentMath.ts and stored here rather than
+// recomputed on every read, so an existing plan's numbers never drift if
+// the calculation itself changes later — the schedule a user agreed to
+// is exactly the schedule that stays on screen.
+export const installmentPlans = sqliteTable('installment_plans', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  principalAmount: int('principal_amount'), // nullable — only set for Mode A (principal + rate) plans
+  interestRate: int('interest_rate'), // nullable, rate × 100 (10% is 1000) — same convention as loan_details.interestRate
+  numberOfMonths: int('number_of_months').notNull(),
+  monthlyAmount: int('monthly_amount').notNull(),
+  finalInstallmentAmount: int('final_installment_amount').notNull(),
+  totalRepayable: int('total_repayable').notNull(),
+  categoryId: int('category_id')
+    .notNull()
+    .references(() => categories.id),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  startDate: text('start_date').notNull(), // 'YYYY-MM-DD'
+  createdAt: int('created_at').notNull(),
+});
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

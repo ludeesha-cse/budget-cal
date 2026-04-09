@@ -31,6 +31,7 @@ import LiabilitiesReceivablesScreen from './screens/LiabilitiesReceivablesScreen
 import CategoriesScreen from './screens/CategoriesScreen';
 import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
+import InstallmentPlansScreen from './screens/InstallmentPlansScreen';
 import PaywallModal from './screens/PaywallModal';
 import { EntitlementProvider } from './hooks/useEntitlement';
 import { PaywallProvider } from './contexts/PaywallContext';
@@ -104,6 +105,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="AppSettings"
         component={AppSettingsScreen}
         options={{ title: 'App Settings' }}
+      />
+      <SettingsStack.Screen
+        name="InstallmentPlans"
+        component={InstallmentPlansScreen}
+        options={{ title: 'Installment Plans' }}
       />
     </SettingsStack.Navigator>
   );

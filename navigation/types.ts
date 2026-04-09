@@ -14,6 +14,7 @@ export type SettingsStackParamList = {
   CategoryBudgets: undefined;
   Currencies: undefined;
   AppSettings: undefined;
+  InstallmentPlans: undefined;
 };
 
 export type RootTabParamList = {

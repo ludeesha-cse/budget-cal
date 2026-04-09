@@ -10,6 +10,7 @@ import {
   categoryBudgets,
   creditCardPayoffs,
   currencies,
+  installmentPlans,
   loanDetails,
   loanPayments,
   transactions,
@@ -18,6 +19,10 @@ import {
 import { getCurrentDateString } from '../utils/date';
 import { getTotalOwed } from '../utils/interestCalculations';
 import { getBalanceDelta } from '../utils/balanceMath';
+import {
+  calculateFromMonthly,
+  calculateFromPrincipal,
+} from '../utils/installmentMath';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 
@@ -27,6 +32,7 @@ type Account = typeof accounts.$inferSelect;
 type Category = typeof categories.$inferSelect;
 type CategoryBudget = typeof categoryBudgets.$inferSelect;
 type Currency = typeof currencies.$inferSelect;
+type InstallmentPlan = typeof installmentPlans.$inferSelect;
 
 export type NewTransaction = {
   accountId: number;
@@ -2246,6 +2252,198 @@ export async function setThemeMode(mode: ThemeMode): Promise<void> {
     }
   } catch (error) {
     console.error('setThemeMode: failed to save theme mode', mode, error);
+    throw error;
+  }
+}
+
+// Mode A (principal + rate) and Mode B (a known flat monthly amount)
+// share every field except how the schedule is derived — a tagged union
+// keeps the two call shapes from being confused with each other (e.g.
+// passing a rate that gets silently ignored in Mode B).
+export type NewInstallmentPlanParams = {
+  name: string;
+  numberOfMonths: number;
+  categoryId: number;
+  currencyId: number;
+  startDate: string; // 'YYYY-MM-DD'
+} & (
+  | { mode: 'principal'; principalAmount: number; interestRate: number }
+  | { mode: 'monthly'; monthlyAmount: number }
+);
+
+function scheduleForInstallmentPlan(params: NewInstallmentPlanParams) {
+  return params.mode === 'principal'
+    ? calculateFromPrincipal(
+        params.principalAmount,
+        params.interestRate,
+        params.numberOfMonths,
+      )
+    : calculateFromMonthly(params.monthlyAmount, params.numberOfMonths);
+}
+
+// Placeholder until Stage 12b adds a payments table for installment
+// plans — no such table exists in this commit, so a plan can never
+// actually have a recorded payment yet, and this always returns false.
+// Both updateInstallmentPlan and deleteInstallmentPlan already call this
+// exact function for their "reject if payments exist" guard, so Stage
+// 12b only has to replace this one implementation with a real query
+// against the new payments table — neither call site needs to change.
+async function installmentPlanHasPayments(_planId: number): Promise<boolean> {
+  return false;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/installment-plans), keeping the same input/return shape. Computes
+// the schedule once via utils/installmentMath.ts and stores every
+// resulting number — see installment_plans' schema comment for why that
+// beats recomputing on every read. Creates NO transaction and changes NO
+// account balance: Stage 12a is schedule-only, nothing has been paid yet.
+export async function createInstallmentPlan(
+  params: NewInstallmentPlanParams,
+): Promise<InstallmentPlan> {
+  try {
+    if (!params.name.trim()) {
+      throw new Error('A name is required for the installment plan.');
+    }
+    if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
+      throw new Error('Number of months must be a whole number greater than zero.');
+    }
+    const schedule = scheduleForInstallmentPlan(params);
+    const [plan] = await db
+      .insert(installmentPlans)
+      .values({
+        name: params.name.trim(),
+        principalAmount:
+          params.mode === 'principal' ? params.principalAmount : null,
+        interestRate: params.mode === 'principal' ? params.interestRate : null,
+        numberOfMonths: params.numberOfMonths,
+        monthlyAmount: schedule.monthlyAmount,
+        finalInstallmentAmount: schedule.finalInstallmentAmount,
+        totalRepayable: schedule.totalRepayable,
+        categoryId: params.categoryId,
+        currencyId: params.currencyId,
+        startDate: params.startDate,
+        createdAt: Date.now(),
+      })
+      .returning();
+    return plan;
+  } catch (error) {
+    console.error(
+      'createInstallmentPlan: failed to create installment plan',
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/installment-plans, keeping the same return shape.
+// "Paid 0 of N" (Stage 12a always shows 0 — payment tracking is Stage
+// 12b) is computed by the screen from numberOfMonths, not stored here.
+export async function getInstallmentPlans() {
+  try {
+    return await db
+      .select({
+        id: installmentPlans.id,
+        name: installmentPlans.name,
+        principalAmount: installmentPlans.principalAmount,
+        interestRate: installmentPlans.interestRate,
+        numberOfMonths: installmentPlans.numberOfMonths,
+        monthlyAmount: installmentPlans.monthlyAmount,
+        finalInstallmentAmount: installmentPlans.finalInstallmentAmount,
+        totalRepayable: installmentPlans.totalRepayable,
+        categoryId: installmentPlans.categoryId,
+        categoryName: categories.name,
+        currencyId: installmentPlans.currencyId,
+        currencyCode: currencies.code,
+        startDate: installmentPlans.startDate,
+        createdAt: installmentPlans.createdAt,
+      })
+      .from(installmentPlans)
+      .innerJoin(categories, eq(installmentPlans.categoryId, categories.id))
+      .innerJoin(currencies, eq(installmentPlans.currencyId, currencies.id))
+      .orderBy(desc(installmentPlans.createdAt));
+  } catch (error) {
+    console.error(
+      'getInstallmentPlans: failed to load installment plans',
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PATCH
+// /api/installment-plans/:id), keeping the same input/return shape.
+// Recomputes the whole schedule from the new inputs — exactly like
+// createInstallmentPlan — but only once installmentPlanHasPayments
+// confirms nothing has been paid against this plan yet. Editing a
+// schedule that already has recorded payments against the OLD schedule
+// would silently corrupt whatever "remaining balance" Stage 12b computes
+// from it, so this rejects instead of guessing how to reconcile the two.
+export async function updateInstallmentPlan(
+  id: number,
+  params: NewInstallmentPlanParams,
+): Promise<void> {
+  try {
+    const hasPayments = await installmentPlanHasPayments(id);
+    if (hasPayments) {
+      throw new Error(
+        'This plan already has recorded payments — delete and recreate it instead of editing the schedule.',
+      );
+    }
+    if (!params.name.trim()) {
+      throw new Error('A name is required for the installment plan.');
+    }
+    if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
+      throw new Error('Number of months must be a whole number greater than zero.');
+    }
+    const schedule = scheduleForInstallmentPlan(params);
+    await db
+      .update(installmentPlans)
+      .set({
+        name: params.name.trim(),
+        principalAmount:
+          params.mode === 'principal' ? params.principalAmount : null,
+        interestRate: params.mode === 'principal' ? params.interestRate : null,
+        numberOfMonths: params.numberOfMonths,
+        monthlyAmount: schedule.monthlyAmount,
+        finalInstallmentAmount: schedule.finalInstallmentAmount,
+        totalRepayable: schedule.totalRepayable,
+        categoryId: params.categoryId,
+        currencyId: params.currencyId,
+        startDate: params.startDate,
+      })
+      .where(eq(installmentPlans.id, id));
+  } catch (error) {
+    console.error(
+      `updateInstallmentPlan: failed to update installment plan id=${id}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(DELETE
+// /api/installment-plans/:id), keeping the same return shape. No payments
+// table exists yet in this commit, so installmentPlanHasPayments always
+// says no — but the guard is already here and already wired in, ready
+// for Stage 12b to make it real.
+export async function deleteInstallmentPlan(id: number): Promise<void> {
+  try {
+    const hasPayments = await installmentPlanHasPayments(id);
+    if (hasPayments) {
+      throw new Error(
+        'This plan has recorded payments and cannot be deleted.',
+      );
+    }
+    await db.delete(installmentPlans).where(eq(installmentPlans.id, id));
+  } catch (error) {
+    console.error(
+      `deleteInstallmentPlan: failed to delete installment plan id=${id}`,
+      error,
+    );
     throw error;
   }
 }
