@@ -19,9 +19,13 @@ import CollapsiblePicker from '../components/CollapsiblePicker';
 import {
   createInstallmentPlan,
   deleteInstallmentPlan,
+  getAccounts,
   getCategories,
   getCurrencies,
+  getInstallmentPayments,
   getInstallmentPlans,
+  payInstallment,
+  unpayInstallment,
   updateInstallmentPlan,
   type NewInstallmentPlanParams,
 } from '../db/queries';
@@ -38,6 +42,8 @@ import { formatDateString } from '../utils/date';
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+type PaymentRow = Awaited<ReturnType<typeof getInstallmentPayments>>[number];
+type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 type Mode = 'principal' | 'monthly';
 
@@ -49,6 +55,20 @@ function InstallmentPlansScreen(): React.JSX.Element {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  // Keyed by plan id — fetched for every plan up front (plan counts are
+  // small in a personal tracker) so "paid X of N", the next amount due,
+  // and the remaining total can all be computed without a per-row async
+  // call every render.
+  const [paymentsByPlan, setPaymentsByPlan] = useState<
+    Record<number, PaymentRow[]>
+  >({});
+  const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
+
+  const [payTarget, setPayTarget] = useState<PlanRow | null>(null);
+  const [payAccountId, setPayAccountId] = useState('');
+  const [payDate, setPayDate] = useState(formatDateString(new Date()));
+  const [showPayDatePicker, setShowPayDatePicker] = useState(false);
 
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -68,14 +88,23 @@ function InstallmentPlansScreen(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [planRows, categoryRows, currencyRows] = await Promise.all([
-      getInstallmentPlans(),
-      getCategories(),
-      getCurrencies(),
-    ]);
+    const [planRows, categoryRows, currencyRows, accountRows] =
+      await Promise.all([
+        getInstallmentPlans(),
+        getCategories(),
+        getCurrencies(),
+        getAccounts(),
+      ]);
     setPlans(planRows);
     setCategories(categoryRows);
     setCurrencies(currencyRows);
+    setAccounts(accountRows);
+    const paymentEntries = await Promise.all(
+      planRows.map(
+        async plan => [plan.id, await getInstallmentPayments(plan.id)] as const,
+      ),
+    );
+    setPaymentsByPlan(Object.fromEntries(paymentEntries));
   }, []);
 
   useFocusEffect(
@@ -334,6 +363,105 @@ function InstallmentPlansScreen(): React.JSX.Element {
     );
   };
 
+  // paidCount + 1 is always the next unpaid installment number: payInstallment
+  // only ever pays getNextUnpaidInstallmentNumber's answer, and
+  // unpayInstallment only ever removes the highest-numbered payment, so the
+  // paid set is always exactly {1..paidCount} — a contiguous prefix, never
+  // a gap. That invariant is what makes this safe to compute from the
+  // payments array's length alone, without a second round trip to the
+  // query layer just to display it.
+  const paidCountFor = (planId: number) => (paymentsByPlan[planId] ?? []).length;
+
+  const paidAmountFor = (planId: number) =>
+    (paymentsByPlan[planId] ?? []).reduce((sum, payment) => sum + payment.amount, 0);
+
+  const remainingFor = (plan: PlanRow) =>
+    plan.totalRepayable - paidAmountFor(plan.id);
+
+  const nextAmountDueFor = (plan: PlanRow): number | null => {
+    const paidCount = paidCountFor(plan.id);
+    if (paidCount >= plan.numberOfMonths) {
+      return null;
+    }
+    const nextNumber = paidCount + 1;
+    return nextNumber === plan.numberOfMonths
+      ? plan.finalInstallmentAmount
+      : plan.monthlyAmount;
+  };
+
+  const activeAccounts = accounts.filter(a => a.active);
+
+  const openPayModal = (plan: PlanRow) => {
+    setPayTarget(plan);
+    setPayAccountId(activeAccounts[0] ? String(activeAccounts[0].id) : '');
+    setPayDate(formatDateString(new Date()));
+    setShowPayDatePicker(false);
+  };
+
+  const handlePayDateChange = (
+    _event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (selectedDate) {
+      setPayDate(formatDateString(selectedDate));
+    }
+    if (Platform.OS === 'android') {
+      setShowPayDatePicker(false);
+    }
+  };
+
+  const handlePaySubmit = async () => {
+    if (!payTarget) {
+      return;
+    }
+    if (!payAccountId) {
+      Alert.alert(
+        'Select an account',
+        'Choose which account is paying this installment.',
+      );
+      return;
+    }
+    try {
+      await payInstallment({
+        planId: payTarget.id,
+        accountId: Number(payAccountId),
+        date: payDate,
+      });
+      setPayTarget(null);
+      load();
+    } catch (err) {
+      Alert.alert(
+        'Cannot pay installment',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  };
+
+  const handleUndo = (payment: PaymentRow) => {
+    Alert.alert(
+      'Undo payment',
+      `Undo installment ${payment.installmentNumber}? This deletes its transaction and restores the account balance.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Undo',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await unpayInstallment(payment.id);
+              load();
+            } catch (err) {
+              Alert.alert(
+                'Cannot undo payment',
+                err instanceof Error ? err.message : String(err),
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {!formVisible && (
@@ -344,38 +472,104 @@ function InstallmentPlansScreen(): React.JSX.Element {
         data={plans}
         keyExtractor={item => String(item.id)}
         style={styles.list}
-        renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <View style={styles.rowDetails}>
-              <Text style={[styles.rowName, { color: colors.text }]}>
-                {item.name}
-              </Text>
-              <Text style={{ color: colors.textSecondary }}>
-                {item.categoryName} · {item.currencyCode}
-              </Text>
-              <Text style={[styles.rowLine, { color: colors.text }]}>
-                {item.currencyCode} {item.monthlyAmount.toFixed(0)}/mo · Paid 0
-                of {item.numberOfMonths}
-              </Text>
-              <Text style={{ color: colors.textSecondary }}>
-                Total repayable: {item.currencyCode}{' '}
-                {item.totalRepayable.toFixed(0)}
-              </Text>
+        renderItem={({ item }) => {
+          const paidCount = paidCountFor(item.id);
+          const isFullyPaid = paidCount >= item.numberOfMonths;
+          const nextAmountDue = nextAmountDueFor(item);
+          const remaining = remainingFor(item);
+          const payments = paymentsByPlan[item.id] ?? [];
+          const isExpanded = expandedPlanId === item.id;
+          return (
+            <View style={[styles.row, { borderBottomColor: colors.border }]}>
+              <View style={styles.rowDetails}>
+                <Text style={[styles.rowName, { color: colors.text }]}>
+                  {item.name}
+                </Text>
+                <Text style={{ color: colors.textSecondary }}>
+                  {item.categoryName} · {item.currencyCode}
+                </Text>
+                <Text style={[styles.rowLine, { color: colors.text }]}>
+                  {isFullyPaid ? (
+                    <Text style={[styles.fullyPaidText, { color: colors.success }]}>
+                      ✓ Fully paid
+                    </Text>
+                  ) : (
+                    `Paid ${paidCount} of ${item.numberOfMonths} · Next due: ${item.currencyCode} ${nextAmountDue?.toFixed(0)}`
+                  )}
+                </Text>
+                <Text style={{ color: colors.textSecondary }}>
+                  Remaining: {item.currencyCode} {remaining.toFixed(0)} of{' '}
+                  {item.totalRepayable.toFixed(0)}
+                </Text>
+
+                <Pressable
+                  onPress={() =>
+                    setExpandedPlanId(isExpanded ? null : item.id)
+                  }>
+                  <Text style={[styles.historyLink, { color: colors.primary }]}>
+                    {isExpanded
+                      ? 'Hide history'
+                      : `History (${payments.length})`}
+                  </Text>
+                </Pressable>
+
+                {isExpanded && (
+                  <View style={styles.historyList}>
+                    {payments.length === 0 ? (
+                      <Text style={{ color: colors.textSecondary }}>
+                        No payments yet.
+                      </Text>
+                    ) : (
+                      payments.map((payment, index) => {
+                        const isLatest = index === payments.length - 1;
+                        return (
+                          <View
+                            key={payment.id}
+                            style={[
+                              styles.historyRow,
+                              { borderBottomColor: colors.border },
+                            ]}>
+                            <Text style={{ color: colors.text }}>
+                              #{payment.installmentNumber} — {payment.paidDate}{' '}
+                              — {item.currencyCode} {payment.amount.toFixed(0)}{' '}
+                              ({payment.accountName})
+                            </Text>
+                            {isLatest && (
+                              <Button
+                                title="Undo"
+                                color={colors.danger}
+                                onPress={() => handleUndo(payment)}
+                              />
+                            )}
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                )}
+              </View>
+              <View style={styles.rowActions}>
+                {!isFullyPaid && (
+                  <Button
+                    title="Pay Next"
+                    color={colors.primary}
+                    onPress={() => openPayModal(item)}
+                  />
+                )}
+                <Button
+                  title="Edit"
+                  color={colors.primary}
+                  onPress={() => handleEditPress(item)}
+                />
+                <Button
+                  title="Delete"
+                  color={colors.danger}
+                  onPress={() => handleDelete(item.id)}
+                />
+              </View>
             </View>
-            <View style={styles.rowActions}>
-              <Button
-                title="Edit"
-                color={colors.primary}
-                onPress={() => handleEditPress(item)}
-              />
-              <Button
-                title="Delete"
-                color={colors.danger}
-                onPress={() => handleDelete(item.id)}
-              />
-            </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
             No installment plans yet.
@@ -652,6 +846,109 @@ function InstallmentPlansScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={payTarget != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPayTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            {payTarget && (
+              <>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Pay installment {paidCountFor(payTarget.id) + 1} of{' '}
+                  {payTarget.numberOfMonths} — {payTarget.name}
+                </Text>
+                <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
+                  Amount: {payTarget.currencyCode}{' '}
+                  {nextAmountDueFor(payTarget)?.toFixed(0)}
+                </Text>
+
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Pay from
+                </Text>
+                {activeAccounts.length === 0 ? (
+                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                    No active accounts available.
+                  </Text>
+                ) : (
+                  <CollapsiblePicker
+                    displayLabel={
+                      activeAccounts.find(a => String(a.id) === payAccountId)
+                        ?.name ?? 'Select account'
+                    }
+                    selectedValue={payAccountId}
+                    onValueChange={setPayAccountId}
+                    items={activeAccounts.map(a => ({
+                      label: `${a.name} (${a.type})`,
+                      value: String(a.id),
+                    }))}
+                  />
+                )}
+
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Date
+                </Text>
+                <Button
+                  title={payDate}
+                  color={colors.primary}
+                  onPress={() => setShowPayDatePicker(true)}
+                />
+                {Platform.OS === 'android' ? (
+                  showPayDatePicker && (
+                    <DateTimePicker
+                      value={new Date(payDate)}
+                      mode="date"
+                      display="default"
+                      onChange={handlePayDateChange}
+                    />
+                  )
+                ) : (
+                  <Modal
+                    visible={showPayDatePicker}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setShowPayDatePicker(false)}>
+                    <Pressable
+                      style={styles.modalBackdrop}
+                      onPress={() => setShowPayDatePicker(false)}>
+                      <Pressable
+                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                        onPress={() => {}}>
+                        <DateTimePicker
+                          value={new Date(payDate)}
+                          mode="date"
+                          display="spinner"
+                          onChange={handlePayDateChange}
+                        />
+                        <Button
+                          title="Done"
+                          color={colors.primary}
+                          onPress={() => setShowPayDatePicker(false)}
+                        />
+                      </Pressable>
+                    </Pressable>
+                  </Modal>
+                )}
+
+                <View style={styles.formActions}>
+                  <Button
+                    title="Cancel"
+                    color={colors.primary}
+                    onPress={() => setPayTarget(null)}
+                  />
+                  <Button
+                    title="Pay"
+                    color={colors.primary}
+                    onPress={handlePaySubmit}
+                  />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -686,7 +983,30 @@ const styles = StyleSheet.create({
   },
   rowActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 4,
+  },
+  historyLink: {
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  historyList: {
+    marginTop: 4,
+    gap: 4,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalHint: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  fullyPaidText: {
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,

@@ -99,6 +99,13 @@
       "when": 1785508066316,
       "tag": "0013_add_installment_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1785508888167,
+      "tag": "0014_add_installment_payments",
+      "breakpoints": true
     }
   ]
 }

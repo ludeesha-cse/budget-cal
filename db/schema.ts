@@ -226,6 +226,43 @@ export const installmentPlans = sqliteTable('installment_plans', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per installment actually paid against a plan (Stage 12b).
+// Deliberately references a real `transactions` row (unlike
+// creditCardPayoffs/transfers/loanPayments above) — an installment
+// payment IS genuine spending against the plan's category and currency,
+// so it must show up in History, count toward the category's budget, and
+// move the paying account's balance the normal way. This table exists
+// only to track WHICH installment number a given transaction paid off,
+// so the schedule can be ticked off and reversed without guessing from
+// the transaction row alone. The unique index is the enforcement
+// mechanism for "the same installment can never be recorded twice" —
+// relying on application logic alone would leave a window for a race or
+// a bug to double-book installment 3, say.
+export const installmentPayments = sqliteTable(
+  'installment_payments',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    installmentPlanId: int('installment_plan_id')
+      .notNull()
+      .references(() => installmentPlans.id),
+    installmentNumber: int('installment_number').notNull(), // 1-based
+    accountId: int('account_id')
+      .notNull()
+      .references(() => accounts.id), // the paying account chosen at tick-off
+    transactionId: int('transaction_id')
+      .notNull()
+      .references(() => transactions.id),
+    paidDate: text('paid_date').notNull(), // 'YYYY-MM-DD'
+    createdAt: int('created_at').notNull(),
+  },
+  table => ({
+    planInstallmentUnique: uniqueIndex('plan_installment_unique').on(
+      table.installmentPlanId,
+      table.installmentNumber,
+    ),
+  }),
+);
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

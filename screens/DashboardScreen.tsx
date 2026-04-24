@@ -404,6 +404,9 @@ function DashboardScreen(): React.JSX.Element {
                   <Text style={[styles.row, { color: colors.danger }]}>
                     Credit card debt: {row.creditCardDebt.toFixed(2)}
                   </Text>
+                  <Text style={[styles.row, { color: colors.danger }]}>
+                    Remaining installments: {row.remainingInstallments.toFixed(2)}
+                  </Text>
                   <Text
                     style={[
                       styles.netWorthTotal,
