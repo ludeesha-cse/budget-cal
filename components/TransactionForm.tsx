@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Button,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +18,9 @@ import DateTimePicker, {
 import { formatDateString } from '../utils/date';
 import { getAccountBalances, getAccounts, getCategories } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from './NumericInputAccessory';
 import { useTheme } from '../contexts/ThemeContext';
 
 // Liability/Receivable accounts are managed exclusively through the loan
@@ -291,7 +295,14 @@ function TransactionForm({
       )}
 
       <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-      <Button title={date} color={colors.primary} onPress={() => setShowDatePicker(true)} />
+      <Button
+        title={date}
+        color={colors.primary}
+        onPress={() => {
+          Keyboard.dismiss();
+          setShowDatePicker(true);
+        }}
+      />
       {Platform.OS === 'android' ? (
         showDatePicker && (
           <DateTimePicker
@@ -338,9 +349,12 @@ function TransactionForm({
         value={amount}
         onChangeText={setAmount}
         keyboardType="numeric"
+        returnKeyType="done"
+        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
         placeholder="0.00"
         placeholderTextColor={colors.textSecondary}
       />
+      <NumericInputAccessory />
 
       <Text style={[styles.label, { color: colors.text }]}>Category</Text>
       <CollapsiblePicker

@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,9 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 import {
   createInstallmentPlan,
   deleteInstallmentPlan,
@@ -582,7 +586,7 @@ function InstallmentPlansScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setFormVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
           <View
             style={[
               styles.modalCard,
@@ -663,6 +667,8 @@ function InstallmentPlansScreen(): React.JSX.Element {
                         value={principalAmount}
                         onChangeText={setPrincipalAmount}
                         keyboardType="numeric"
+                        returnKeyType="done"
+                        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                         placeholder="100000"
                         placeholderTextColor={colors.textSecondary}
                       />
@@ -678,6 +684,8 @@ function InstallmentPlansScreen(): React.JSX.Element {
                         value={interestRatePercent}
                         onChangeText={setInterestRatePercent}
                         keyboardType="numeric"
+                        returnKeyType="done"
+                        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                         placeholder="10"
                         placeholderTextColor={colors.textSecondary}
                       />
@@ -695,6 +703,8 @@ function InstallmentPlansScreen(): React.JSX.Element {
                         value={monthlyAmountInput}
                         onChangeText={setMonthlyAmountInput}
                         keyboardType="numeric"
+                        returnKeyType="done"
+                        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                         placeholder="5000"
                         placeholderTextColor={colors.textSecondary}
                       />
@@ -712,6 +722,8 @@ function InstallmentPlansScreen(): React.JSX.Element {
                     value={numberOfMonths}
                     onChangeText={setNumberOfMonths}
                     keyboardType="numeric"
+                    returnKeyType="done"
+                    inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                     placeholder="12"
                     placeholderTextColor={colors.textSecondary}
                   />
@@ -750,7 +762,10 @@ function InstallmentPlansScreen(): React.JSX.Element {
                   <Button
                     title={startDate}
                     color={colors.primary}
-                    onPress={() => setShowDatePicker(true)}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setShowDatePicker(true);
+                    }}
                   />
                   {Platform.OS === 'android' ? (
                     showDatePicker && (
@@ -840,11 +855,12 @@ function InstallmentPlansScreen(): React.JSX.Element {
                       onPress={handleSubmit}
                     />
                   </View>
+                  <NumericInputAccessory />
                 </View>
               )}
             />
           </View>
-        </View>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -852,7 +868,7 @@ function InstallmentPlansScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setPayTarget(null)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {payTarget && (
               <>
@@ -893,7 +909,10 @@ function InstallmentPlansScreen(): React.JSX.Element {
                 <Button
                   title={payDate}
                   color={colors.primary}
-                  onPress={() => setShowPayDatePicker(true)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowPayDatePicker(true);
+                  }}
                 />
                 {Platform.OS === 'android' ? (
                   showPayDatePicker && (
@@ -947,8 +966,10 @@ function InstallmentPlansScreen(): React.JSX.Element {
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
+
+      <NumericInputAccessory />
     </View>
   );
 }

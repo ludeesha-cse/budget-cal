@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,9 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 import PremiumGate from '../components/PremiumGate';
 import {
   addAccountWithBalance,
@@ -652,6 +656,8 @@ function AccountsScreen(): React.JSX.Element {
                 value={initialBalance}
                 onChangeText={setInitialBalance}
                 keyboardType="numeric"
+                returnKeyType="done"
+                inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                 placeholder="0.00"
                 placeholderTextColor={colors.textSecondary}
               />
@@ -795,6 +801,8 @@ function AccountsScreen(): React.JSX.Element {
                           value={addCurrencyBalance}
                           onChangeText={setAddCurrencyBalance}
                           keyboardType="numeric"
+                          returnKeyType="done"
+                          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                           placeholder="Starting balance"
                           placeholderTextColor={colors.textSecondary}
                         />
@@ -831,7 +839,9 @@ function AccountsScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setUpdateBalanceTarget(null)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {updateBalanceTarget && (
               <>
@@ -854,6 +864,8 @@ function AccountsScreen(): React.JSX.Element {
                   value={updateBalanceNewValue}
                   onChangeText={setUpdateBalanceNewValue}
                   keyboardType="numeric"
+                  returnKeyType="done"
+                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                   placeholder="0.00"
                   placeholderTextColor={colors.textSecondary}
                 />
@@ -884,10 +896,16 @@ function AccountsScreen(): React.JSX.Element {
                     onPress={handleUpdateBalanceSubmit}
                   />
                 </View>
+                {/* Rendered inside this Modal (not just once at screen
+                    level) because RN's Modal presents its content in a
+                    separate native window on iOS — an InputAccessoryView
+                    mounted outside the Modal never gets attached to a
+                    TextInput focused inside it. */}
+                <NumericInputAccessory />
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -895,7 +913,9 @@ function AccountsScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setPayOffTarget(null)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {payOffTarget && (
               <>
@@ -942,6 +962,8 @@ function AccountsScreen(): React.JSX.Element {
                   value={payOffAmount}
                   onChangeText={setPayOffAmount}
                   keyboardType="numeric"
+                  returnKeyType="done"
+                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                   placeholder="0.00"
                   placeholderTextColor={colors.textSecondary}
                 />
@@ -954,7 +976,10 @@ function AccountsScreen(): React.JSX.Element {
                     <Button
                       title={payOffDate}
                       color={colors.primary}
-                      onPress={() => setShowPayOffDatePicker(true)}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowPayOffDatePicker(true);
+                      }}
                     />
                   </View>
                 </View>
@@ -1007,10 +1032,11 @@ function AccountsScreen(): React.JSX.Element {
                     onPress={handlePayOffSubmit}
                   />
                 </View>
+                <NumericInputAccessory />
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -1018,7 +1044,9 @@ function AccountsScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setTransferModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <Text style={[styles.label, { color: colors.text }]}>
               Transfer between accounts
@@ -1141,6 +1169,8 @@ function AccountsScreen(): React.JSX.Element {
               value={transferAmount}
               onChangeText={setTransferAmount}
               keyboardType="numeric"
+              returnKeyType="done"
+              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
               placeholder="0.00"
               placeholderTextColor={colors.textSecondary}
             />
@@ -1151,7 +1181,10 @@ function AccountsScreen(): React.JSX.Element {
                 <Button
                   title={transferDate}
                   color={colors.primary}
-                  onPress={() => setShowTransferDatePicker(true)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowTransferDatePicker(true);
+                  }}
                 />
               </View>
             </View>
@@ -1204,9 +1237,12 @@ function AccountsScreen(): React.JSX.Element {
                 onPress={handleTransferSubmit}
               />
             </View>
+            <NumericInputAccessory />
           </View>
-        </View>
+        </Pressable>
       </Modal>
+
+      <NumericInputAccessory />
     </ScrollView>
   );
 }

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Button,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,9 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 import { formatDateString, getCurrentDateString } from '../utils/date';
 import {
   createLoanAccount,
@@ -574,6 +578,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             value={principal}
             onChangeText={setPrincipal}
             keyboardType="numeric"
+            returnKeyType="done"
+            inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
             placeholder="0.00"
             placeholderTextColor={colors.textSecondary}
           />
@@ -610,7 +616,10 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               <Button
                 title={dueDate ?? 'Not set'}
                 color={colors.primary}
-                onPress={() => setShowDueDatePicker(true)}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setShowDueDatePicker(true);
+                }}
               />
             </View>
             {dueDate && (
@@ -669,6 +678,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             value={interestRate}
             onChangeText={setInterestRate}
             keyboardType="numeric"
+            returnKeyType="done"
+            inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
             placeholder="e.g. 5.5"
             placeholderTextColor={colors.textSecondary}
           />
@@ -709,7 +720,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={closeSettle}>
-        <View style={styles.modalBackdrop}>
+        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {settleTarget && (
               <>
@@ -735,6 +746,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   value={settlePaymentAmount}
                   onChangeText={setSettlePaymentAmount}
                   keyboardType="numeric"
+                  returnKeyType="done"
+                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                   placeholder="0.00"
                   placeholderTextColor={colors.textSecondary}
                 />
@@ -769,11 +782,14 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   <Button title="Cancel" color={colors.primary} onPress={closeSettle} />
                   <Button title="Save" color={colors.primary} onPress={handleSettleSubmit} />
                 </View>
+                <NumericInputAccessory />
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
+
+      <NumericInputAccessory />
     </ScrollView>
   );
 }

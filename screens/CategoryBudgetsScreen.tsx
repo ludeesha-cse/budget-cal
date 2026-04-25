@@ -16,6 +16,9 @@ import {
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
@@ -111,6 +114,8 @@ function CategoryBudgetsScreen(): React.JSX.Element {
               value={amounts[item.id] ?? ''}
               onChangeText={value => handleAmountChange(item.id, value)}
               keyboardType="numeric"
+              returnKeyType="done"
+              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
               placeholder="0.00"
               placeholderTextColor={colors.textSecondary}
             />
@@ -124,6 +129,8 @@ function CategoryBudgetsScreen(): React.JSX.Element {
       />
 
       <Button title="Save All" color={colors.primary} onPress={handleSaveAll} />
+
+      <NumericInputAccessory />
     </View>
   );
 }

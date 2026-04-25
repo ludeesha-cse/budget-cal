@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -24,6 +25,9 @@ import {
 } from '../db/queries';
 import type { LoanAccountType } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from './NumericInputAccessory';
 
 // Explicit per this stage's spec for the two new Add-tab settlement
 // forms — deliberately narrower than (and inconsistent with) the
@@ -234,11 +238,19 @@ function LoanSettlementForm({
         value={amount}
         onChangeText={setAmount}
         keyboardType="numeric"
+        returnKeyType="done"
+        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
         placeholder="0.00"
       />
 
       <Text style={styles.label}>Date</Text>
-      <Button title={date} onPress={() => setShowDatePicker(true)} />
+      <Button
+        title={date}
+        onPress={() => {
+          Keyboard.dismiss();
+          setShowDatePicker(true);
+        }}
+      />
       {Platform.OS === 'android' ? (
         showDatePicker && (
           <DateTimePicker
@@ -281,6 +293,8 @@ function LoanSettlementForm({
       {error && <Text style={styles.error}>{error}</Text>}
 
       <Button title="Save" onPress={handleSubmit} />
+
+      <NumericInputAccessory />
     </ScrollView>
   );
 }

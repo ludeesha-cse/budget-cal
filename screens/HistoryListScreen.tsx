@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +18,9 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import type { HistoryStackParamList } from '../navigation/types';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 import {
   deleteTransaction,
   deleteTransfer,
@@ -358,7 +362,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
         transparent
         animationType="fade"
         onRequestClose={() => setEditTransferTarget(null)}>
-        <View style={styles.modalBackdrop}>
+        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             {editTransferTarget && (
               <>
@@ -383,6 +387,8 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                   value={editTransferAmount}
                   onChangeText={setEditTransferAmount}
                   keyboardType="numeric"
+                  returnKeyType="done"
+                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                   placeholder="0.00"
                   placeholderTextColor={colors.textSecondary}
                 />
@@ -393,7 +399,10 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                     <Button
                       title={editTransferDate}
                       color={colors.primary}
-                      onPress={() => setShowEditTransferDatePicker(true)}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowEditTransferDatePicker(true);
+                      }}
                     />
                   </View>
                 </View>
@@ -446,11 +455,14 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                     onPress={handleEditTransferSubmit}
                   />
                 </View>
+                <NumericInputAccessory />
               </>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
+
+      <NumericInputAccessory />
     </View>
   );
 }

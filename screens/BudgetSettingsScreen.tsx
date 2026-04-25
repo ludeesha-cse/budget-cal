@@ -21,6 +21,9 @@ import {
 } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../components/NumericInputAccessory';
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
@@ -125,6 +128,8 @@ function BudgetSettingsScreen(): React.JSX.Element {
         value={amount}
         onChangeText={setAmount}
         keyboardType="numeric"
+        returnKeyType="done"
+        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
         placeholder="0.00"
         placeholderTextColor={colors.textSecondary}
       />
@@ -185,6 +190,8 @@ function BudgetSettingsScreen(): React.JSX.Element {
           </Text>
         }
       />
+
+      <NumericInputAccessory />
     </View>
   );
 }
