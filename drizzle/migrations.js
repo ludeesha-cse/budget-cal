@@ -16,6 +16,7 @@ import m0011 from './0011_add_credit_card_payoffs.sql';
 import m0012 from './0012_add_transfers.sql';
 import m0013 from './0013_add_installment_plans.sql';
 import m0014 from './0014_add_installment_payments.sql';
+import m0015 from './0015_add_recurring_rules.sql';
 
   export default {
     journal,
@@ -34,7 +35,8 @@ m0010,
 m0011,
 m0012,
 m0013,
-m0014
+m0014,
+m0015
     }
   }
   

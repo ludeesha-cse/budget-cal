@@ -14,6 +14,7 @@ import {
   installmentPlans,
   loanDetails,
   loanPayments,
+  recurringRules,
   transactions,
   transfers,
 } from './schema';
@@ -34,6 +35,7 @@ type Category = typeof categories.$inferSelect;
 type CategoryBudget = typeof categoryBudgets.$inferSelect;
 type Currency = typeof currencies.$inferSelect;
 type InstallmentPlan = typeof installmentPlans.$inferSelect;
+type RecurringRule = typeof recurringRules.$inferSelect;
 
 export type NewTransaction = {
   accountId: number;
@@ -2707,6 +2709,195 @@ export async function getRemainingInstallmentBalance(
   } catch (error) {
     console.error(
       `getRemainingInstallmentBalance: failed to compute remaining installment balance for currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// Stage 13a: recurring rules are a schedule/template only — this stage
+// never generates an occurrence, never prompts, and never creates a
+// transaction or touches a balance. That's Stage 13b. categoryId is
+// omitted entirely for an Income rule (mirrors NewIncome above) rather
+// than accepted-and-ignored, so a caller can't accidentally attach a
+// category to an Income rule by forgetting to leave the field out.
+export type NewRecurringRuleParams = {
+  name: string;
+  ruleType: 'Income' | 'Expense';
+  amount: number;
+  dayOfMonth: number;
+  categoryId?: number; // required for Expense, must be omitted for Income
+  accountId: number;
+  currencyId: number;
+};
+
+// Shared by create/update — 29/30/31 are allowed even though not every
+// month has that many days; Stage 13b's occurrence generation is what
+// clamps to a shorter month's last day, not this validation. The
+// RecurringRulesScreen form tells the user this up front so it isn't a
+// surprise the first time a short month comes around.
+function validateRecurringRuleParams(params: NewRecurringRuleParams): void {
+  if (!params.name.trim()) {
+    throw new Error('A name is required for the recurring rule.');
+  }
+  if (
+    !Number.isInteger(params.dayOfMonth) ||
+    params.dayOfMonth < 1 ||
+    params.dayOfMonth > 31
+  ) {
+    throw new Error('Day of month must be a whole number between 1 and 31.');
+  }
+  if (params.ruleType === 'Expense' && params.categoryId == null) {
+    throw new Error('Select a category for an Expense rule.');
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/recurring-rules?active=, keeping the same return
+// shape. Fetches every rule (the table is small in a personal tracker)
+// and filters in JS when activeOnly is set, rather than pushing the
+// filter into SQL — keeps this one query shape usable for both "just the
+// active ones" (the default screen view) and "everything, including
+// deactivated" (nothing currently needs that second case, but the flag
+// is here so the screen doesn't need a second query function for it).
+export async function getRecurringRules(activeOnly: boolean) {
+  try {
+    const rows = await db
+      .select({
+        id: recurringRules.id,
+        name: recurringRules.name,
+        ruleType: recurringRules.ruleType,
+        amount: recurringRules.amount,
+        dayOfMonth: recurringRules.dayOfMonth,
+        categoryId: recurringRules.categoryId,
+        categoryName: categories.name,
+        accountId: recurringRules.accountId,
+        accountName: accounts.name,
+        currencyId: recurringRules.currencyId,
+        currencyCode: currencies.code,
+        active: recurringRules.active,
+        createdAt: recurringRules.createdAt,
+      })
+      .from(recurringRules)
+      .innerJoin(accounts, eq(recurringRules.accountId, accounts.id))
+      .innerJoin(currencies, eq(recurringRules.currencyId, currencies.id))
+      .leftJoin(categories, eq(recurringRules.categoryId, categories.id))
+      .orderBy(desc(recurringRules.createdAt));
+    return activeOnly ? rows.filter(row => row.active) : rows;
+  } catch (error) {
+    console.error('getRecurringRules: failed to load recurring rules', error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/recurring-rules), keeping the same input/return shape. Inserts
+// exactly one row — no transaction, no balance change, no budget usage.
+// A rule is a template Stage 13b will read from, not a payment.
+export async function createRecurringRule(
+  params: NewRecurringRuleParams,
+): Promise<RecurringRule> {
+  try {
+    validateRecurringRuleParams(params);
+    const [rule] = await db
+      .insert(recurringRules)
+      .values({
+        name: params.name.trim(),
+        ruleType: params.ruleType,
+        amount: params.amount,
+        dayOfMonth: params.dayOfMonth,
+        categoryId: params.ruleType === 'Expense' ? params.categoryId : null,
+        accountId: params.accountId,
+        currencyId: params.currencyId,
+        active: true,
+        createdAt: Date.now(),
+      })
+      .returning();
+    return rule;
+  } catch (error) {
+    console.error(
+      'createRecurringRule: failed to create recurring rule',
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PATCH
+// /api/recurring-rules/:id), keeping the same input/return shape.
+//
+// This only ever affects FUTURE occurrences. Stage 13b's occurrence
+// table will record each confirmed occurrence's own amount/category/etc.
+// at the moment it was confirmed, independent of this row — so editing,
+// say, a rule's amount from 1,500 to 2,000 next month must never rewrite
+// what a past month's occurrence was actually confirmed at. No
+// occurrence table exists yet (nothing is generated in this stage), so
+// there's nothing to leave alone yet — this comment exists so that
+// invariant is on record before the mechanism that has to honor it does.
+export async function updateRecurringRule(
+  id: number,
+  params: NewRecurringRuleParams,
+): Promise<void> {
+  try {
+    validateRecurringRuleParams(params);
+    await db
+      .update(recurringRules)
+      .set({
+        name: params.name.trim(),
+        ruleType: params.ruleType,
+        amount: params.amount,
+        dayOfMonth: params.dayOfMonth,
+        categoryId: params.ruleType === 'Expense' ? params.categoryId : null,
+        accountId: params.accountId,
+        currencyId: params.currencyId,
+      })
+      .where(eq(recurringRules.id, id));
+  } catch (error) {
+    console.error(
+      `updateRecurringRule: failed to update recurring rule id=${id}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PATCH
+// /api/recurring-rules/:id/active), keeping the same input shape.
+// Deactivating is the normal way to stop a rule — the row (and, once
+// Stage 13b exists, its occurrence history) stays intact, unlike delete.
+export async function setRecurringRuleActive(
+  id: number,
+  active: boolean,
+): Promise<void> {
+  try {
+    await db
+      .update(recurringRules)
+      .set({ active })
+      .where(eq(recurringRules.id, id));
+  } catch (error) {
+    console.error(
+      `setRecurringRuleActive: failed to set active=${active} for recurring rule id=${id}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(DELETE
+// /api/recurring-rules/:id), keeping the same input shape. Prefer
+// setRecurringRuleActive(id, false) for a rule that's simply done being
+// used — this is for rules created by mistake. Stage 13b's occurrence
+// table will need a real decision about what happens to any linked
+// occurrences when a rule is deleted; none exist yet, so this just
+// removes the rule row.
+export async function deleteRecurringRule(id: number): Promise<void> {
+  try {
+    await db.delete(recurringRules).where(eq(recurringRules.id, id));
+  } catch (error) {
+    console.error(
+      `deleteRecurringRule: failed to delete recurring rule id=${id}`,
       error,
     );
     throw error;

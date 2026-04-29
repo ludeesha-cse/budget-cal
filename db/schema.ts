@@ -263,6 +263,33 @@ export const installmentPayments = sqliteTable(
   }),
 );
 
+// One row per recurring rule (Stage 13a: schedule/template only — no
+// occurrence generation and no transactions created from it yet, that's
+// Stage 13b). amount is a DEFAULT suggestion rather than a locked value
+// — once occurrences exist, each one will be editable independently of
+// this row. categoryId is nullable for the same reason
+// transactions.categoryId is: an Income rule carries no category at all,
+// matching the dedicated Income tab having no category picker anywhere
+// in it. dayOfMonth allows 29-31 even though not every month has that
+// many days — Stage 13b's occurrence generation is what clamps to a
+// shorter month's last day, not this table.
+export const recurringRules = sqliteTable('recurring_rules', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  ruleType: text('rule_type').notNull().$type<'Income' | 'Expense'>(),
+  amount: int('amount').notNull(), // a default suggestion — editable per occurrence once Stage 13b exists
+  dayOfMonth: int('day_of_month').notNull(), // 1-31
+  categoryId: int('category_id').references(() => categories.id), // nullable — Income rules carry no category
+  accountId: int('account_id')
+    .notNull()
+    .references(() => accounts.id),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: int('created_at').notNull(),
+});
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {
