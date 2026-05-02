@@ -113,6 +113,13 @@
       "when": 1785526316752,
       "tag": "0015_add_recurring_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1785526828098,
+      "tag": "0016_add_recurring_occurrences",
+      "breakpoints": true
     }
   ]
 }

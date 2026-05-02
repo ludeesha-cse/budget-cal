@@ -2,12 +2,16 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { DashboardStackParamList } from '../navigation/types';
 import {
+  generatePendingOccurrences,
   getActiveLoanAccounts,
   getBudgetForMonth,
   getCategories,
@@ -15,6 +19,7 @@ import {
   getLoanTotalOwed,
   getMonthlyIncome,
   getMonthlyTotal,
+  getPendingOccurrences,
   getTotalCashInHandByCurrency,
   getTotalCreditCardDebt,
   getTransactionsByMonth,
@@ -97,8 +102,16 @@ function amountLeftStyleFor(
       : { color: colors.success };
 }
 
-function DashboardScreen(): React.JSX.Element {
+type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>;
+
+function DashboardScreen({ navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  const [pendingOccurrenceCount, setPendingOccurrenceCount] = useState(0);
+  // Session-only — resets to false on every fresh app launch (a plain
+  // useState has no persistence of its own), which is exactly what makes
+  // "dismissible for the session, but reappears next launch while
+  // anything is still pending" true without writing anything to disk.
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [total, setTotal] = useState(0);
   const [totalIncome, setTotalIncome] = useState(0);
   const [budget, setBudget] = useState<
@@ -132,21 +145,30 @@ function DashboardScreen(): React.JSX.Element {
       let cancelled = false;
       setLoading(true);
       const month = getCurrentMonthString();
-      Promise.all([
-        getMonthlyTotal(month),
-        getMonthlyIncome(month),
-        getBudgetForMonth(month),
-        getAmountLeft(month),
-        getAverageLeftPerDay(month),
-        getTotalCashInHandByCurrency(),
-        getTotalCreditCardDebt(),
-        getCategories(),
-        getCategoryBudgetsForMonth(month),
-        getTransactionsByMonth(month),
-        getActiveLoanAccounts('Liability'),
-        getActiveLoanAccounts('Receivable'),
-        getNetWorthByCurrency(),
-      ]).then(
+      // Regenerated on every focus, not just app startup — idempotent by
+      // design (see its own doc comment), so re-running it here whenever
+      // the user comes back to this tab is safe and simpler than trying
+      // to track whether "today's" generation already happened.
+      generatePendingOccurrences()
+        .then(() =>
+          Promise.all([
+            getMonthlyTotal(month),
+            getMonthlyIncome(month),
+            getBudgetForMonth(month),
+            getAmountLeft(month),
+            getAverageLeftPerDay(month),
+            getTotalCashInHandByCurrency(),
+            getTotalCreditCardDebt(),
+            getCategories(),
+            getCategoryBudgetsForMonth(month),
+            getTransactionsByMonth(month),
+            getActiveLoanAccounts('Liability'),
+            getActiveLoanAccounts('Receivable'),
+            getNetWorthByCurrency(),
+            getPendingOccurrences(),
+          ]),
+        )
+        .then(
         async ([
           monthlyTotal,
           monthlyIncome,
@@ -161,6 +183,7 @@ function DashboardScreen(): React.JSX.Element {
           liabilities,
           receivables,
           netWorth,
+          pendingOccurrences,
         ]) => {
           // Expense-only, same as getMonthlyTotal — an Income entry
           // filed under a category shouldn't reduce how "spent" it looks.
@@ -269,6 +292,7 @@ function DashboardScreen(): React.JSX.Element {
             setReceivableTotals(totalsByCurrency(receivablesWithTotals));
             setUpcomingLoans(upcoming);
             setNetWorthByCurrency(netWorth);
+            setPendingOccurrenceCount(pendingOccurrences.length);
             setLoading(false);
           }
         },
@@ -291,6 +315,30 @@ function DashboardScreen(): React.JSX.Element {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={[styles.title, { color: colors.text }]}>Dashboard</Text>
+      {/* Non-blocking by design (Stage 13b spec) — a plain row, never a
+          modal, so it can't stop the user from seeing anything else on
+          this screen. Only shown once loading finishes so it doesn't
+          flash before pendingOccurrenceCount has its real value. */}
+      {!loading && pendingOccurrenceCount > 0 && !bannerDismissed && (
+        <Pressable
+          style={[
+            styles.pendingBanner,
+            { backgroundColor: colors.surface, borderColor: colors.warning },
+          ]}
+          onPress={() => navigation.navigate('ReviewOccurrences')}>
+          <Text style={[styles.pendingBannerText, { color: colors.warning }]}>
+            {pendingOccurrenceCount} recurring{' '}
+            {pendingOccurrenceCount === 1 ? 'entry' : 'entries'} to review
+          </Text>
+          <Pressable
+            hitSlop={8}
+            onPress={() => setBannerDismissed(true)}>
+            <Text style={[styles.pendingBannerDismiss, { color: colors.warning }]}>
+              Dismiss
+            </Text>
+          </Pressable>
+        </Pressable>
+      )}
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (
@@ -481,6 +529,26 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 16,
+  },
+  pendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+  },
+  pendingBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  pendingBannerDismiss: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 12,
   },
   row: {
     fontSize: 16,

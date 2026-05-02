@@ -5,6 +5,14 @@ export type HistoryStackParamList = {
   EditTransaction: { id: number };
 };
 
+// Dashboard needed its own stack (Stage 13b) purely so it can push
+// ReviewOccurrences the same way History pushes EditTransaction — before
+// this, Dashboard was a bare Tab.Screen with nowhere to navigate to.
+export type DashboardStackParamList = {
+  DashboardHome: undefined;
+  ReviewOccurrences: undefined;
+};
+
 export type SettingsStackParamList = {
   SettingsHome: undefined;
   BudgetSettings: undefined;
@@ -19,7 +27,7 @@ export type SettingsStackParamList = {
 };
 
 export type RootTabParamList = {
-  Dashboard: undefined;
+  Dashboard: NavigatorScreenParams<DashboardStackParamList> | undefined;
   History: NavigatorScreenParams<HistoryStackParamList> | undefined;
   Expenses: undefined;
   Add: undefined;

@@ -22,6 +22,7 @@ import {
   getAccountBalances,
   getAccounts,
   getCategories,
+  getOccurrenceHistory,
   getRecurringRules,
   setRecurringRuleActive,
   updateRecurringRule,
@@ -42,6 +43,7 @@ const DAY_OF_MONTH_OPTIONS = Array.from({ length: 31 }, (_, i) => ({
 type RuleRow = Awaited<ReturnType<typeof getRecurringRules>>[number];
 type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
+type HistoryRow = Awaited<ReturnType<typeof getOccurrenceHistory>>[number];
 
 function RecurringRulesScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -53,6 +55,13 @@ function RecurringRulesScreen(): React.JSX.Element {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Fetched lazily (on first expand) rather than up front for every rule
+  // — a personal tracker might accumulate a lot of resolved occurrences
+  // over time, and most of them are never looked at again.
+  const [historyByRule, setHistoryByRule] = useState<Record<number, HistoryRow[]>>(
+    {},
+  );
+  const [expandedRuleId, setExpandedRuleId] = useState<number | null>(null);
 
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -261,6 +270,18 @@ function RecurringRulesScreen(): React.JSX.Element {
     );
   };
 
+  const handleToggleHistory = async (rule: RuleRow) => {
+    if (expandedRuleId === rule.id) {
+      setExpandedRuleId(null);
+      return;
+    }
+    setExpandedRuleId(rule.id);
+    if (!(rule.id in historyByRule)) {
+      const history = await getOccurrenceHistory(rule.id);
+      setHistoryByRule(current => ({ ...current, [rule.id]: history }));
+    }
+  };
+
   const visibleRules = rules.filter(r => r.ruleType === listType);
   const parsedDayPreview = Number(dayOfMonth);
 
@@ -316,6 +337,50 @@ function RecurringRulesScreen(): React.JSX.Element {
                     ? ` — ${item.categoryName}`
                     : ''}
                 </Text>
+
+                <Pressable onPress={() => handleToggleHistory(item)}>
+                  <Text style={[styles.historyLink, { color: colors.primary }]}>
+                    {expandedRuleId === item.id ? 'Hide history' : 'History'}
+                  </Text>
+                </Pressable>
+
+                {expandedRuleId === item.id && (
+                  <View style={styles.historyList}>
+                    {!(item.id in historyByRule) ? (
+                      <Text style={{ color: colors.textSecondary }}>
+                        Loading...
+                      </Text>
+                    ) : historyByRule[item.id].length === 0 ? (
+                      <Text style={{ color: colors.textSecondary }}>
+                        No resolved occurrences yet.
+                      </Text>
+                    ) : (
+                      historyByRule[item.id].map(occurrence => (
+                        <View
+                          key={occurrence.id}
+                          style={[
+                            styles.historyRow,
+                            { borderTopColor: colors.border },
+                          ]}>
+                          <Text style={{ color: colors.text }}>
+                            {occurrence.dueDate} —{' '}
+                            {occurrence.status === 'confirmed'
+                              ? `Confirmed ${item.currencyCode} ${(
+                                  occurrence.confirmedAmount ?? 0
+                                ).toFixed(2)}${
+                                  occurrence.accountName
+                                    ? ` (${occurrence.accountName})`
+                                    : ''
+                                }`
+                              : occurrence.status === 'skipped'
+                                ? 'Skipped'
+                                : 'Pending'}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
               </View>
               <View style={styles.rowActions}>
                 <Button
@@ -592,6 +657,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
+  },
+  historyLink: {
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  historyList: {
+    marginTop: 4,
+    gap: 4,
+  },
+  historyRow: {
+    paddingVertical: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   addButton: {
     marginTop: 12,

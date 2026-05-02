@@ -290,6 +290,40 @@ export const recurringRules = sqliteTable('recurring_rules', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per calendar-month firing of a recurring rule (Stage 13b).
+// Deliberately its own row per due date, generated ahead of time and
+// left 'pending' until a human confirms or skips it — nothing here ever
+// becomes a real transaction on its own. transactionId/confirmedAmount
+// are only ever set together, at confirm time; confirmedAmount can
+// differ from the rule's amount (the whole point of prompting instead
+// of auto-posting is letting the user edit it first). The unique index
+// on (recurringRuleId, dueDate) is what makes generatePendingOccurrences
+// safely re-runnable on every app open — regenerating an already-seen
+// due date is a no-op insert conflict, never a duplicate row.
+export const recurringOccurrences = sqliteTable(
+  'recurring_occurrences',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    recurringRuleId: int('recurring_rule_id')
+      .notNull()
+      .references(() => recurringRules.id),
+    dueDate: text('due_date').notNull(), // 'YYYY-MM-DD', already clamped to the firing month's last day if needed
+    status: text('status')
+      .notNull()
+      .default('pending')
+      .$type<'pending' | 'confirmed' | 'skipped'>(),
+    transactionId: int('transaction_id').references(() => transactions.id), // set only on confirm
+    confirmedAmount: int('confirmed_amount'), // set only on confirm — may differ from the rule's default amount
+    resolvedAt: text('resolved_at'), // 'YYYY-MM-DD', set on confirm or skip; null while pending
+  },
+  table => ({
+    ruleDueDateUnique: uniqueIndex('rule_due_date_unique').on(
+      table.recurringRuleId,
+      table.dueDate,
+    ),
+  }),
+);
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

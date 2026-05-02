@@ -33,19 +33,45 @@ import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
 import InstallmentPlansScreen from './screens/InstallmentPlansScreen';
 import RecurringRulesScreen from './screens/RecurringRulesScreen';
+import ReviewOccurrencesScreen from './screens/ReviewOccurrencesScreen';
 import PaywallModal from './screens/PaywallModal';
 import { EntitlementProvider } from './hooks/useEntitlement';
 import { PaywallProvider } from './contexts/PaywallContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { generatePendingOccurrences } from './db/queries';
 import type {
+  DashboardStackParamList,
   HistoryStackParamList,
   RootTabParamList,
   SettingsStackParamList,
 } from './navigation/types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
+const DashboardStack = createNativeStackNavigator<DashboardStackParamList>();
 const HistoryStack = createNativeStackNavigator<HistoryStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
+
+// Dashboard's own stack (Stage 13b) — exists solely so the pending-
+// occurrences banner can push ReviewOccurrences, the same way History
+// pushes EditTransaction. headerShown is left on for DashboardHome (title
+// 'Dashboard') since, unlike History/Settings, nothing before this stack
+// existed already showing its own header.
+function DashboardStackNavigator(): React.JSX.Element {
+  return (
+    <DashboardStack.Navigator>
+      <DashboardStack.Screen
+        name="DashboardHome"
+        component={DashboardScreen}
+        options={{ title: 'Dashboard' }}
+      />
+      <DashboardStack.Screen
+        name="ReviewOccurrences"
+        component={ReviewOccurrencesScreen}
+        options={{ title: 'Review Recurring' }}
+      />
+    </DashboardStack.Navigator>
+  );
+}
 
 function HistoryStackNavigator(): React.JSX.Element {
   return (
@@ -156,7 +182,11 @@ function AppShell(): React.JSX.Element {
       <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
       <NavigationContainer theme={navigationTheme}>
         <Tab.Navigator>
-          <Tab.Screen name="Dashboard" component={DashboardScreen} />
+          <Tab.Screen
+            name="Dashboard"
+            component={DashboardStackNavigator}
+            options={{ headerShown: false }}
+          />
           <Tab.Screen
             name="History"
             component={HistoryStackNavigator}
@@ -183,6 +213,12 @@ function App(): React.JSX.Element {
   useEffect(() => {
     runMigrations()
       .then(() => ensureDefaultAccount())
+      // Stage 13b: generated once here on every cold start, and again on
+      // every Dashboard focus (see DashboardScreen). Safe to call this
+      // often — generatePendingOccurrences is idempotent by design (see
+      // its own doc comment) — so there's no "did startup already do
+      // this today" flag to maintain.
+      .then(() => generatePendingOccurrences())
       .then(() => setReady(true))
       .catch(setStartupError);
   }, []);
