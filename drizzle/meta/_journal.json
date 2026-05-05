@@ -120,6 +120,13 @@
       "when": 1785526828098,
       "tag": "0016_add_recurring_occurrences",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1785527634638,
+      "tag": "0017_add_savings_goals",
+      "breakpoints": true
     }
   ]
 }

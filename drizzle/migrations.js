@@ -18,6 +18,7 @@ import m0013 from './0013_add_installment_plans.sql';
 import m0014 from './0014_add_installment_payments.sql';
 import m0015 from './0015_add_recurring_rules.sql';
 import m0016 from './0016_add_recurring_occurrences.sql';
+import m0017 from './0017_add_savings_goals.sql';
 
   export default {
     journal,
@@ -38,7 +39,8 @@ m0012,
 m0013,
 m0014,
 m0015,
-m0016
+m0016,
+m0017
     }
   }
   

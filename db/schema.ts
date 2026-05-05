@@ -324,6 +324,46 @@ export const recurringOccurrences = sqliteTable(
   }),
 );
 
+// One row per savings goal (Stage 14). Deliberately has NO accountId and
+// NO currencyId link to any real money movement beyond its own display
+// currency — a goal (and its contributions below) is a log of intent,
+// never a payment. status defaults to 'active' and is changed in place
+// (never deleted-and-recreated) so "what was this goal for and did I
+// reach it" survives even once it's done, the same
+// deactivate-don't-delete philosophy recurringRules already uses.
+export const savingsGoals = sqliteTable('savings_goals', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  targetAmount: int('target_amount').notNull(),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  targetDate: text('target_date'), // 'YYYY-MM-DD', nullable — a goal doesn't have to have a deadline
+  status: text('status')
+    .notNull()
+    .default('active')
+    .$type<'active' | 'achieved' | 'abandoned'>(),
+  createdAt: int('created_at').notNull(),
+});
+
+// One row per logged contribution toward a savings goal (Stage 14).
+// CRITICAL: this table is never joined against accounts or
+// account_balances, and addContribution (db/queries.ts) never inserts
+// into `transactions` — a contribution records that the user has
+// mentally set money aside, not that money moved anywhere. The real
+// money backing a goal already sits in whatever real account it's in;
+// this table exists purely so progress toward the target can be shown.
+export const savingsContributions = sqliteTable('savings_contributions', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  savingsGoalId: int('savings_goal_id')
+    .notNull()
+    .references(() => savingsGoals.id),
+  amount: int('amount').notNull(),
+  date: text('date').notNull(), // 'YYYY-MM-DD'
+  note: text('note'),
+  createdAt: int('created_at').notNull(),
+});
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {
