@@ -5,7 +5,12 @@ import type { HistoryStackParamList } from '../navigation/types';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
-import { getTransactionById, updateTransaction } from '../db/queries';
+import {
+  getTagsForTransaction,
+  getTransactionById,
+  setTransactionTags,
+  updateTransaction,
+} from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'EditTransaction'>;
@@ -19,13 +24,17 @@ function EditTransactionScreen({
   const [transaction, setTransaction] = useState<
     Awaited<ReturnType<typeof getTransactionById>>
   >(null);
+  const [tagIds, setTagIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getTransactionById(id).then(row => {
-      setTransaction(row);
-      setLoading(false);
-    });
+    Promise.all([getTransactionById(id), getTagsForTransaction(id)]).then(
+      ([row, currentTags]) => {
+        setTransaction(row);
+        setTagIds(currentTags.map(tag => tag.id));
+        setLoading(false);
+      },
+    );
   }, [id]);
 
   const handleSubmit = async (values: TransactionFormSubmitValues) => {
@@ -38,6 +47,7 @@ function EditTransactionScreen({
       currencyId: values.currencyId,
       entryType: values.entryType,
     });
+    await setTransactionTags(id, values.tagIds);
     navigation.navigate('HistoryList');
   };
 
@@ -71,6 +81,7 @@ function EditTransactionScreen({
           accountId: transaction.accountId,
           currencyId: transaction.currencyId,
           entryType: transaction.entryType,
+          tagIds,
         }}
         onSubmit={handleSubmit}
         submitLabel="Update"

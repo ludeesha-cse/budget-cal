@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -26,10 +26,13 @@ import {
   deleteTransfer,
   getLoanPaymentsByMonth,
   getLoanPaymentsByYear,
+  getTags,
+  getTagsForTransaction,
   getTransactionsByMonth,
   getTransactionsByYear,
   getTransfers,
   getTransfersByYear,
+  searchTransactions,
   updateTransfer,
 } from '../db/queries';
 import {
@@ -43,6 +46,7 @@ import { useTheme } from '../contexts/ThemeContext';
 type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
 type LoanPaymentRow = Awaited<ReturnType<typeof getLoanPaymentsByMonth>>[number];
 type TransferRow = Awaited<ReturnType<typeof getTransfers>>[number];
+type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 
 // A tagged union so one FlatList can render every kind of money-movement
 // event side by side without any of their shapes leaking into each
@@ -80,6 +84,41 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Stage 15: search + tags. searchQuery is what the TextInput shows;
+  // debouncedQuery is what actually drives the query, updated ~300ms
+  // after typing stops so a search doesn't refire on every keystroke.
+  // Neither one, nor activeTagFilterIds, ever resets `month`/`year` —
+  // that's what makes "clear the search" restore the previous month/year
+  // selection for free, with no special-case code needed here.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [availableTags, setAvailableTags] = useState<TagRow[]>([]);
+  const [activeTagFilterIds, setActiveTagFilterIds] = useState<number[]>([]);
+  // Populated for whichever transaction rows are currently on screen
+  // (either the month/year view or search results) so each row can show
+  // its own tags — loan payments and transfers never have an entry here,
+  // since only real `transactions` rows can carry tags.
+  const [tagsByTransactionId, setTagsByTransactionId] = useState<
+    Record<number, TagRow[]>
+  >({});
+
+  // Search mode kicks in the moment there's something to search or
+  // filter by — a non-empty query OR at least one active tag chip —
+  // regardless of which one triggered it.
+  const isSearchMode =
+    debouncedQuery.trim().length > 0 || activeTagFilterIds.length > 0;
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useFocusEffect(
+    useCallback(() => {
+      getTags().then(setAvailableTags);
+    }, []),
+  );
+
   // Editing a transfer's amount/date in place — from/to/currency stay
   // fixed to what the transfer was originally created with (changing
   // those would need the same cascading account/currency pickers
@@ -92,8 +131,46 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const [showEditTransferDatePicker, setShowEditTransferDatePicker] =
     useState(false);
 
+  // Loads each currently-displayed transaction's own tags in one batch —
+  // small dataset (a personal tracker's month or search-result page), so
+  // one query per transaction is simpler and plenty fast, matching the
+  // "small table, don't over-engineer" convention used elsewhere in this
+  // app (e.g. Stage 15's own tag-AND filtering in searchTransactions).
+  const loadTagsForRows = async (historyRows: HistoryRow[]) => {
+    const transactionRows = historyRows.filter(
+      (row): row is Extract<HistoryRow, { kind: 'transaction' }> =>
+        row.kind === 'transaction',
+    );
+    const entries = await Promise.all(
+      transactionRows.map(
+        async row =>
+          [row.data.id, await getTagsForTransaction(row.data.id)] as const,
+      ),
+    );
+    setTagsByTransactionId(Object.fromEntries(entries));
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
+
+    if (isSearchMode) {
+      // Search ignores month/year entirely, on purpose — see the Stage 15
+      // spec: searchTransactions() always looks across every date. Loan
+      // payments and transfers never appear here, since search only ever
+      // queries `transactions`.
+      const results = await searchTransactions({
+        query: debouncedQuery.trim() || undefined,
+        tagIds: activeTagFilterIds.length > 0 ? activeTagFilterIds : undefined,
+      });
+      const merged = results.map(
+        (data): HistoryRow => ({ kind: 'transaction', date: data.date, data }),
+      );
+      setRows(merged);
+      await loadTagsForRows(merged);
+      setLoading(false);
+      return;
+    }
+
     const [transactionRows, loanPaymentRows, transferRows] = month
       ? await Promise.all([
           getTransactionsByMonth(`${year}-${month}`),
@@ -117,14 +194,23 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
       ),
     );
     setRows(merged);
+    await loadTagsForRows(merged);
     setLoading(false);
-  }, [month, year]);
+  }, [month, year, isSearchMode, debouncedQuery, activeTagFilterIds]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
   );
+
+  const toggleTagFilter = (tagId: number) => {
+    setActiveTagFilterIds(current =>
+      current.includes(tagId)
+        ? current.filter(id => id !== tagId)
+        : [...current, tagId],
+    );
+  };
 
   const handleDelete = (id: number) => {
     Alert.alert(
@@ -223,13 +309,75 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <MonthYearPicker
-        month={month}
-        year={year}
-        onMonthChange={setMonth}
-        onYearChange={setYear}
-        includeAllMonths
-      />
+      <View style={styles.searchArea}>
+        <View style={styles.searchInputRow}>
+          <TextInput
+            style={[
+              styles.searchInput,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.surface,
+              },
+            ]}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search description, category, or account"
+            placeholderTextColor={colors.textSecondary}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <Pressable
+              style={styles.clearSearchButton}
+              onPress={() => setSearchQuery('')}>
+              <Text style={[styles.clearSearchText, { color: colors.primary }]}>
+                Clear
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        {availableTags.length > 0 && (
+          <View style={styles.tagFilterRow}>
+            {availableTags.map(tag => {
+              const active = activeTagFilterIds.includes(tag.id);
+              return (
+                <Pressable
+                  key={tag.id}
+                  style={[
+                    styles.tagChip,
+                    { backgroundColor: colors.surface, borderColor: colors.primary },
+                    active && { backgroundColor: colors.primary },
+                  ]}
+                  onPress={() => toggleTagFilter(tag.id)}>
+                  <Text
+                    style={[
+                      styles.tagChipText,
+                      { color: colors.primary },
+                      active && { color: colors.primaryText },
+                    ]}>
+                    {tag.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {isSearchMode ? (
+        <Text style={[styles.searchModeLabel, { color: colors.textSecondary }]}>
+          Searching all transactions.
+        </Text>
+      ) : (
+        <MonthYearPicker
+          month={month}
+          year={year}
+          onMonthChange={setMonth}
+          onYearChange={setYear}
+          includeAllMonths
+        />
+      )}
 
       {loading ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -237,7 +385,9 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
         </Text>
       ) : rows.length === 0 ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          No transactions found.
+          {isSearchMode
+            ? 'No matches for your search.'
+            : 'No transactions found.'}
         </Text>
       ) : (
         <FlatList
@@ -312,6 +462,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
             }
 
             const item_ = item.data;
+            const itemTags = tagsByTransactionId[item_.id] ?? [];
             return (
               <View style={[styles.row, { borderBottomColor: colors.border }]}>
                 <View style={styles.rowDetails}>
@@ -336,6 +487,11 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                     {item_.entryType === 'Income' ? '+' : '-'}
                     {item_.amount.toFixed(2)}
                   </Text>
+                  {itemTags.length > 0 && (
+                    <Text style={[styles.rowTags, { color: colors.primary }]}>
+                      {itemTags.map(tag => tag.name).join(' · ')}
+                    </Text>
+                  )}
                 </View>
                 <View style={styles.rowActions}>
                   <Button
@@ -492,9 +648,60 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '600',
   },
+  rowTags: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   rowActions: {
     flexDirection: 'row',
     gap: 4,
+  },
+  searchArea: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 16,
+  },
+  clearSearchButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  clearSearchText: {
+    fontWeight: '600',
+  },
+  tagFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  tagChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  searchModeLabel: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    fontSize: 13,
+    fontStyle: 'italic',
   },
   modalBackdrop: {
     flex: 1,

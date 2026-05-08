@@ -16,7 +16,12 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { formatDateString } from '../utils/date';
-import { getAccountBalances, getAccounts, getCategories } from '../db/queries';
+import {
+  getAccountBalances,
+  getAccounts,
+  getCategories,
+  getTags,
+} from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -38,6 +43,7 @@ export type TransactionFormSubmitValues = {
   accountId: number;
   currencyId: number;
   entryType: 'Expense' | 'Income';
+  tagIds: number[]; // Stage 15 — the caller passes this straight to setTransactionTags after the transaction itself is saved
 };
 
 type TransactionFormProps = {
@@ -49,6 +55,7 @@ type TransactionFormProps = {
     accountId?: number;
     currencyId?: number;
     entryType?: 'Expense' | 'Income';
+    tagIds?: number[]; // currently-applied tags, only meaningful when editing an existing transaction
   };
   onSubmit: (values: TransactionFormSubmitValues) => void;
   submitLabel?: string;
@@ -94,6 +101,10 @@ function TransactionForm({
   const [entryType, setEntryType] = useState<'Expense' | 'Income'>(
     lockToExpense ? 'Expense' : (initialValues?.entryType ?? 'Expense'),
   );
+  const [tags, setTags] = useState<Awaited<ReturnType<typeof getTags>>>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(
+    initialValues?.tagIds ?? [],
+  );
   // Which currencies the selected account actually holds, and which one
   // is chosen. Now persisted on the transaction itself
   // (transactions.currencyId) as of Stage 8.
@@ -135,8 +146,20 @@ function TransactionForm({
             : rows[0]?.id ?? null,
         );
       });
+      // Only refreshes the available options — never touches
+      // selectedTagIds, so a tag added/deleted elsewhere shows up here
+      // without disturbing whatever's already checked on this form.
+      getTags().then(setTags);
     }, []),
   );
+
+  const toggleTag = (tagId: number) => {
+    setSelectedTagIds(current =>
+      current.includes(tagId)
+        ? current.filter(id => id !== tagId)
+        : [...current, tagId],
+    );
+  };
 
   // After an account is picked (including the initial default), load only
   // that account's own currencies. Switching accounts always resets the
@@ -215,6 +238,7 @@ function TransactionForm({
       accountId,
       currencyId,
       entryType,
+      tagIds: selectedTagIds,
     });
   };
 
@@ -381,6 +405,38 @@ function TransactionForm({
         placeholderTextColor={colors.textSecondary}
       />
 
+      <Text style={[styles.label, { color: colors.text }]}>Tags</Text>
+      {tags.length === 0 ? (
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>
+          No tags yet — add some from Settings.
+        </Text>
+      ) : (
+        <View style={styles.tagRow}>
+          {tags.map(tag => {
+            const selected = selectedTagIds.includes(tag.id);
+            return (
+              <Pressable
+                key={tag.id}
+                style={[
+                  styles.tagChip,
+                  { backgroundColor: colors.surface, borderColor: colors.primary },
+                  selected && { backgroundColor: colors.primary },
+                ]}
+                onPress={() => toggleTag(tag.id)}>
+                <Text
+                  style={[
+                    styles.tagChipText,
+                    { color: colors.primary },
+                    selected && { color: colors.primaryText },
+                  ]}>
+                  {tag.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
       {error && (
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
       )}
@@ -426,6 +482,24 @@ const styles = StyleSheet.create({
   },
   toggleButtonText: {
     fontSize: 16,
+    fontWeight: '600',
+  },
+  hint: {
+    fontSize: 13,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  tagChipText: {
+    fontSize: 13,
     fontWeight: '600',
   },
   modalBackdrop: {

@@ -9,6 +9,7 @@ import {
   appSettings,
   categories,
   currencies,
+  tags,
 } from './schema';
 
 const opsqliteDb = open({ name: 'budget-tracker.db' });
@@ -186,6 +187,25 @@ async function seedAppSettings(): Promise<void> {
   await db.insert(appSettings).values({ themeMode: 'system' });
 }
 
+const DEFAULT_TAGS = ['Reimbursable', 'Shared', 'Pending'] as const;
+
+// Stage 15, same table-emptiness gate as seedDefaultCategories — runs on
+// every app start but only actually inserts anything the first time the
+// `tags` table is empty. Note this means the same as
+// seedDefaultCategories: if a user later deletes every tag (all three
+// defaults plus anything else they added), the table is empty again and
+// the next app start reseeds these three defaults, same as categories.
+async function seedDefaultTags(): Promise<void> {
+  const existing = await db.select().from(tags).limit(1);
+  if (existing.length > 0) {
+    return;
+  }
+  const now = Date.now();
+  await db
+    .insert(tags)
+    .values(DEFAULT_TAGS.map(name => ({ name, createdAt: now })));
+}
+
 export async function runMigrations(): Promise<void> {
   const legacyBalances = await captureLegacyAccountBalances();
   await migrate(db, migrations);
@@ -193,4 +213,5 @@ export async function runMigrations(): Promise<void> {
   await seedReservedBankCategory();
   await runCurrencyMigration(legacyBalances);
   await seedAppSettings();
+  await seedDefaultTags();
 }

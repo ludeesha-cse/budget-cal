@@ -127,6 +127,13 @@
       "when": 1785527634638,
       "tag": "0017_add_savings_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1785579138673,
+      "tag": "0018_add_tags",
+      "breakpoints": true
     }
   ]
 }

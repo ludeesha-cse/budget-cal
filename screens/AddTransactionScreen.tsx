@@ -6,7 +6,7 @@ import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import IncomeForm, { IncomeFormSubmitValues } from '../components/IncomeForm';
-import { addIncome, addTransaction } from '../db/queries';
+import { addIncome, addTransaction, setTransactionTags } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import type { RootTabParamList } from '../navigation/types';
 
@@ -44,7 +44,7 @@ function AddScreen(): React.JSX.Element {
   };
 
   const handleExpenseSubmit = async (values: TransactionFormSubmitValues) => {
-    await addTransaction({
+    const [inserted] = await addTransaction({
       accountId: values.accountId,
       amount: values.amount,
       categoryId: values.categoryId,
@@ -53,18 +53,24 @@ function AddScreen(): React.JSX.Element {
       currencyId: values.currencyId,
       entryType: 'Expense',
     });
+    // Tags apply to the real transaction row that was just created — a
+    // brand-new transaction always starts with an empty tag set, so this
+    // is really just "add" rather than "replace", but setTransactionTags
+    // is the one function that does both correctly either way.
+    await setTransactionTags(inserted.id, values.tagIds);
     setSuccessMessage('Expense added');
     setFormKey(key => key + 1);
   };
 
   const handleIncomeSubmit = async (values: IncomeFormSubmitValues) => {
-    await addIncome({
+    const [inserted] = await addIncome({
       accountId: values.accountId,
       amount: values.amount,
       description: values.description,
       date: values.date,
       currencyId: values.currencyId,
     });
+    await setTransactionTags(inserted.id, values.tagIds);
     setSuccessMessage('Income added');
     setFormKey(key => key + 1);
   };

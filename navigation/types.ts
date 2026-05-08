@@ -25,6 +25,7 @@ export type SettingsStackParamList = {
   InstallmentPlans: undefined;
   RecurringRules: undefined;
   SavingsGoals: undefined;
+  Tags: undefined;
 };
 
 export type RootTabParamList = {

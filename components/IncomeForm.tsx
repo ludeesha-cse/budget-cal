@@ -9,13 +9,14 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { formatDateString } from '../utils/date';
-import { getAccountBalances, getAccounts } from '../db/queries';
+import { getAccountBalances, getAccounts, getTags } from '../db/queries';
 import CollapsiblePicker from './CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -33,6 +34,7 @@ export type IncomeFormSubmitValues = {
   accountId: number;
   currencyId: number;
   description: string;
+  tagIds: number[]; // Stage 15 — the caller passes this straight to setTransactionTags after the transaction itself is saved
 };
 
 type IncomeFormProps = {
@@ -60,6 +62,8 @@ function IncomeForm({
     Awaited<ReturnType<typeof getAccountBalances>>
   >([]);
   const [currencyId, setCurrencyId] = useState<number | null>(null);
+  const [tags, setTags] = useState<Awaited<ReturnType<typeof getTags>>>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -75,8 +79,17 @@ function IncomeForm({
             : selectable[0]?.id ?? null,
         );
       });
+      getTags().then(setTags);
     }, []),
   );
+
+  const toggleTag = (tagId: number) => {
+    setSelectedTagIds(current =>
+      current.includes(tagId)
+        ? current.filter(id => id !== tagId)
+        : [...current, tagId],
+    );
+  };
 
   // Same reset-on-switch behavior as TransactionForm: a new account
   // always re-derives its currency choice rather than keeping a stale one.
@@ -126,7 +139,14 @@ function IncomeForm({
       return;
     }
     setError(null);
-    onSubmit({ date, amount: parsedAmount, accountId, currencyId, description });
+    onSubmit({
+      date,
+      amount: parsedAmount,
+      accountId,
+      currencyId,
+      description,
+      tagIds: selectedTagIds,
+    });
   };
 
   const selectedAccountName =
@@ -237,6 +257,38 @@ function IncomeForm({
         placeholderTextColor={colors.textSecondary}
       />
 
+      <Text style={[styles.label, { color: colors.text }]}>Tags</Text>
+      {tags.length === 0 ? (
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>
+          No tags yet — add some from Settings.
+        </Text>
+      ) : (
+        <View style={styles.tagRow}>
+          {tags.map(tag => {
+            const selected = selectedTagIds.includes(tag.id);
+            return (
+              <Pressable
+                key={tag.id}
+                style={[
+                  styles.tagChip,
+                  { backgroundColor: colors.surface, borderColor: colors.primary },
+                  selected && { backgroundColor: colors.primary },
+                ]}
+                onPress={() => toggleTag(tag.id)}>
+                <Text
+                  style={[
+                    styles.tagChipText,
+                    { color: colors.primary },
+                    selected && { color: colors.primaryText },
+                  ]}>
+                  {tag.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
       {error && (
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
       )}
@@ -268,6 +320,24 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: 12,
+  },
+  hint: {
+    fontSize: 13,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  tagChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   modalBackdrop: {
     flex: 1,

@@ -364,6 +364,42 @@ export const savingsContributions = sqliteTable('savings_contributions', {
   createdAt: int('created_at').notNull(),
 });
 
+// One row per tag (Stage 15). name is unique the same way categories.name
+// is — tags are a flat, user-managed vocabulary, not a hierarchy.
+export const tags = sqliteTable('tags', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  createdAt: int('created_at').notNull(),
+});
+
+// Join table between transactions and tags (Stage 15), many-to-many. The
+// unique index on (transactionId, tagId) is what stops the same tag being
+// applied twice to one transaction — setTransactionTags (db/queries.ts)
+// also just deletes-and-reinserts the full set per transaction, so this
+// index is mostly a safety net against a bug rather than something the
+// app relies on to dedupe by itself. Deliberately no onDelete: 'cascade'
+// on either FK — deleteTag (db/queries.ts) removes only the matching rows
+// here, by hand, and must never be able to take a transaction down with
+// it via a stray cascade.
+export const transactionTags = sqliteTable(
+  'transaction_tags',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    transactionId: int('transaction_id')
+      .notNull()
+      .references(() => transactions.id),
+    tagId: int('tag_id')
+      .notNull()
+      .references(() => tags.id),
+  },
+  table => ({
+    transactionTagUnique: uniqueIndex('transaction_tag_unique').on(
+      table.transactionId,
+      table.tagId,
+    ),
+  }),
+);
+
 export const categoryBudgets = sqliteTable(
   'category_budgets',
   {

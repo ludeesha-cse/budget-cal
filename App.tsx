@@ -34,6 +34,7 @@ import CurrenciesScreen from './screens/CurrenciesScreen';
 import InstallmentPlansScreen from './screens/InstallmentPlansScreen';
 import RecurringRulesScreen from './screens/RecurringRulesScreen';
 import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
+import TagsScreen from './screens/TagsScreen';
 import ReviewOccurrencesScreen from './screens/ReviewOccurrencesScreen';
 import PaywallModal from './screens/PaywallModal';
 import { EntitlementProvider } from './hooks/useEntitlement';
@@ -148,6 +149,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="SavingsGoals"
         component={SavingsGoalsScreen}
         options={{ title: 'Savings Goals' }}
+      />
+      <SettingsStack.Screen
+        name="Tags"
+        component={TagsScreen}
+        options={{ title: 'Tags' }}
       />
     </SettingsStack.Navigator>
   );
