@@ -46,6 +46,7 @@ function EditTransactionScreen({
       date: values.date,
       currencyId: values.currencyId,
       entryType: values.entryType,
+      excludeFromBudget: values.excludeFromBudget,
     });
     await setTransactionTags(id, values.tagIds);
     navigation.navigate('HistoryList');
@@ -82,6 +83,7 @@ function EditTransactionScreen({
           currencyId: transaction.currencyId,
           entryType: transaction.entryType,
           tagIds,
+          excludeFromBudget: transaction.excludeFromBudget,
         }}
         onSubmit={handleSubmit}
         submitLabel="Update"

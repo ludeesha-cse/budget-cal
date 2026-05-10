@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `exclude_from_budget` integer DEFAULT false NOT NULL;

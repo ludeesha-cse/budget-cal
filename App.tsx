@@ -22,6 +22,7 @@ import DashboardScreen from './screens/DashboardScreen';
 import HistoryListScreen from './screens/HistoryListScreen';
 import EditTransactionScreen from './screens/EditTransactionScreen';
 import ExpensesByTypeScreen from './screens/ExpensesByTypeScreen';
+import ReportsScreen from './screens/ReportsScreen';
 import AddTransactionScreen from './screens/AddTransactionScreen';
 import SettingsHomeScreen from './screens/SettingsHomeScreen';
 import AppSettingsScreen from './screens/AppSettingsScreen';
@@ -205,6 +206,7 @@ function AppShell(): React.JSX.Element {
             options={{ headerShown: false }}
           />
           <Tab.Screen name="Expenses" component={ExpensesByTypeScreen} />
+          <Tab.Screen name="Reports" component={ReportsScreen} />
           <Tab.Screen name="Add" component={AddTransactionScreen} />
           <Tab.Screen
             name="Settings"

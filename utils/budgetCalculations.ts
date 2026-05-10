@@ -33,13 +33,22 @@ export async function getAverageLeftPerDay(
 // comment needed here; the underlying queries already carry one.
 // Expense-only, matching getMonthlyTotal's semantics — an Income entry
 // filed under this category shouldn't make it look like less was spent.
+// getTransactionsByMonth deliberately returns every transaction
+// (including excludeFromBudget ones — History needs the full record), so
+// this is the one place that applies the Stage 16a exclusion, matching
+// getMonthlyTotal's own filtering for the same reason.
 export async function getCategorySpent(
   month: string,
   categoryId: number,
 ): Promise<number> {
   const rows = await getTransactionsByMonth(month);
   return rows
-    .filter(row => row.categoryId === categoryId && row.entryType === 'Expense')
+    .filter(
+      row =>
+        row.categoryId === categoryId &&
+        row.entryType === 'Expense' &&
+        !row.excludeFromBudget,
+    )
     .reduce((sum, row) => sum + row.amount, 0);
 }
 

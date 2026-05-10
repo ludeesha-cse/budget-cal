@@ -84,6 +84,19 @@ export const transactions = sqliteTable('transactions', {
     .notNull()
     .references(() => currencies.id)
     .default(1),
+  // Stage 16a. Opt-out flag for a transaction that's real spending/income
+  // but shouldn't count toward budgets or reports — e.g. a reimbursed
+  // purchase, or a one-off gift that would otherwise blow out a monthly
+  // total. Existing rows default to false on migration (nothing before
+  // this stage was ever excludable, so nothing should silently vanish
+  // from a budget it was already counted in). Deliberately NOT the same
+  // thing as deleting or hiding a transaction — it still shows up in
+  // History and can still be searched/tagged; only the budget-facing
+  // aggregates (getMonthlyTotal, getMonthlyIncome, getCategorySpent, and
+  // Stage 16a's own report queries) ever look at this column.
+  excludeFromBudget: integer('exclude_from_budget', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   createdAt: int('created_at').notNull(),
 });
 

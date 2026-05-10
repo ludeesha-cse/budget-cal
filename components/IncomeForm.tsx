@@ -35,6 +35,7 @@ export type IncomeFormSubmitValues = {
   currencyId: number;
   description: string;
   tagIds: number[]; // Stage 15 — the caller passes this straight to setTransactionTags after the transaction itself is saved
+  excludeFromBudget: boolean; // Stage 16a — real income that shouldn't count toward budgets or reports
 };
 
 type IncomeFormProps = {
@@ -64,6 +65,7 @@ function IncomeForm({
   const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [tags, setTags] = useState<Awaited<ReturnType<typeof getTags>>>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -146,6 +148,7 @@ function IncomeForm({
       currencyId,
       description,
       tagIds: selectedTagIds,
+      excludeFromBudget,
     });
   };
 
@@ -289,6 +292,31 @@ function IncomeForm({
         </View>
       )}
 
+      <Pressable
+        style={styles.checkboxRow}
+        onPress={() => setExcludeFromBudget(current => !current)}>
+        <View
+          style={[
+            styles.checkboxBox,
+            { borderColor: colors.primary },
+            excludeFromBudget && { backgroundColor: colors.primary },
+          ]}>
+          {excludeFromBudget && (
+            <Text style={[styles.checkboxMark, { color: colors.primaryText }]}>
+              ✓
+            </Text>
+          )}
+        </View>
+        <View style={styles.checkboxLabelArea}>
+          <Text style={[styles.checkboxLabel, { color: colors.text }]}>
+            Exclude from budget
+          </Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>
+            Still real income, but won't count toward budgets or reports.
+          </Text>
+        </View>
+      </Pressable>
+
       {error && (
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
       )}
@@ -337,6 +365,31 @@ const styles = StyleSheet.create({
   },
   tagChipText: {
     fontSize: 13,
+    fontWeight: '600',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 16,
+    gap: 10,
+  },
+  checkboxBox: {
+    width: 22,
+    height: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxMark: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  checkboxLabelArea: {
+    flex: 1,
+  },
+  checkboxLabel: {
+    fontSize: 15,
     fontWeight: '600',
   },
   modalBackdrop: {

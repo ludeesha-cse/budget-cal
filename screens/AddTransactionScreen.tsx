@@ -52,6 +52,7 @@ function AddScreen(): React.JSX.Element {
       date: values.date,
       currencyId: values.currencyId,
       entryType: 'Expense',
+      excludeFromBudget: values.excludeFromBudget,
     });
     // Tags apply to the real transaction row that was just created — a
     // brand-new transaction always starts with an empty tag set, so this
@@ -69,6 +70,7 @@ function AddScreen(): React.JSX.Element {
       description: values.description,
       date: values.date,
       currencyId: values.currencyId,
+      excludeFromBudget: values.excludeFromBudget,
     });
     await setTransactionTags(inserted.id, values.tagIds);
     setSuccessMessage('Income added');

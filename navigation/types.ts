@@ -32,6 +32,7 @@ export type RootTabParamList = {
   Dashboard: NavigatorScreenParams<DashboardStackParamList> | undefined;
   History: NavigatorScreenParams<HistoryStackParamList> | undefined;
   Expenses: undefined;
+  Reports: undefined;
   Add: undefined;
   Settings: NavigatorScreenParams<SettingsStackParamList> | undefined;
 };

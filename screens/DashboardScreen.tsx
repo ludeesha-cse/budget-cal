@@ -190,11 +190,17 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           // Every Expense still requires a category (only Income can be
           // null, as of the categoryId-nullable migration); the null
           // check here just satisfies that at the type level too.
+          // Stage 16a: also skips excludeFromBudget transactions, same as
+          // getMonthlyTotal/getCategorySpent — getTransactionsByMonth
+          // itself still returns everything (History needs the full
+          // record), so this is the one place Dashboard applies the
+          // exclusion to its own hand-built category breakdown.
           const spentByCategory = new Map<number, number>();
           for (const transaction of monthTransactions) {
             if (
               transaction.entryType !== 'Expense' ||
-              transaction.categoryId == null
+              transaction.categoryId == null ||
+              transaction.excludeFromBudget
             ) {
               continue;
             }
