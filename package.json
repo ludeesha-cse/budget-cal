@@ -20,11 +20,14 @@
     "drizzle-orm": "0.44.4",
     "react": "19.1.0",
     "react-native": "0.80.0",
+    "react-native-fs": "2.20.0",
     "react-native-gifted-charts": "1.4.63",
     "react-native-linear-gradient": "2.8.3",
     "react-native-safe-area-context": "5.5.2",
     "react-native-screens": "4.13.1",
-    "react-native-svg": "15.12.1"
+    "react-native-share": "12.1.1",
+    "react-native-svg": "15.12.1",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

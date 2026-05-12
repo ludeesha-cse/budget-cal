@@ -1,9 +1,18 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDevEntitlementToggle } from '../hooks/useEntitlement';
 import { useTheme } from '../contexts/ThemeContext';
+import { getAllDataForExport } from '../db/queries';
+import { exportDataToExcel } from '../utils/excelExport';
 
 type SettingsHomeNavigationProp = NativeStackNavigationProp<
   SettingsStackParamList,
@@ -20,6 +29,29 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   // this row simply doesn't render in anything but a debug build —
   // there is no separate flag to remember to flip before shipping.
   const devEntitlement = useDevEntitlementToggle();
+  const [exporting, setExporting] = useState(false);
+
+  // Export is a free-tier feature with no gating check here at all — see
+  // the Stage 17a spec: it's the only way users get their data out, and
+  // locking it behind entitlement would trap people away from their own
+  // records.
+  const handleExport = async () => {
+    if (exporting) {
+      return;
+    }
+    setExporting(true);
+    try {
+      const data = await getAllDataForExport();
+      await exportDataToExcel(data);
+    } catch (error) {
+      Alert.alert(
+        'Export failed',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -126,6 +158,27 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
         </Text>
         <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
       </Pressable>
+      <Pressable
+        style={[styles.row, styles.exportRow, { borderBottomColor: colors.border }]}
+        disabled={exporting}
+        onPress={handleExport}>
+        <View style={styles.exportTextArea}>
+          <Text style={[styles.rowLabel, { color: colors.text }]}>
+            Export Data
+          </Text>
+          <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
+            Saves every record to an Excel file you can use to restore on
+            another device.
+          </Text>
+        </View>
+        {exporting ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (
+          <Text style={[styles.chevron, { color: colors.chevron }]}>
+            {'>'}
+          </Text>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -146,6 +199,17 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  exportRow: {
+    alignItems: 'center',
+  },
+  exportTextArea: {
+    flex: 1,
+    paddingRight: 12,
   },
   chevron: {
     fontSize: 16,

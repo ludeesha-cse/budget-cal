@@ -34,6 +34,12 @@ import {
   calculateFromMonthly,
   calculateFromPrincipal,
 } from '../utils/installmentMath';
+import {
+  SCHEMA_VERSION,
+  type ExportRow,
+  type ExportWorkbookData,
+} from '../utils/exportFormat';
+import { version as APP_VERSION } from '../package.json';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
 
@@ -4054,6 +4060,310 @@ export async function getMonthlyTrend(
       `getMonthlyTrend: failed to build trend for months=${months.join(',')} currency id=${currencyId}`,
       error,
     );
+    throw error;
+  }
+}
+
+// Stage 17a: Excel export. getAllDataForExport is the ONLY place that
+// reads every table for the purpose of writing them out — it exists
+// purely to hand utils/excelExport.ts already-shaped, already-joined
+// rows matching utils/exportFormat.ts's SHEET_COLUMNS exactly, so the
+// export layer itself never has to know column order or run a single
+// join. NETWORK-READY: if a backend is added later, this becomes a
+// fetch(GET /api/export) that the server assembles instead — the shape
+// returned to the caller (ExportWorkbookData) would stay the same.
+
+// Epoch-ms createdAt columns are exported as plain 'YYYY-MM-DD' dates
+// (matching every other date already shown in this app), not full
+// timestamps — the one exception is Meta's own ExportedAt, which is
+// deliberately a full ISO instant so a future importer can tell exactly
+// when a file was produced, not just what day.
+function toDateOnly(epochMs: number): string {
+  return formatDateString(new Date(epochMs));
+}
+
+export async function getAllDataForExport(): Promise<ExportWorkbookData> {
+  try {
+    const [
+      allCurrencies,
+      allAccounts,
+      allAccountBalances,
+      allCategories,
+      allTags,
+      allTransactions,
+      allTransactionTags,
+      allBudgets,
+      allCategoryBudgets,
+      allTransfers,
+      allLoanDetails,
+      allLoanPayments,
+      allCreditCardPayoffs,
+      allInstallmentPlans,
+      allInstallmentPayments,
+      allRecurringRules,
+      allRecurringOccurrences,
+      allSavingsGoals,
+      allSavingsContributions,
+    ] = await Promise.all([
+      db.select().from(currencies),
+      db.select().from(accounts),
+      db.select().from(accountBalances),
+      db.select().from(categories),
+      db.select().from(tags),
+      db.select().from(transactions),
+      db.select().from(transactionTags),
+      db.select().from(budgets),
+      db.select().from(categoryBudgets),
+      db.select().from(transfers),
+      db.select().from(loanDetails),
+      db.select().from(loanPayments),
+      db.select().from(creditCardPayoffs),
+      db.select().from(installmentPlans),
+      db.select().from(installmentPayments),
+      db.select().from(recurringRules),
+      db.select().from(recurringOccurrences),
+      db.select().from(savingsGoals),
+      db.select().from(savingsContributions),
+    ]);
+
+    // Lookup maps resolve every foreign key to the human-readable value
+    // an exported sheet actually shows. Built once in JS rather than
+    // joined per-table in SQL — this function already has to load every
+    // table into memory to write a full-workbook export, so this is the
+    // same "small table, filter/join in JS" convention already used
+    // throughout this file (getRecurringRules, searchTransactions, etc.),
+    // just applied at whole-app scale instead of one table at a time.
+    const accountName = new Map(allAccounts.map(a => [a.id, a.name]));
+    const categoryName = new Map(allCategories.map(c => [c.id, c.name]));
+    const currencyCode = new Map(allCurrencies.map(c => [c.id, c.code]));
+    const tagName = new Map(allTags.map(t => [t.id, t.name]));
+    const installmentPlanName = new Map(
+      allInstallmentPlans.map(p => [p.id, p.name]),
+    );
+    const recurringRuleName = new Map(
+      allRecurringRules.map(r => [r.id, r.name]),
+    );
+    const savingsGoalName = new Map(allSavingsGoals.map(g => [g.id, g.name]));
+    const transactionById = new Map(allTransactions.map(t => [t.id, t]));
+
+    // Tag names per transaction, comma-joined, for Transactions' own Tags
+    // column — built from the exact same transactionTags rows the
+    // dedicated TransactionTags sheet below also reads, so the two can
+    // never disagree with each other.
+    const tagNamesByTransactionId = new Map<number, string[]>();
+    for (const row of allTransactionTags) {
+      const list = tagNamesByTransactionId.get(row.transactionId) ?? [];
+      list.push(tagName.get(row.tagId) ?? '');
+      tagNamesByTransactionId.set(row.transactionId, list);
+    }
+
+    const data: ExportWorkbookData = {
+      Meta: [
+        {
+          SchemaVersion: SCHEMA_VERSION,
+          ExportedAt: new Date().toISOString(),
+          AppVersion: APP_VERSION,
+        },
+      ],
+      Currencies: allCurrencies.map(
+        (c): ExportRow => ({
+          Code: c.code,
+          Name: c.name,
+          IsDefault: c.isDefault,
+          CreatedAt: toDateOnly(c.createdAt),
+        }),
+      ),
+      Accounts: allAccounts.map(
+        (a): ExportRow => ({
+          Name: a.name,
+          Type: a.type,
+          Active: a.active,
+          CreatedAt: toDateOnly(a.createdAt),
+        }),
+      ),
+      AccountBalances: allAccountBalances.map(
+        (b): ExportRow => ({
+          AccountName: accountName.get(b.accountId) ?? '',
+          CurrencyCode: currencyCode.get(b.currencyId) ?? '',
+          Balance: b.balance,
+        }),
+      ),
+      Categories: allCategories.map(
+        (c): ExportRow => ({
+          Name: c.name,
+          IsSystemReserved: c.isSystemReserved,
+          CreatedAt: toDateOnly(c.createdAt),
+        }),
+      ),
+      Tags: allTags.map(
+        (t): ExportRow => ({
+          Name: t.name,
+          CreatedAt: toDateOnly(t.createdAt),
+        }),
+      ),
+      Transactions: allTransactions.map((t): ExportRow => {
+        // CRITICAL (Stage 17a spec): an Income row's Category must come
+        // out as a genuinely blank cell — never null, never omitted, and
+        // never the string "Uncategorized". Income transactions have no
+        // category in the first place (see transactions.categoryId's own
+        // nullable-since comment in db/schema.ts), so '' here is simply
+        // the correct, faithful representation of "not applicable."
+        const category =
+          t.categoryId != null ? (categoryName.get(t.categoryId) ?? '') : '';
+        return {
+          Date: t.date,
+          AccountName: accountName.get(t.accountId) ?? '',
+          EntryType: t.entryType,
+          Amount: t.amount,
+          CategoryName: category,
+          CurrencyCode: currencyCode.get(t.currencyId) ?? '',
+          Description: t.description ?? '',
+          Tags: (tagNamesByTransactionId.get(t.id) ?? []).join(', '),
+          ExcludeFromBudget: t.excludeFromBudget,
+          CreatedAt: toDateOnly(t.createdAt),
+        };
+      }),
+      TransactionTags: allTransactionTags.map((row): ExportRow => {
+        const txn = transactionById.get(row.transactionId);
+        return {
+          Date: txn?.date ?? '',
+          AccountName: txn ? (accountName.get(txn.accountId) ?? '') : '',
+          Amount: txn?.amount ?? '',
+          Description: txn?.description ?? '',
+          TagName: tagName.get(row.tagId) ?? '',
+        };
+      }),
+      Budgets: allBudgets.map(
+        (b): ExportRow => ({
+          Month: b.month ?? '',
+          Category: b.category,
+          LimitAmount: b.limitAmount,
+          Period: b.period,
+          StartDate: toDateOnly(b.startDate),
+          CreatedAt: toDateOnly(b.createdAt),
+        }),
+      ),
+      CategoryBudgets: allCategoryBudgets.map(
+        (cb): ExportRow => ({
+          Month: cb.month,
+          CategoryName: categoryName.get(cb.categoryId) ?? '',
+          Amount: cb.amount,
+        }),
+      ),
+      Transfers: allTransfers.map(
+        (t): ExportRow => ({
+          Date: t.date,
+          FromAccountName: accountName.get(t.fromAccountId) ?? '',
+          ToAccountName: accountName.get(t.toAccountId) ?? '',
+          Amount: t.amount,
+          CurrencyCode: currencyCode.get(t.currencyId) ?? '',
+          CreatedAt: toDateOnly(t.createdAt),
+        }),
+      ),
+      LoanDetails: allLoanDetails.map(
+        (l): ExportRow => ({
+          AccountName: accountName.get(l.accountId) ?? '',
+          CounterpartyName: l.counterpartyName,
+          DateCreated: l.dateCreated,
+          LastAccrualAnchorDate: l.lastAccrualAnchorDate,
+          DueDate: l.dueDate ?? '',
+          InterestRate: l.interestRate ?? '',
+          InterestPeriod: l.interestPeriod ?? '',
+        }),
+      ),
+      LoanPayments: allLoanPayments.map(
+        (p): ExportRow => ({
+          Date: p.date,
+          LoanAccountName: accountName.get(p.loanAccountId) ?? '',
+          CounterpartAccountName:
+            accountName.get(p.counterpartAccountId) ?? '',
+          Amount: p.amount,
+          CurrencyCode: currencyCode.get(p.currencyId) ?? '',
+          CreatedAt: toDateOnly(p.createdAt),
+        }),
+      ),
+      CreditCardPayoffs: allCreditCardPayoffs.map(
+        (p): ExportRow => ({
+          Date: p.date,
+          CreditCardAccountName: accountName.get(p.creditCardAccountId) ?? '',
+          PayingAccountName: accountName.get(p.payingAccountId) ?? '',
+          Amount: p.amount,
+          CurrencyCode: currencyCode.get(p.currencyId) ?? '',
+          CreatedAt: toDateOnly(p.createdAt),
+        }),
+      ),
+      InstallmentPlans: allInstallmentPlans.map(
+        (p): ExportRow => ({
+          Name: p.name,
+          PrincipalAmount: p.principalAmount ?? '',
+          InterestRate: p.interestRate ?? '',
+          NumberOfMonths: p.numberOfMonths,
+          MonthlyAmount: p.monthlyAmount,
+          FinalInstallmentAmount: p.finalInstallmentAmount,
+          TotalRepayable: p.totalRepayable,
+          CategoryName: categoryName.get(p.categoryId) ?? '',
+          CurrencyCode: currencyCode.get(p.currencyId) ?? '',
+          StartDate: p.startDate,
+          CreatedAt: toDateOnly(p.createdAt),
+        }),
+      ),
+      InstallmentPayments: allInstallmentPayments.map(
+        (p): ExportRow => ({
+          PlanName: installmentPlanName.get(p.installmentPlanId) ?? '',
+          InstallmentNumber: p.installmentNumber,
+          AccountName: accountName.get(p.accountId) ?? '',
+          PaidDate: p.paidDate,
+          CreatedAt: toDateOnly(p.createdAt),
+        }),
+      ),
+      RecurringRules: allRecurringRules.map((r): ExportRow => {
+        const category =
+          r.categoryId != null ? (categoryName.get(r.categoryId) ?? '') : '';
+        return {
+          Name: r.name,
+          RuleType: r.ruleType,
+          Amount: r.amount,
+          DayOfMonth: r.dayOfMonth,
+          CategoryName: category,
+          AccountName: accountName.get(r.accountId) ?? '',
+          CurrencyCode: currencyCode.get(r.currencyId) ?? '',
+          Active: r.active,
+          CreatedAt: toDateOnly(r.createdAt),
+        };
+      }),
+      RecurringOccurrences: allRecurringOccurrences.map(
+        (o): ExportRow => ({
+          RuleName: recurringRuleName.get(o.recurringRuleId) ?? '',
+          DueDate: o.dueDate,
+          Status: o.status,
+          ConfirmedAmount: o.confirmedAmount ?? '',
+          ResolvedAt: o.resolvedAt ?? '',
+        }),
+      ),
+      SavingsGoals: allSavingsGoals.map(
+        (g): ExportRow => ({
+          Name: g.name,
+          TargetAmount: g.targetAmount,
+          CurrencyCode: currencyCode.get(g.currencyId) ?? '',
+          TargetDate: g.targetDate ?? '',
+          Status: g.status,
+          CreatedAt: toDateOnly(g.createdAt),
+        }),
+      ),
+      SavingsContributions: allSavingsContributions.map(
+        (c): ExportRow => ({
+          GoalName: savingsGoalName.get(c.savingsGoalId) ?? '',
+          Amount: c.amount,
+          Date: c.date,
+          Note: c.note ?? '',
+          CreatedAt: toDateOnly(c.createdAt),
+        }),
+      ),
+    };
+
+    return data;
+  } catch (error) {
+    console.error('getAllDataForExport: failed to gather export data', error);
     throw error;
   }
 }
