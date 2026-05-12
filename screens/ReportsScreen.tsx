@@ -1,6 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import {
   getCurrencies,
@@ -13,7 +21,13 @@ import {
 import { getReportRange, ReportRangePreset } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import {
+  buildAccountTypeBarData,
+  buildCategoryPieSlices,
+  buildTrendChartData,
+} from '../utils/chartHelpers';
 import { useTheme } from '../contexts/ThemeContext';
+import type { ThemeColors } from '../contexts/ThemeContext';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type ReportSummaryResult = Awaited<ReturnType<typeof getReportSummary>>;
@@ -61,6 +75,41 @@ function formatRangeLabel(months: string[]): string {
     return formatMonthLabel(months[0]);
   }
   return `${formatMonthLabel(months[0])} – ${formatMonthLabel(months[months.length - 1])}`;
+}
+
+// Short 3-letter form of the same month names used above, for chart axis
+// labels where formatMonthLabel's "August 2026" would be far too wide —
+// sliced from the same MONTH_NAMES array rather than a second hardcoded
+// list, so the two labelings can never drift out of sync.
+function formatMonthAxisLabel(month: string): string {
+  const [, monthNumber] = month.split('-').map(Number);
+  return MONTH_NAMES[monthNumber - 1].slice(0, 3);
+}
+
+// Defined at module scope (not inline in ReportsScreen's JSX) so it isn't
+// recreated as a new component type on every render — react-hooks/eslint
+// flags inline component definitions passed to centerLabelComponent
+// since gifted-charts would otherwise remount this subtree every time
+// ReportsScreen re-renders.
+function PieCenterLabel({
+  totalLabel,
+  colors,
+}: {
+  totalLabel: string;
+  colors: ThemeColors;
+}): React.JSX.Element {
+  return (
+    <View style={styles.pieCenter}>
+      <Text
+        style={[styles.pieCenterValue, { color: colors.text }]}
+        numberOfLines={1}>
+        {totalLabel}
+      </Text>
+      <Text style={[styles.pieCenterLabel, { color: colors.textSecondary }]}>
+        Total
+      </Text>
+    </View>
+  );
 }
 
 function ReportsScreen(): React.JSX.Element {
@@ -181,6 +230,43 @@ function ReportsScreen(): React.JSX.Element {
     availableCurrencyIds.includes(c.id),
   );
 
+  // Fixed chart width derived from the window rather than letting each
+  // chart component size itself — gifted-charts' own auto-sizing behaves
+  // inconsistently between iOS and Android, so pinning an explicit width
+  // (window width minus the screen's 16+16 horizontal padding) keeps
+  // layout predictable on both platforms.
+  const windowWidth = useWindowDimensions().width;
+  const chartWidth = Math.max(240, windowWidth - 32);
+
+  // All three chart-data builders are pure (see utils/chartHelpers.ts) and
+  // never touch the Stage 16a aggregate query results themselves — they
+  // only reshape the already-verified rows for the chart library.
+  const pieSlices = useMemo(
+    () => buildCategoryPieSlices(categoryBreakdown, colors),
+    [categoryBreakdown, colors],
+  );
+  const accountTypeBars = useMemo(
+    () => buildAccountTypeBarData(accountTypeBreakdown, colors),
+    [accountTypeBreakdown, colors],
+  );
+  const trendChartData = useMemo(
+    () => buildTrendChartData(trend, formatMonthAxisLabel),
+    [trend],
+  );
+
+  // Stable function reference (not an inline arrow defined in the JSX
+  // below) so PieChart's centerLabelComponent slot never sees a "new
+  // component type" from one render to the next.
+  const renderPieCenterLabel = useCallback(
+    () => (
+      <PieCenterLabel
+        totalLabel={formatAmount(summary?.totalExpenses ?? 0, selectedCurrencyCode)}
+        colors={colors}
+      />
+    ),
+    [summary, selectedCurrencyCode, colors],
+  );
+
   return (
     <ScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
@@ -290,23 +376,58 @@ function ReportsScreen(): React.JSX.Element {
               No expenses in this range.
             </Text>
           ) : (
-            categoryBreakdown.map(row => (
-              <View
-                key={row.categoryId ?? 'uncategorized'}
-                style={[styles.listRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.listRowName, { color: colors.text }]}>
-                  {row.categoryName}
-                </Text>
-                <View style={styles.listRowValues}>
-                  <Text style={{ color: colors.text }}>
-                    {formatAmount(row.total, selectedCurrencyCode)}
-                  </Text>
-                  <Text style={{ color: colors.textSecondary }}>
-                    {row.percentage.toFixed(1)}%
-                  </Text>
-                </View>
+            <>
+              <View style={styles.chartWrap}>
+                <PieChart
+                  data={pieSlices}
+                  donut
+                  radius={Math.min(chartWidth, 260) / 2}
+                  innerRadius={Math.min(chartWidth, 260) / 2 * 0.6}
+                  innerCircleColor={colors.surface}
+                  // No in-slice text and no onPress/focus config — the
+                  // exact figures already live in the numeric list right
+                  // below, and skipping the library's own label/touch
+                  // handling avoids the iOS/Android rendering
+                  // inconsistencies that feature is prone to. A pie with
+                  // a single slice (e.g. Current Month with one category)
+                  // still renders as a full circle with no special-casing
+                  // needed here.
+                  showText={false}
+                  centerLabelComponent={renderPieCenterLabel}
+                />
               </View>
-            ))
+              <View style={styles.legendRow}>
+                {pieSlices.map(slice => (
+                  <View key={slice.label} style={styles.legendItem}>
+                    <View
+                      style={[styles.legendSwatch, { backgroundColor: slice.color }]}
+                    />
+                    <Text
+                      style={[styles.legendLabel, { color: colors.textSecondary }]}
+                      numberOfLines={1}>
+                      {slice.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {categoryBreakdown.map(row => (
+                <View
+                  key={row.categoryId ?? 'uncategorized'}
+                  style={[styles.listRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.listRowName, { color: colors.text }]}>
+                    {row.categoryName}
+                  </Text>
+                  <View style={styles.listRowValues}>
+                    <Text style={{ color: colors.text }}>
+                      {formatAmount(row.total, selectedCurrencyCode)}
+                    </Text>
+                    <Text style={{ color: colors.textSecondary }}>
+                      {row.percentage.toFixed(1)}%
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </>
           )}
 
           <Text style={[styles.subtitle, { color: colors.text }]}>
@@ -317,23 +438,151 @@ function ReportsScreen(): React.JSX.Element {
               No expenses in this range.
             </Text>
           ) : (
-            accountTypeBreakdown.map(row => (
-              <View
-                key={row.accountType}
-                style={[styles.listRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.listRowName, { color: colors.text }]}>
-                  {row.accountType}
-                </Text>
-                <Text style={{ color: colors.text }}>
-                  {formatAmount(row.total, selectedCurrencyCode)}
-                </Text>
+            <>
+              <View style={[styles.chartWrap, { width: chartWidth }]}>
+                <BarChart
+                  data={accountTypeBars}
+                  horizontal
+                  width={chartWidth - 90}
+                  height={Math.max(90, accountTypeBars.length * 46)}
+                  barWidth={22}
+                  spacing={24}
+                  barBorderRadius={4}
+                  yAxisLabelWidth={80}
+                  yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
+                  xAxisLabelTextStyle={[
+                    styles.chartAxisLabelSmall,
+                    { color: colors.textSecondary },
+                  ]}
+                  xAxisColor={colors.border}
+                  yAxisColor={colors.border}
+                  rulesColor={colors.border}
+                  hideRules={false}
+                  // No onPress supplied and touch-driven focus explicitly
+                  // disabled — same reasoning as the pie chart above:
+                  // fewer library-owned touch code paths means fewer
+                  // places for iOS/Android to disagree. A single account
+                  // type still renders as one readable bar with no
+                  // special-casing needed.
+                  disablePress
+                  isAnimated={false}
+                />
               </View>
-            ))
+              {accountTypeBreakdown.map(row => (
+                <View
+                  key={row.accountType}
+                  style={[styles.listRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.listRowName, { color: colors.text }]}>
+                    {row.accountType}
+                  </Text>
+                  <Text style={{ color: colors.text }}>
+                    {formatAmount(row.total, selectedCurrencyCode)}
+                  </Text>
+                </View>
+              ))}
+            </>
           )}
 
           <Text style={[styles.subtitle, { color: colors.text }]}>
             Monthly Trend
           </Text>
+          {trend.length === 0 ? (
+            <Text style={[styles.empty, { color: colors.textSecondary }]}>
+              No trend data for this range.
+            </Text>
+          ) : trendChartData.length === 1 ? (
+            // A one-point "trend" is a contradiction in terms — a line
+            // chart would either render as a single dot or fail to draw
+            // any line segment at all. Current Month always produces
+            // exactly one month, so instead of a line chart this shows
+            // the same two figures as a small two-bar comparison, which
+            // is the sensible reading of "trend" when there's only one
+            // period.
+            <View style={styles.chartWrap}>
+              <BarChart
+                data={[
+                  {
+                    label: 'Income',
+                    value: trendChartData[0].income,
+                    frontColor: colors.success,
+                  },
+                  {
+                    label: 'Expenses',
+                    value: trendChartData[0].expenses,
+                    frontColor: colors.danger,
+                  },
+                ]}
+                width={chartWidth - 40}
+                height={180}
+                barWidth={48}
+                spacing={40}
+                barBorderRadius={4}
+                yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
+                xAxisLabelTextStyle={[
+                  styles.chartAxisLabel,
+                  { color: colors.textSecondary },
+                ]}
+                xAxisColor={colors.border}
+                yAxisColor={colors.border}
+                rulesColor={colors.border}
+                disablePress
+                isAnimated={false}
+              />
+            </View>
+          ) : (
+            <View style={styles.chartWrap}>
+              <LineChart
+                data={trendChartData.map(point => ({ value: point.income }))}
+                data2={trendChartData.map(point => ({ value: point.expenses }))}
+                xAxisLabelTexts={trendChartData.map(point => point.label)}
+                width={chartWidth - 40}
+                height={200}
+                color1={colors.success}
+                color2={colors.danger}
+                dataPointsColor1={colors.success}
+                dataPointsColor2={colors.danger}
+                thickness1={2}
+                thickness2={2}
+                yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
+                xAxisLabelTextStyle={[
+                  styles.chartAxisLabelSmall,
+                  { color: colors.textSecondary },
+                ]}
+                xAxisColor={colors.border}
+                yAxisColor={colors.border}
+                rulesColor={colors.border}
+                initialSpacing={16}
+                endSpacing={16}
+                spacing={Math.max(
+                  36,
+                  (chartWidth - 80) / Math.max(1, trendChartData.length - 1),
+                )}
+                // Deliberately no pointerConfig/onPress/focusEnabled —
+                // same touch-avoidance reasoning as the other two charts.
+                // Every month in range is zero-filled by getMonthlyTrend
+                // (Stage 16a), so a month with no activity still draws as
+                // a real point at zero rather than a gap in the line.
+              />
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[styles.legendSwatch, { backgroundColor: colors.success }]}
+                  />
+                  <Text style={[styles.legendLabel, { color: colors.textSecondary }]}>
+                    Income
+                  </Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[styles.legendSwatch, { backgroundColor: colors.danger }]}
+                  />
+                  <Text style={[styles.legendLabel, { color: colors.textSecondary }]}>
+                    Expenses
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
           {trend.map(row => (
             <View
               key={row.month}
@@ -459,6 +708,49 @@ const styles = StyleSheet.create({
   listRowValues: {
     alignItems: 'flex-end',
     gap: 2,
+  },
+  chartWrap: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  pieCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pieCenterValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pieCenterLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 140,
+  },
+  legendSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  legendLabel: {
+    fontSize: 12,
+  },
+  chartAxisLabel: {
+    fontSize: 12,
+  },
+  chartAxisLabelSmall: {
+    fontSize: 11,
   },
 });
 

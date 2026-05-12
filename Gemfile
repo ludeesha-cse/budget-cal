@@ -14,3 +14,7 @@ gem 'bigdecimal'
 gem 'logger'
 gem 'benchmark'
 gem 'mutex_m'
+# kconv (pulled in transitively by CocoaPods' dependency chain) itself
+# requires nkf, which Ruby 3.4 also unbundled from the stdlib — without
+# this, `bundle install` fails with "cannot load such file -- kconv".
+gem 'nkf'
