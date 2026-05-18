@@ -12,11 +12,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { ChevronRight, TrendingUp } from 'lucide-react-native';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import Card from '../components/Card';
+import type { SettingsStackParamList } from '../navigation/types';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
@@ -76,6 +80,8 @@ function AccountsScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<SettingsStackParamList, 'Accounts'>>();
   const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
@@ -270,9 +276,18 @@ function AccountsScreen(): React.JSX.Element {
       // a future successful purchase (Stage 19) completes automatically,
       // and dismissing the paywall now just leaves the form exactly as
       // filled in, since nothing here has cleared or unmounted it.
+      //
+      // formVisible is hidden first because this screen's form is itself
+      // a native <Modal> — leaving it visible while PaywallModal's own
+      // <Modal> opens on top of it means two native Modals are visible at
+      // once, which never finishes presenting on iOS and freezes the app
+      // solid (Android tolerates it). onDismiss brings the form back,
+      // still filled in, if the user backs out without buying.
+      setFormVisible(false);
       openPaywall({
         reason: check.reason ?? `${type} accounts require Premium.`,
         onPurchaseSuccess: performCreate,
+        onDismiss: () => setFormVisible(true),
       });
       return;
     }
@@ -834,6 +849,32 @@ function AccountsScreen(): React.JSX.Element {
         )}
       </View>
 
+      {/* Deliberately placed here rather than as a SettingsHome list
+          entry or a Dashboard card — net worth is sensitive enough that
+          it should take a real choice to see, not show up on the screen
+          the app opens to or a flat row one tap from More. See
+          NetWorthScreen's own header comment. */}
+      <Pressable onPress={() => navigation.navigate('NetWorth')}>
+        <Card colors={colors} style={styles.netWorthLink}>
+          <View
+            style={[
+              styles.netWorthLinkIcon,
+              { backgroundColor: colors.primarySoft },
+            ]}>
+            <TrendingUp size={18} color={colors.primary} />
+          </View>
+          <View style={styles.netWorthLinkText}>
+            <Text style={[styles.netWorthLinkTitle, { color: colors.text }]}>
+              View Net Worth
+            </Text>
+            <Text style={{ color: colors.textSecondary }}>
+              Assets minus liabilities, by currency
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.chevron} />
+        </Card>
+      </Pressable>
+
       <Modal
         visible={updateBalanceTarget != null}
         transparent
@@ -1260,6 +1301,28 @@ const styles = StyleSheet.create({
   topActionsRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  netWorthLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    marginTop: 16,
+  },
+  netWorthLinkIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  netWorthLinkText: {
+    flex: 1,
+  },
+  netWorthLinkTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   label: {
     fontSize: 14,

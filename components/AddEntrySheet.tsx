@@ -1,0 +1,193 @@
+import React from 'react';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ArrowDownLeft, ArrowUpRight, Minus, Plus } from 'lucide-react-native';
+import { useTheme } from '../contexts/ThemeContext';
+import { typography, scaleFont } from '../theme/typography';
+
+export type AddEntryKind =
+  | 'Expense'
+  | 'Income'
+  | 'LiabilityRepayment'
+  | 'ReceivableIncome';
+
+type AddEntryOption = {
+  kind: AddEntryKind;
+  title: string;
+  subtitle: string;
+};
+
+const OPTIONS: AddEntryOption[] = [
+  { kind: 'Expense', title: 'Expense', subtitle: 'Category required' },
+  { kind: 'Income', title: 'Income', subtitle: 'No category — description only' },
+  {
+    kind: 'LiabilityRepayment',
+    title: 'Liability Repayment',
+    subtitle: 'Pay down something you borrowed',
+  },
+  {
+    kind: 'ReceivableIncome',
+    title: 'Receivable Income',
+    subtitle: 'Collect on money you lent',
+  },
+];
+
+type Props = {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (kind: AddEntryKind) => void;
+};
+
+// The FAB's action sheet (App.tsx) — a small floating card rather than a
+// full-height bottom sheet, since it only ever has to hold four rows.
+// Tapping the dimmed backdrop or any row closes it; onSelect fires after
+// the sheet is already closing so the destination screen never has to
+// render underneath a still-visible modal.
+function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element {
+  const { colors } = useTheme();
+
+  const handleSelect = (kind: AddEntryKind) => {
+    onClose();
+    onSelect(kind);
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <View style={styles.sheetWrap} pointerEvents="box-none">
+          <Pressable
+            style={[
+              styles.sheet,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            onPress={() => {}}>
+            <Text
+              style={[
+                styles.eyebrow,
+                typography.eyebrow,
+                { color: colors.textSecondary },
+              ]}>
+              Add Entry
+            </Text>
+            {OPTIONS.map(option => (
+              <Pressable
+                key={option.kind}
+                style={({ pressed }) => [
+                  styles.row,
+                  pressed && { opacity: 0.6 },
+                ]}
+                onPress={() => handleSelect(option.kind)}>
+                <View
+                  style={[
+                    styles.iconCircle,
+                    option.kind === 'Expense' && {
+                      backgroundColor: colors.dangerSoft,
+                    },
+                    option.kind === 'Income' && {
+                      backgroundColor: colors.successSoft,
+                    },
+                    option.kind === 'LiabilityRepayment' && {
+                      backgroundColor: colors.primary,
+                    },
+                    option.kind === 'ReceivableIncome' && [
+                      styles.iconCircleOutline,
+                      { borderColor: colors.border },
+                    ],
+                  ]}>
+                  {option.kind === 'Expense' && (
+                    <Minus size={18} color={colors.danger} strokeWidth={2.5} />
+                  )}
+                  {option.kind === 'Income' && (
+                    <Plus size={18} color={colors.success} strokeWidth={2.5} />
+                  )}
+                  {option.kind === 'LiabilityRepayment' && (
+                    <ArrowUpRight
+                      size={18}
+                      color={colors.primaryText}
+                      strokeWidth={2.5}
+                    />
+                  )}
+                  {option.kind === 'ReceivableIncome' && (
+                    <ArrowDownLeft
+                      size={18}
+                      color={colors.text}
+                      strokeWidth={2.5}
+                    />
+                  )}
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>
+                    {option.title}
+                  </Text>
+                  <Text
+                    style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
+                    {option.subtitle}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheetWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 110,
+    paddingHorizontal: 24,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  eyebrow: {
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  iconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  iconCircleOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  rowText: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+  },
+  rowSubtitle: {
+    fontSize: scaleFont(12),
+    marginTop: 2,
+  },
+});
+
+export default AddEntrySheet;

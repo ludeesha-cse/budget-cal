@@ -1,21 +1,29 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { DashboardStackParamList } from '../navigation/types';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { X } from 'lucide-react-native';
+import ScreenBackground from '../components/ScreenBackground';
+import Card from '../components/Card';
+import type { DashboardStackParamList, RootTabParamList } from '../navigation/types';
 import {
   generatePendingOccurrences,
+  getAccountBalance,
+  getAccountBalances,
+  getAccounts,
   getActiveLoanAccounts,
   getBudgetForMonth,
   getCategories,
   getCategoryBudgetsForMonth,
+  getInstallmentReminders,
   getLoanTotalOwed,
   getMonthlyIncome,
   getMonthlyTotal,
@@ -31,10 +39,66 @@ import {
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
-import { getNetWorthByCurrency, NetWorthByCurrency } from '../utils/netWorth';
 import { useTheme } from '../contexts/ThemeContext';
+import type { ThemeColors } from '../contexts/ThemeContext';
+import { typography, scaleFont } from '../theme/typography';
 
 const DUE_SOON_WINDOW_DAYS = 7;
+// Narrower than loans' own DUE_SOON_WINDOW_DAYS — installment reminders
+// are meant to catch "this is about to come out of your account", not a
+// week-out heads-up, per the explicit "within 3 or 4 days" ask.
+const INSTALLMENT_REMINDER_WINDOW_DAYS = 4;
+// Only the top few rows show on the dashboard itself — "See all"/"Manage"
+// exist specifically so this card never has to grow to fit everything.
+const CATEGORY_PREVIEW_COUNT = 3;
+const SHORTCUT_ACCOUNT_COUNT = 2;
+
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+// Hardcoded name tables rather than Intl/toLocaleString — same reasoning
+// as ReportsScreen's formatMonthLabel: this only ever needs a fixed
+// English label, never real locale-awareness, so there's nothing to gain
+// from depending on Hermes' locale-data being complete on every device.
+function formatEyebrowDate(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00`);
+  const day = DAY_NAMES[date.getDay()].toUpperCase();
+  const month = MONTH_NAMES[date.getMonth()].slice(0, 3).toUpperCase();
+  return `${day}, ${date.getDate()} ${month}`;
+}
+
+function formatMonthTitle(month: string): string {
+  const [, monthNumber] = month.split('-').map(Number);
+  return MONTH_NAMES[monthNumber - 1];
+}
+
+function formatAmountPlain(amount: number): string {
+  return amount.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
 
 type UpcomingLoanRow = {
   accountId: number;
@@ -89,29 +153,57 @@ type CategoryBreakdownRow = {
   averageLeftPerDay: number | null;
 };
 
-function amountLeftStyleFor(
+type ShortcutAccountRow = {
+  accountId: number;
+  name: string;
+  currencyCode: string;
+  balance: number;
+};
+
+type UpcomingInstallmentRow = {
+  id: number;
+  name: string;
+  currencyCode: string;
+  nextInstallmentNumber: number;
+  numberOfMonths: number;
+  nextAmountDue: number;
+  daysUntilDue: number; // negative once overdue, same convention as UpcomingLoanRow
+};
+
+function statusColorsFor(
   spent: number,
   budgetAmount: number,
-  colors: { danger: string; warning: string; success: string },
-) {
+  colors: ThemeColors,
+): { text: string; soft: string } {
   const percentUsed = budgetAmount > 0 ? spent / budgetAmount : 0;
-  return percentUsed > 1
-    ? { color: colors.danger }
-    : percentUsed >= 0.9
-      ? { color: colors.warning }
-      : { color: colors.success };
+  if (percentUsed > 1) {
+    return { text: colors.danger, soft: colors.dangerSoft };
+  }
+  if (percentUsed >= 0.9) {
+    return { text: colors.warning, soft: colors.primarySoft };
+  }
+  return { text: colors.success, soft: colors.successSoft };
 }
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>;
 
 function DashboardScreen({ navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  // Cross-tab navigation (Settings, Add) needs the tab navigator's own
+  // prop, not DashboardStack's — same pattern AddTransactionScreen's
+  // "Liabilities & Receivables" shortcut already uses.
+  const tabNavigation =
+    useNavigation<BottomTabNavigationProp<RootTabParamList, 'Dashboard'>>();
+
   const [pendingOccurrenceCount, setPendingOccurrenceCount] = useState(0);
   // Session-only — resets to false on every fresh app launch (a plain
   // useState has no persistence of its own), which is exactly what makes
   // "dismissible for the session, but reappears next launch while
   // anything is still pending" true without writing anything to disk.
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  // Also session-only, same reasoning — hiding balances is a
+  // glance-privacy toggle for right now, not a saved preference.
+  const [balancesHidden, setBalancesHidden] = useState(false);
   const [total, setTotal] = useState(0);
   const [totalIncome, setTotalIncome] = useState(0);
   const [budget, setBudget] = useState<
@@ -128,6 +220,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     CategoryBreakdownRow[]
   >([]);
+  const [shortcutAccounts, setShortcutAccounts] = useState<ShortcutAccountRow[]>(
+    [],
+  );
   const [liabilityTotals, setLiabilityTotals] = useState<Record<string, number>>(
     {},
   );
@@ -135,9 +230,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
     Record<string, number>
   >({});
   const [upcomingLoans, setUpcomingLoans] = useState<UpcomingLoanRow[]>([]);
-  const [netWorthByCurrency, setNetWorthByCurrency] = useState<
-    Record<string, NetWorthByCurrency>
-  >({});
+  const [upcomingInstallments, setUpcomingInstallments] = useState<
+    UpcomingInstallmentRow[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -164,8 +259,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             getTransactionsByMonth(month),
             getActiveLoanAccounts('Liability'),
             getActiveLoanAccounts('Receivable'),
-            getNetWorthByCurrency(),
             getPendingOccurrences(),
+            getAccounts(),
+            getInstallmentReminders(),
           ]),
         )
         .then(
@@ -182,8 +278,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           monthTransactions,
           liabilities,
           receivables,
-          netWorth,
           pendingOccurrences,
+          accounts,
+          installmentReminders,
         ]) => {
           // Expense-only, same as getMonthlyTotal — an Income entry
           // filed under a category shouldn't reduce how "spent" it looks.
@@ -241,7 +338,20 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
               };
             }),
           );
-          breakdown.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+          // Budgeted categories first (the dashboard preview only makes
+          // sense for a "spent X of Y — Z%" reading), then by how much of
+          // the budget is used, so the categories closest to (or over)
+          // their limit surface first — the ones worth a glance.
+          breakdown.sort((a, b) => {
+            if (a.budgetAmount == null && b.budgetAmount == null) {
+              return a.categoryName.localeCompare(b.categoryName);
+            }
+            if (a.budgetAmount == null) return 1;
+            if (b.budgetAmount == null) return -1;
+            const aPct = a.budgetAmount > 0 ? a.spent / a.budgetAmount : 0;
+            const bPct = b.budgetAmount > 0 ? b.spent / b.budgetAmount : 0;
+            return bPct - aPct;
+          });
 
           // Live totals, same as LiabilitiesReceivablesScreen — never
           // trusted from a stored column, always principal + interest
@@ -285,6 +395,48 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             .filter(loan => loan.daysUntilDue <= DUE_SOON_WINDOW_DAYS)
             .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
 
+          // Same overdue-through-window shape as upcoming loans just
+          // above, narrower window (see INSTALLMENT_REMINDER_WINDOW_DAYS'
+          // own comment) — installmentReminders itself already excludes
+          // fully-paid plans and plans with no due date set.
+          const upcomingInstallmentsList = installmentReminders
+            .map(reminder => ({
+              ...reminder,
+              daysUntilDue: daysUntil(reminder.nextDueDate, today),
+            }))
+            .filter(
+              reminder =>
+                reminder.daysUntilDue <= INSTALLMENT_REMINDER_WINDOW_DAYS,
+            )
+            .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+
+          // "Dashboard Shortcuts" — each active account's balance in
+          // whichever currency it was first opened with. Multi-currency
+          // accounts only ever show that one row here; the full picture
+          // (every currency) is what "Manage" (Accounts) is for.
+          const activeAccounts = accounts.filter(a => a.active);
+          const shortcuts = (
+            await Promise.all(
+              activeAccounts.map(async account => {
+                const balances = await getAccountBalances(account.id);
+                const first = balances[0];
+                if (!first) {
+                  return null;
+                }
+                const liveBalance = await getAccountBalance(
+                  account.id,
+                  first.currencyId,
+                );
+                return {
+                  accountId: account.id,
+                  name: account.name,
+                  currencyCode: first.currencyCode,
+                  balance: liveBalance,
+                };
+              }),
+            )
+          ).filter((row): row is ShortcutAccountRow => row !== null);
+
           if (!cancelled) {
             setTotal(monthlyTotal);
             setTotalIncome(monthlyIncome);
@@ -294,10 +446,11 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             setCashInHandByCurrency(cashByCurrency);
             setCreditCardDebt(cardDebt);
             setCategoryBreakdown(breakdown);
+            setShortcutAccounts(shortcuts);
             setLiabilityTotals(totalsByCurrency(liabilitiesWithTotals));
             setReceivableTotals(totalsByCurrency(receivablesWithTotals));
             setUpcomingLoans(upcoming);
-            setNetWorthByCurrency(netWorth);
+            setUpcomingInstallments(upcomingInstallmentsList);
             setPendingOccurrenceCount(pendingOccurrences.length);
             setLoading(false);
           }
@@ -310,17 +463,39 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
   );
 
   const percentUsed =
-    budget && budget.limitAmount > 0 ? total / budget.limitAmount : 0;
-  const amountLeftStyle =
-    percentUsed > 1
-      ? { color: colors.danger }
-      : percentUsed >= 0.9
-        ? { color: colors.warning }
-        : { color: colors.success };
+    budget && budget.limitAmount > 0
+      ? Math.round((total / budget.limitAmount) * 100)
+      : 0;
+  const budgetStatusColor =
+    percentUsed > 100
+      ? colors.danger
+      : percentUsed >= 90
+        ? colors.warning
+        : colors.success;
+
+  const month = getCurrentMonthString();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Dashboard</Text>
+    // DashboardHome's native-stack header is hidden (see App.tsx) so this
+    // screen's own content is what sits directly under the status
+    // bar/notch — edges=['top'] only (not 'bottom') because the bottom of
+    // the screen already has its own paddingBottom for the floating tab
+    // bar/FAB, and SafeAreaView would otherwise add a second, redundant
+    // bottom inset on top of that. ScreenBackground (not a plain
+    // SafeAreaView) so a gradient palette like Platinum paints its sweep
+    // behind this content instead of a flat fill.
+    <ScreenBackground colors={colors} edges={['top']}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <Text
+          style={[typography.eyebrow, styles.eyebrow, { color: colors.primary }]}>
+          {formatEyebrowDate(getCurrentDateString())}
+        </Text>
+        <Text style={[typography.screenTitle, { color: colors.text }]}>
+          Ledger
+        </Text>
+      </View>
+
       {/* Non-blocking by design (Stage 13b spec) — a plain row, never a
           modal, so it can't stop the user from seeing anything else on
           this screen. Only shown once loading finishes so it doesn't
@@ -328,285 +503,638 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
       {!loading && pendingOccurrenceCount > 0 && !bannerDismissed && (
         <Pressable
           style={[
-            styles.pendingBanner,
-            { backgroundColor: colors.surface, borderColor: colors.warning },
+            styles.banner,
+            { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
           onPress={() => navigation.navigate('ReviewOccurrences')}>
-          <Text style={[styles.pendingBannerText, { color: colors.warning }]}>
-            {pendingOccurrenceCount} recurring{' '}
-            {pendingOccurrenceCount === 1 ? 'entry' : 'entries'} to review
+          <View style={[styles.bannerDot, { backgroundColor: colors.primary }]} />
+          <Text style={[styles.bannerText, { color: colors.text }]}>
+            <Text style={styles.bannerTextBold}>
+              {pendingOccurrenceCount} recurring{' '}
+              {pendingOccurrenceCount === 1 ? 'entry' : 'entries'}
+            </Text>{' '}
+            to review
           </Text>
-          <Pressable
-            hitSlop={8}
-            onPress={() => setBannerDismissed(true)}>
-            <Text style={[styles.pendingBannerDismiss, { color: colors.warning }]}>
-              Dismiss
-            </Text>
+          <Pressable hitSlop={10} onPress={() => setBannerDismissed(true)}>
+            <X size={16} color={colors.textSecondary} />
           </Pressable>
         </Pressable>
       )}
+
       {loading ? (
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" style={styles.loadingSpinner} />
       ) : (
         <>
-          {/* One line per currency — amounts are never summed across currencies. */}
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            Total cash in hand
-          </Text>
-          {Object.keys(cashInHandByCurrency).length > 0 ? (
-            Object.entries(cashInHandByCurrency)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([currencyCode, amount]) => (
-                <Text
-                  style={[styles.row, { color: colors.text }]}
-                  key={currencyCode}>
-                  {currencyCode} {amount.toFixed(2)}
-                </Text>
-              ))
-          ) : (
-            <Text style={[styles.row, { color: colors.text }]}>
-              No cash accounts yet
-            </Text>
-          )}
-
-          <Text style={[styles.row, { color: colors.danger }]}>
-            Credit card debt: {creditCardDebt.toFixed(2)}
-          </Text>
-          <Text style={[styles.row, { color: colors.text }]}>
-            Total spent this month: {total.toFixed(2)}
-          </Text>
-          <Text style={[styles.row, { color: colors.success }]}>
-            Total income this month: {totalIncome.toFixed(2)}
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
+            This Month's Budget
           </Text>
           {budget && amountLeft !== null ? (
-            <>
-              <Text style={[styles.row, { color: colors.text }]}>
-                Budget allocated: {budget.limitAmount.toFixed(2)}
-              </Text>
-              <Text style={[styles.row, amountLeftStyle]}>
-                Amount left: {amountLeft.toFixed(2)}
-              </Text>
-              {averageLeftPerDay !== null && (
-                <Text style={[styles.row, { color: colors.text }]}>
-                  Average left per day: {averageLeftPerDay.toFixed(2)}
-                </Text>
-              )}
-            </>
-          ) : (
-            <Text style={[styles.row, { color: colors.text }]}>
-              No budget set for this month yet
-            </Text>
-          )}
-
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            Liabilities &amp; Receivables
-          </Text>
-          <Text style={[styles.row, { color: colors.danger }]}>
-            Total owed: {formatCurrencyTotals(liabilityTotals)}
-          </Text>
-          <Text style={[styles.row, { color: colors.success }]}>
-            Total owed to you: {formatCurrencyTotals(receivableTotals)}
-          </Text>
-          {upcomingLoans.length > 0 && (
-            <View
-              style={[
-                styles.dueSoonBox,
-                { backgroundColor: colors.surface, borderColor: colors.warning },
-              ]}>
-              <Text style={[styles.dueSoonTitle, { color: colors.warning }]}>
-                Due soon / overdue
-              </Text>
-              {upcomingLoans.map(loan => (
+            <Card colors={colors} style={styles.card}>
+              <View style={styles.budgetHeaderRow}>
                 <Text
-                  key={loan.accountId}
-                  style={[styles.dueSoonRow, { color: colors.textSecondary }]}>
-                  {loan.daysUntilDue < 0
-                    ? `Overdue by ${Math.abs(loan.daysUntilDue)}d`
-                    : loan.daysUntilDue === 0
-                      ? 'Due today'
-                      : `Due in ${loan.daysUntilDue}d`}
-                  {' — '}
-                  {loan.counterpartyName} ({loan.type}): {loan.currencyCode}{' '}
-                  {loan.totalOwed.toFixed(2)}
-                </Text>
-              ))}
-            </View>
-          )}
-
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            Net Worth
-          </Text>
-          {Object.keys(netWorthByCurrency).length > 0 ? (
-            Object.values(netWorthByCurrency)
-              .sort((a, b) => a.currencyCode.localeCompare(b.currencyCode))
-              .map(row => (
-                <View
-                  key={row.currencyCode}
                   style={[
-                    styles.netWorthBox,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    typography.cardTitle,
+                    styles.budgetCardTitle,
+                    { color: colors.text },
+                  ]}
+                  numberOfLines={1}>
+                  Overall — {formatMonthTitle(month)}
+                </Text>
+                <View
+                  style={[
+                    styles.percentPill,
+                    { backgroundColor: colors.successSoft },
                   ]}>
-                  <Text style={[styles.netWorthCurrency, { color: colors.text }]}>
-                    {row.currencyCode}
-                  </Text>
-                  <Text style={[styles.row, { color: colors.success }]}>
-                    Assets: {row.assets.toFixed(2)}
-                  </Text>
-                  <Text style={[styles.row, { color: colors.danger }]}>
-                    Liabilities: {row.liabilities.toFixed(2)}
-                  </Text>
-                  <Text style={[styles.row, { color: colors.danger }]}>
-                    Credit card debt: {row.creditCardDebt.toFixed(2)}
-                  </Text>
-                  <Text style={[styles.row, { color: colors.danger }]}>
-                    Remaining installments: {row.remainingInstallments.toFixed(2)}
-                  </Text>
                   <Text
                     style={[
-                      styles.netWorthTotal,
-                      { color: row.netWorth >= 0 ? colors.success : colors.danger },
+                      styles.percentPillText,
+                      typography.amountMono,
+                      { color: colors.success },
                     ]}>
-                    Net worth: {row.netWorth.toFixed(2)}
+                    {percentUsed}% used
                   </Text>
                 </View>
-              ))
-          ) : (
-            <Text style={[styles.row, { color: colors.text }]}>
-              No accounts to calculate net worth from yet
-            </Text>
-          )}
-
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            By Category
-          </Text>
-          <FlatList
-            data={categoryBreakdown}
-            keyExtractor={item => String(item.categoryId)}
-            renderItem={({ item }) => (
+              </View>
+              <View style={styles.budgetAmountRow}>
+                <Text
+                  style={[
+                    typography.amountLarge,
+                    styles.budgetAmountFigure,
+                    { color: colors.text },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}>
+                  Rs. {formatAmountPlain(total)}
+                </Text>
+                <Text
+                  style={[
+                    typography.amountMono,
+                    styles.budgetAmountOf,
+                    { color: colors.textSecondary },
+                  ]}>
+                  {' '}
+                  of {formatAmountPlain(budget.limitAmount)}
+                </Text>
+              </View>
               <View
-                style={[styles.categoryRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.categoryName, { color: colors.text }]}>
-                  {item.categoryName}
+                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${Math.min(100, Math.max(0, percentUsed))}%`,
+                      backgroundColor: budgetStatusColor,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.budgetFooterRow}>
+                <Text
+                  style={[
+                    typography.amountMono,
+                    { color: colors.textSecondary },
+                  ]}>
+                  Rs. {formatAmountPlain(Math.max(0, amountLeft))} left
                 </Text>
-                <Text style={[styles.row, { color: colors.text }]}>
-                  Spent: {item.spent.toFixed(2)}
-                </Text>
-                {item.budgetAmount !== null && item.amountLeft !== null ? (
-                  <>
-                    <Text
-                      style={[
-                        styles.row,
-                        amountLeftStyleFor(item.spent, item.budgetAmount, colors),
-                      ]}>
-                      Left: {item.amountLeft.toFixed(2)}
-                    </Text>
-                    {item.averageLeftPerDay !== null && (
-                      <Text style={[styles.row, { color: colors.text }]}>
-                        Average left per day:{' '}
-                        {item.averageLeftPerDay.toFixed(2)}
-                      </Text>
-                    )}
-                  </>
-                ) : (
-                  <Text style={[styles.row, { color: colors.text }]}>
-                    No budget set for this category yet
+                {averageLeftPerDay !== null && (
+                  <Text
+                    style={[
+                      typography.amountMono,
+                      { color: colors.textSecondary },
+                    ]}>
+                    Rs. {formatAmountPlain(Math.round(averageLeftPerDay))} / day
+                    remaining
                   </Text>
                 )}
               </View>
-            )}
-            ListEmptyComponent={
-              <Text style={[styles.row, { color: colors.text }]}>
-                No category activity this month.
+            </Card>
+          ) : (
+            <Card colors={colors} style={styles.card}>
+              <Text style={{ color: colors.textSecondary }}>
+                No budget set for this month yet.
               </Text>
-            }
-          />
+            </Card>
+          )}
+
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                typography.eyebrow,
+                styles.sectionLabel,
+                styles.sectionLabelInline,
+                { color: colors.textSecondary },
+              ]}>
+              By Category
+            </Text>
+            <Pressable
+              onPress={() =>
+                tabNavigation.navigate('Settings', {
+                  screen: 'CategoryBudgets',
+                })
+              }>
+              <Text style={[styles.linkText, { color: colors.primary }]}>
+                See all →
+              </Text>
+            </Pressable>
+          </View>
+          <Card colors={colors} style={[styles.card, styles.listCard]}>
+            {categoryBreakdown.filter(c => c.budgetAmount != null).length ===
+            0 ? (
+              <Text style={{ color: colors.textSecondary }}>
+                No category budgets set yet.
+              </Text>
+            ) : (
+              categoryBreakdown
+                .filter(c => c.budgetAmount != null)
+                .slice(0, CATEGORY_PREVIEW_COUNT)
+                .map((item, index, arr) => {
+                  const budgetAmount = item.budgetAmount ?? 0;
+                  const pct =
+                    budgetAmount > 0
+                      ? Math.round((item.spent / budgetAmount) * 100)
+                      : 0;
+                  const status = statusColorsFor(item.spent, budgetAmount, colors);
+                  return (
+                    <Pressable
+                      key={item.categoryId}
+                      style={[
+                        styles.listRow,
+                        index < arr.length - 1 && {
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: colors.border,
+                        },
+                      ]}
+                      onPress={() =>
+                        tabNavigation.navigate('Settings', {
+                          screen: 'CategoryBudgets',
+                        })
+                      }>
+                      <View
+                        style={[
+                          styles.avatar,
+                          { backgroundColor: status.soft },
+                        ]}>
+                        <Text style={[styles.avatarText, { color: status.text }]}>
+                          {item.categoryName.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.listRowText}>
+                        <Text style={[styles.listRowTitle, { color: colors.text }]}>
+                          {item.categoryName}
+                        </Text>
+                        <Text
+                          style={[
+                            typography.amountMono,
+                            styles.listRowSubtitle,
+                            { color: colors.textSecondary },
+                          ]}>
+                          Rs. {formatAmountPlain(item.spent)} of{' '}
+                          {formatAmountPlain(budgetAmount)}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          typography.amountMono,
+                          styles.listRowPercent,
+                          { color: status.text },
+                        ]}>
+                        {pct}%
+                      </Text>
+                    </Pressable>
+                  );
+                })
+            )}
+          </Card>
+
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                typography.eyebrow,
+                styles.sectionLabel,
+                styles.sectionLabelInline,
+                { color: colors.textSecondary },
+              ]}>
+              Dashboard Shortcuts
+            </Text>
+            <View style={styles.shortcutHeaderActions}>
+              <Pressable
+                hitSlop={8}
+                style={styles.eyeToggle}
+                onPress={() => setBalancesHidden(current => !current)}>
+                <Text style={[styles.linkText, { color: colors.textSecondary }]}>
+                  {balancesHidden ? 'Show' : 'Hide'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  tabNavigation.navigate('Settings', { screen: 'Accounts' })
+                }>
+                <Text style={[styles.linkText, { color: colors.primary }]}>
+                  Manage →
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+          {shortcutAccounts.length === 0 ? (
+            <Card colors={colors} style={styles.card}>
+              <Text style={{ color: colors.textSecondary }}>
+                No accounts yet.
+              </Text>
+            </Card>
+          ) : (
+            shortcutAccounts.slice(0, SHORTCUT_ACCOUNT_COUNT).map(account => (
+              <Card
+                key={account.accountId}
+                colors={colors}
+                style={[styles.card, styles.shortcutRow]}>
+                <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>
+                    {account.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.listRowText}>
+                  <Text style={[styles.listRowTitle, { color: colors.text }]}>
+                    {account.name}
+                  </Text>
+                  <Text
+                    style={[
+                      typography.eyebrow,
+                      styles.shortcutCurrency,
+                      { color: colors.textSecondary },
+                    ]}>
+                    {account.currencyCode}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    typography.amountMono,
+                    styles.listRowPercent,
+                    { color: colors.text },
+                  ]}>
+                  {balancesHidden
+                    ? '••••••'
+                    : `Rs. ${formatAmountPlain(account.balance)}`}
+                </Text>
+              </Card>
+            ))
+          )}
+
+          {upcomingLoans.length > 0 && (
+            <>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.sectionLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                Due Soon / Overdue
+              </Text>
+              <Card colors={colors} style={styles.card} borderColor={colors.warning}>
+                {upcomingLoans.map(loan => (
+                  <Text
+                    key={loan.accountId}
+                    style={[styles.dueSoonRow, { color: colors.textSecondary }]}>
+                    {loan.daysUntilDue < 0
+                      ? `Overdue by ${Math.abs(loan.daysUntilDue)}d`
+                      : loan.daysUntilDue === 0
+                        ? 'Due today'
+                        : `Due in ${loan.daysUntilDue}d`}
+                    {' — '}
+                    {loan.counterpartyName} ({loan.type}): {loan.currencyCode}{' '}
+                    {loan.totalOwed.toFixed(2)}
+                  </Text>
+                ))}
+              </Card>
+            </>
+          )}
+
+          {upcomingInstallments.length > 0 && (
+            <>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.sectionLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                Installment Reminders
+              </Text>
+              {upcomingInstallments.map(reminder => (
+                <Card
+                  key={reminder.id}
+                  colors={colors}
+                  style={[styles.card, styles.reminderRow]}
+                  borderColor={colors.warning}>
+                  <View style={styles.reminderText}>
+                    <Text
+                      style={[styles.listRowTitle, { color: colors.text }]}
+                      numberOfLines={1}>
+                      {reminder.name}
+                    </Text>
+                    <Text
+                      style={[
+                        typography.amountMono,
+                        styles.listRowSubtitle,
+                        { color: colors.textSecondary },
+                      ]}>
+                      {reminder.daysUntilDue < 0
+                        ? `Overdue by ${Math.abs(reminder.daysUntilDue)}d`
+                        : reminder.daysUntilDue === 0
+                          ? 'Due today'
+                          : `Due in ${reminder.daysUntilDue}d`}
+                      {' — '}
+                      {reminder.currencyCode}{' '}
+                      {reminder.nextAmountDue.toFixed(0)} · #
+                      {reminder.nextInstallmentNumber} of{' '}
+                      {reminder.numberOfMonths}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.payButton,
+                      { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() =>
+                      tabNavigation.navigate('Settings', {
+                        screen: 'InstallmentPlans',
+                        params: { payPlanId: reminder.id },
+                      })
+                    }>
+                    <Text
+                      style={[
+                        styles.payButtonText,
+                        { color: colors.primaryText },
+                      ]}>
+                      Pay
+                    </Text>
+                  </Pressable>
+                </Card>
+              ))}
+            </>
+          )}
+
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
+            Cash &amp; Debt
+          </Text>
+          <Card colors={colors} style={styles.card}>
+            <Text style={[styles.row, { color: colors.text }]}>
+              Total cash in hand:{' '}
+              {Object.keys(cashInHandByCurrency).length > 0
+                ? Object.entries(cashInHandByCurrency)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([code, amount]) => `${code} ${amount.toFixed(2)}`)
+                    .join(' · ')
+                : 'None'}
+            </Text>
+            <Text style={[styles.row, { color: colors.danger }]}>
+              Credit card debt: {creditCardDebt.toFixed(2)}
+            </Text>
+            <Text style={[styles.row, { color: colors.success }]}>
+              Total income this month: {totalIncome.toFixed(2)}
+            </Text>
+          </Card>
+
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
+            Liabilities &amp; Receivables
+          </Text>
+          <Card colors={colors} style={styles.card}>
+            <Text style={[styles.row, { color: colors.danger }]}>
+              Total owed: {formatCurrencyTotals(liabilityTotals)}
+            </Text>
+            <Text style={[styles.row, { color: colors.success }]}>
+              Total owed to you: {formatCurrencyTotals(receivableTotals)}
+            </Text>
+          </Card>
+
+          {/* Net Worth deliberately does NOT live here — a single "here's
+              everything you own minus everything you owe" figure is
+              exactly the kind of thing that shouldn't be one glance away
+              on the screen the app opens to. It's its own screen now,
+              reached from Accounts ("View Net Worth →" at the bottom of
+              that list) rather than a Dashboard card or a flat entry in
+              the More list — see screens/NetWorthScreen.tsx. */}
         </>
       )}
-    </View>
+      </ScrollView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    padding: 16,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
+  scroll: {
+    flex: 1,
+  },
+  container: {
+    padding: 16,
+    // Well past the floating tab bar's own footprint (pill height 64 +
+    // its marginBottom of insets.bottom+16, see App.tsx) plus the FAB
+    // poking up over it — otherwise the last card or two ends up
+    // scrollable-but-hidden behind the pill instead of clearing it.
+    paddingBottom: 120,
+  },
+  header: {
     marginBottom: 16,
   },
-  pendingBanner: {
+  eyebrow: {
+    marginBottom: 4,
+  },
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginBottom: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+    borderRadius: 14,
+    gap: 10,
   },
-  pendingBannerText: {
-    fontSize: 14,
-    fontWeight: '600',
+  bannerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: scaleFont(14),
+  },
+  bannerTextBold: {
+    fontWeight: '700',
+  },
+  loadingSpinner: {
+    marginTop: 40,
+  },
+  sectionLabel: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  sectionLabelInline: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  shortcutHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  eyeToggle: {},
+  linkText: {
+    fontSize: scaleFont(13),
+    fontWeight: '700',
+  },
+  // border/borderRadius/backgroundColor are NOT here — Card (see
+  // components/Card.tsx) owns those itself so it can swap in a gradient
+  // fill for palettes that define one. This only carries layout.
+  card: {
+    padding: 16,
+    marginBottom: 10,
+  },
+  listCard: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  budgetHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    // A long month name ("Overall — September") plus the widest percent
+    // reading ("102% used") can add up to more than the card's width,
+    // especially on a narrow phone or with the device's own text-size
+    // setting turned up — wrapping to a second line (rather than letting
+    // the row overflow the card's edge) is what actually fixes that,
+    // the title's own flexShrink/numberOfLines below is just a second
+    // line of defense.
+    flexWrap: 'wrap',
+    rowGap: 6,
+  },
+  budgetCardTitle: {
+    flexShrink: 1,
+    marginRight: 8,
+  },
+  percentPill: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexShrink: 0,
+  },
+  percentPillText: {
+    fontSize: scaleFont(12),
+    fontWeight: '700',
+  },
+  budgetAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 10,
+    flexWrap: 'wrap',
+  },
+  budgetAmountFigure: {
     flexShrink: 1,
   },
-  pendingBannerDismiss: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 12,
+  budgetAmountOf: {
+    fontSize: scaleFont(15),
   },
-  row: {
-    fontSize: 16,
-    marginBottom: 8,
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    marginTop: 14,
+    overflow: 'hidden',
   },
-  subtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
   },
-  categoryRow: {
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  budgetFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
-  categoryName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  // Deliberately loud (solid fill, not just colored text) — this needs to
-  // stand out from the rest of the Dashboard's plain rows, not blend in.
-  dueSoonBox: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 8,
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  dueSoonTitle: {
-    fontSize: 13,
+  avatarText: {
+    fontSize: scaleFont(15),
     fontWeight: '700',
-    marginBottom: 4,
   },
-  dueSoonRow: {
-    fontSize: 13,
+  listRowText: {
+    flex: 1,
+  },
+  listRowTitle: {
+    fontSize: scaleFont(15),
+    fontWeight: '600',
+  },
+  listRowSubtitle: {
+    fontSize: scaleFont(12),
     marginTop: 2,
   },
-  netWorthBox: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 8,
-  },
-  netWorthCurrency: {
-    fontSize: 14,
+  listRowPercent: {
+    fontSize: scaleFont(14),
     fontWeight: '700',
-    marginBottom: 4,
   },
-  netWorthTotal: {
-    fontSize: 16,
+  shortcutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shortcutCurrency: {
+    marginTop: 2,
+  },
+  row: {
+    fontSize: scaleFont(15),
+    marginBottom: 6,
+  },
+  dueSoonRow: {
+    fontSize: scaleFont(13),
+    marginTop: 2,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reminderText: {
+    flex: 1,
+    marginRight: 12,
+  },
+  payButton: {
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  payButtonText: {
+    fontSize: scaleFont(13),
     fontWeight: '700',
-    marginTop: 4,
   },
 });
 

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont } from '../theme/typography';
 
 export const MONTH_OPTIONS = [
   { label: 'January', value: '01' },
@@ -59,12 +60,10 @@ function MonthYearPicker({
   return (
     <View>
       <Pressable
-        style={[
-          styles.filterButton,
-          { borderColor: colors.border, backgroundColor: colors.surface },
-        ]}
+        style={[styles.filterButton, { backgroundColor: colors.primary }]}
         onPress={() => setExpanded(current => !current)}>
-        <Text style={[styles.filterButtonText, { color: colors.text }]}>
+        <Text
+          style={[styles.filterButtonText, { color: colors.primaryText }]}>
           {buttonLabel}
         </Text>
       </Pressable>
@@ -101,15 +100,15 @@ function MonthYearPicker({
 
 const styles = StyleSheet.create({
   filterButton: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    alignSelf: 'flex-start',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     marginBottom: 8,
   },
   filterButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(14),
+    fontWeight: '700',
   },
   filters: {
     flexDirection: 'row',

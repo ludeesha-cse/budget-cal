@@ -10,6 +10,14 @@ export type PaywallRequest = {
   // this from PaywallModal's success handler, not touching every gated
   // screen again to add it.
   onPurchaseSuccess: () => void;
+  // Called when the user backs out of the paywall (PaywallModal's "Not
+  // now" / swipe-to-dismiss) without purchasing — never called on a
+  // successful purchase, only a bail-out. Every gated screen that hides
+  // its own create-form Modal before calling openPaywall (see the iOS
+  // fix below) uses this to bring that form back so the user's
+  // already-typed values are still right there, instead of losing them
+  // to a closed modal.
+  onDismiss?: () => void;
 };
 
 type PaywallContextValue = {

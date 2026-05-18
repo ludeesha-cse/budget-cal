@@ -42,20 +42,14 @@ export function truncateLabel(label: string, maxLength: number): string {
   return `${label.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
-// Six accent colors pulled straight from the active theme palette (never
-// invented hex values), reused in a fixed order for pie slices. These
-// slices are always expense categories, so reusing success/danger here is
-// purely for visual variety — it carries no "good/bad" meaning in this
-// context.
+// Straight from the active theme palette's own `chart` rotation
+// (theme/palettes.ts) rather than assembled from other tokens here — one
+// definition of "what a chart looks like" per palette, reused for
+// pie slices. These slices are always expense categories, so the
+// rotation carries no "good/bad" meaning in this context, purely visual
+// variety.
 export function categoryChartPalette(colors: ThemeColors): string[] {
-  return [
-    colors.primary,
-    colors.success,
-    colors.warning,
-    colors.danger,
-    colors.chevron,
-    colors.textSecondary,
-  ];
+  return colors.chart;
 }
 
 // Rows are assumed already sorted descending by `total` (which is what

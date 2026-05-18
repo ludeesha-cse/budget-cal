@@ -17,6 +17,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { Search, Trash2, Wallet } from 'lucide-react-native';
+import ScreenBackground from '../components/ScreenBackground';
 import type { HistoryStackParamList } from '../navigation/types';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -40,8 +42,9 @@ import {
   getCurrentMonthString,
   getCurrentYearString,
 } from '../utils/date';
-import MonthYearPicker from '../components/MonthYearPicker';
+import MonthYearPicker, { MONTH_OPTIONS } from '../components/MonthYearPicker';
 import { useTheme } from '../contexts/ThemeContext';
+import { typography, scaleFont } from '../theme/typography';
 
 type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
 type LoanPaymentRow = Awaited<ReturnType<typeof getLoanPaymentsByMonth>>[number];
@@ -64,15 +67,36 @@ type HistoryRow =
   | { kind: 'transfer'; date: string; data: TransferRow };
 
 // The one thing every money-movement kind needs from the merge: a flat
-// list ordered by date. None of the source queries sort on their own, so
-// this is the only place ordering is ever decided — accepts any number
-// of already-mapped HistoryRow arrays, so a new kind never requires
-// touching this function's logic, only adding another argument at the
-// call site.
+// list ordered by date, most recent first — matches the mockup's
+// "RECENT" list reading top-to-bottom from today backwards. None of the
+// source queries sort on their own, so this is the only place ordering
+// is ever decided.
 function mergeHistoryRows(...sources: HistoryRow[][]): HistoryRow[] {
   const merged = sources.flat();
-  merged.sort((a, b) => a.date.localeCompare(b.date));
+  merged.sort((a, b) => b.date.localeCompare(a.date));
   return merged;
+}
+
+const MONTH_ABBR: Record<string, string> = Object.fromEntries(
+  MONTH_OPTIONS.map(m => [m.value, m.label.slice(0, 3).toUpperCase()]),
+);
+
+// Splits a 'YYYY-MM-DD' date into the day/month block the mockup's row
+// layout uses ("07" / "AUG") — pure string slicing, no Date parsing
+// needed since the stored format is already zero-padded.
+function splitDateForRow(date: string): { day: string; month: string } {
+  const [, month, day] = date.split('-');
+  return { day, month: MONTH_ABBR[month] ?? month };
+}
+
+// Module-scope, not inline in the FlatList below — react/no-unstable-nested-components
+// would otherwise flag a JSX-returning function declared during
+// HistoryListScreen's render as a fresh component type on every render.
+// Reads its own color from useTheme() rather than taking a prop, since
+// ItemSeparatorComponent's own signature has no room to pass one through.
+function RowSeparator(): React.JSX.Element {
+  const { colors } = useTheme();
+  return <View style={[styles.separator, { backgroundColor: colors.border }]} />;
 }
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>;
@@ -308,28 +332,44 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    // HistoryList's native-stack header is hidden (see App.tsx) — top-only
+    // safe area edge, same reasoning as DashboardScreen's own
+    // ScreenBackground (used here too, instead of a plain SafeAreaView,
+    // so a gradient palette like Platinum paints its sweep behind this
+    // screen's content).
+    <ScreenBackground colors={colors} edges={['top']}>
+      <View style={styles.container}>
+      <View style={styles.header}>
+        <Text
+          style={[typography.eyebrow, styles.eyebrow, { color: colors.primary }]}>
+          {isSearchMode
+            ? 'Search'
+            : month
+              ? `${MONTH_OPTIONS.find(m => m.value === month)?.label ?? ''} ${year}`.toUpperCase()
+              : `All ${year}`}
+        </Text>
+        <Text style={[typography.screenTitle, { color: colors.text }]}>
+          History
+        </Text>
+      </View>
+
       <View style={styles.searchArea}>
-        <View style={styles.searchInputRow}>
+        <View
+          style={[
+            styles.searchInputRow,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}>
+          <Search size={16} color={colors.textSecondary} />
           <TextInput
-            style={[
-              styles.searchInput,
-              {
-                borderColor: colors.border,
-                color: colors.text,
-                backgroundColor: colors.surface,
-              },
-            ]}
+            style={[styles.searchInput, { color: colors.text }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search description, category, or account"
+            placeholder="Search description, category, account..."
             placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <Pressable
-              style={styles.clearSearchButton}
-              onPress={() => setSearchQuery('')}>
+            <Pressable onPress={() => setSearchQuery('')}>
               <Text style={[styles.clearSearchText, { color: colors.primary }]}>
                 Clear
               </Text>
@@ -337,47 +377,52 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
           )}
         </View>
 
-        {availableTags.length > 0 && (
-          <View style={styles.tagFilterRow}>
-            {availableTags.map(tag => {
-              const active = activeTagFilterIds.includes(tag.id);
-              return (
-                <Pressable
-                  key={tag.id}
+        <View style={styles.filterRow}>
+          {!isSearchMode || activeTagFilterIds.length === 0 ? (
+            <MonthYearPicker
+              month={month}
+              year={year}
+              onMonthChange={setMonth}
+              onYearChange={setYear}
+              includeAllMonths
+            />
+          ) : null}
+          {availableTags.map(tag => {
+            const active = activeTagFilterIds.includes(tag.id);
+            return (
+              <Pressable
+                key={tag.id}
+                style={[
+                  styles.tagChip,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  active && {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.primary,
+                  },
+                ]}
+                onPress={() => toggleTagFilter(tag.id)}>
+                <Text
                   style={[
-                    styles.tagChip,
-                    { backgroundColor: colors.surface, borderColor: colors.primary },
-                    active && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => toggleTagFilter(tag.id)}>
-                  <Text
-                    style={[
-                      styles.tagChipText,
-                      { color: colors.primary },
-                      active && { color: colors.primaryText },
-                    ]}>
-                    {tag.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+                    styles.tagChipText,
+                    { color: colors.text },
+                    active && { color: colors.primaryText },
+                  ]}>
+                  {tag.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
-      {isSearchMode ? (
-        <Text style={[styles.searchModeLabel, { color: colors.textSecondary }]}>
-          Searching all transactions.
-        </Text>
-      ) : (
-        <MonthYearPicker
-          month={month}
-          year={year}
-          onMonthChange={setMonth}
-          onYearChange={setYear}
-          includeAllMonths
-        />
-      )}
+      <Text
+        style={[
+          typography.eyebrow,
+          styles.recentLabel,
+          { color: colors.textSecondary },
+        ]}>
+        {isSearchMode ? 'Results' : 'Recent'}
+      </Text>
 
       {loading ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -393,7 +438,15 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
         <FlatList
           data={rows}
           keyExtractor={item => `${item.kind}-${item.data.id}`}
+          style={styles.listCard}
+          contentContainerStyle={[
+            styles.listCardContent,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          ItemSeparatorComponent={RowSeparator}
           renderItem={({ item }) => {
+            const { day, month: monthAbbr } = splitDateForRow(item.data.date);
+
             if (item.kind === 'loanPayment') {
               const loan = item.data;
               // Money flows from the real account into the loan account
@@ -408,19 +461,56 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 ? loan.loanAccountName
                 : loan.counterpartAccountName;
               return (
-                <View style={[styles.row, { borderBottomColor: colors.border }]}>
-                  <View style={styles.rowDetails}>
-                    <Text style={[styles.rowDate, { color: colors.text }]}>
-                      {loan.date}
+                <View style={styles.row}>
+                  <View style={styles.dateBlock}>
+                    <Text style={[styles.dateDay, { color: colors.text }]}>
+                      {day}
                     </Text>
-                    <Text style={{ color: colors.textSecondary }}>
-                      {isLiability ? 'Loan repayment' : 'Loan collection'}:{' '}
-                      {fromName} → {toName}
-                    </Text>
-                    <Text style={[styles.rowAmount, { color: colors.primary }]}>
-                      {loan.currencyCode} {loan.amount.toFixed(2)}
+                    <Text
+                      style={[
+                        typography.eyebrow,
+                        styles.dateMonth,
+                        { color: colors.textSecondary },
+                      ]}>
+                      {monthAbbr}
                     </Text>
                   </View>
+                  <View style={styles.rowDetails}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>
+                      {isLiability ? 'Loan repayment' : 'Loan collection'}
+                    </Text>
+                    <View style={styles.badgeRow}>
+                      <View
+                        style={[styles.badge, { borderColor: colors.border }]}>
+                        <Text
+                          style={[
+                            typography.eyebrow,
+                            styles.badgeText,
+                            { color: colors.textSecondary },
+                          ]}>
+                          {isLiability ? 'LIABILITY' : 'RECEIVABLE'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.accountRow}>
+                      <Wallet size={11} color={colors.textSecondary} />
+                      <Text
+                        style={[
+                          styles.accountRowText,
+                          { color: colors.textSecondary },
+                        ]}>
+                        {fromName} → {toName}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    style={[
+                      typography.amountMono,
+                      styles.amount,
+                      { color: colors.primary },
+                    ]}>
+                    {loan.currencyCode} {loan.amount.toFixed(2)}
+                  </Text>
                 </View>
               );
             }
@@ -428,86 +518,160 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
             if (item.kind === 'transfer') {
               const transfer = item.data;
               return (
-                <View style={[styles.row, { borderBottomColor: colors.border }]}>
-                  <View style={styles.rowDetails}>
-                    <Text style={[styles.rowDate, { color: colors.text }]}>
-                      {transfer.date}
+                <Pressable
+                  style={styles.row}
+                  onPress={() => openEditTransfer(transfer)}>
+                  <View style={styles.dateBlock}>
+                    <Text style={[styles.dateDay, { color: colors.text }]}>
+                      {day}
                     </Text>
-                    {/* "⇄" plus a plain-text label, deliberately distinct
-                        from both the ± transaction amounts and the loan
-                        payment row above — a transfer is neither spending
-                        nor income, so it must not look like either one. */}
-                    <Text style={{ color: colors.textSecondary }}>
-                      ⇄ Transfer: {transfer.fromAccountName} →{' '}
+                    <Text
+                      style={[
+                        typography.eyebrow,
+                        styles.dateMonth,
+                        { color: colors.textSecondary },
+                      ]}>
+                      {monthAbbr}
+                    </Text>
+                  </View>
+                  <View style={styles.rowDetails}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>
+                      Transfer — {transfer.fromAccountName} →{' '}
                       {transfer.toAccountName}
                     </Text>
-                    <Text style={[styles.rowAmount, { color: colors.text }]}>
-                      {transfer.currencyCode} {transfer.amount.toFixed(2)}
-                    </Text>
+                    <View style={styles.badgeRow}>
+                      <View
+                        style={[styles.badge, { borderColor: colors.border }]}>
+                        <Text
+                          style={[
+                            typography.eyebrow,
+                            styles.badgeText,
+                            { color: colors.textSecondary },
+                          ]}>
+                          TRANSFER
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                   <View style={styles.rowActions}>
-                    <Button
-                      title="Edit"
-                      color={colors.primary}
-                      onPress={() => openEditTransfer(transfer)}
-                    />
-                    <Button
-                      title="Delete"
-                      color={colors.danger}
-                      onPress={() => handleDeleteTransfer(transfer.id)}
-                    />
+                    <Text
+                      style={[
+                        typography.amountMono,
+                        styles.amount,
+                        { color: colors.text },
+                      ]}>
+                      {transfer.currencyCode} {transfer.amount.toFixed(2)}
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteTransfer(transfer.id)}>
+                      <Trash2 size={15} color={colors.danger} />
+                    </Pressable>
                   </View>
-                </View>
+                </Pressable>
               );
             }
 
             const item_ = item.data;
             const itemTags = tagsByTransactionId[item_.id] ?? [];
+            const isIncome = item_.entryType === 'Income';
             return (
-              <View style={[styles.row, { borderBottomColor: colors.border }]}>
-                <View style={styles.rowDetails}>
-                  <Text style={[styles.rowDate, { color: colors.text }]}>
-                    {item_.date}
-                  </Text>
-                  <Text style={{ color: colors.textSecondary }}>
-                    {item_.categoryName ?? (item_.entryType === 'Income' ? 'Income' : 'Unknown')}
-                    {' · '}
-                    {item_.description || '—'}
+              <Pressable
+                style={styles.row}
+                onPress={() =>
+                  navigation.navigate('EditTransaction', { id: item_.id })
+                }>
+                <View style={styles.dateBlock}>
+                  <Text style={[styles.dateDay, { color: colors.text }]}>
+                    {day}
                   </Text>
                   <Text
                     style={[
-                      styles.rowAmount,
-                      {
-                        color:
-                          item_.entryType === 'Income'
-                            ? colors.success
-                            : colors.danger,
-                      },
+                      typography.eyebrow,
+                      styles.dateMonth,
+                      { color: colors.textSecondary },
                     ]}>
-                    {item_.entryType === 'Income' ? '+' : '-'}
-                    {item_.amount.toFixed(2)}
+                    {monthAbbr}
                   </Text>
-                  {itemTags.length > 0 && (
-                    <Text style={[styles.rowTags, { color: colors.primary }]}>
-                      {itemTags.map(tag => tag.name).join(' · ')}
+                </View>
+                <View style={styles.rowDetails}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>
+                    {item_.description ||
+                      item_.categoryName ||
+                      (isIncome ? 'Income' : 'Expense')}
+                  </Text>
+                  {(item_.categoryName || itemTags.length > 0) && (
+                    <View style={styles.badgeRow}>
+                      {item_.categoryName && (
+                        <View
+                          style={[styles.badge, { borderColor: colors.border }]}>
+                          <Text
+                            style={[
+                              typography.eyebrow,
+                              styles.badgeText,
+                              { color: colors.textSecondary },
+                            ]}>
+                            {item_.categoryName}
+                          </Text>
+                        </View>
+                      )}
+                      {itemTags.map(tag => (
+                        <View
+                          key={tag.id}
+                          style={[styles.badge, { borderColor: colors.border }]}>
+                          <Text
+                            style={[
+                              typography.eyebrow,
+                              styles.badgeText,
+                              { color: colors.textSecondary },
+                            ]}>
+                            {tag.name}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  {item_.accountName && (
+                    <View style={styles.accountRow}>
+                      <Wallet size={11} color={colors.textSecondary} />
+                      <Text
+                        style={[
+                          styles.accountRowText,
+                          { color: colors.textSecondary },
+                        ]}>
+                        {item_.accountName}
+                      </Text>
+                    </View>
+                  )}
+                  {item_.excludeFromBudget && (
+                    <Text
+                      style={[
+                        styles.excludedText,
+                        { color: colors.textSecondary },
+                      ]}>
+                      excluded from budget
                     </Text>
                   )}
                 </View>
                 <View style={styles.rowActions}>
-                  <Button
-                    title="Edit"
-                    color={colors.primary}
-                    onPress={() =>
-                      navigation.navigate('EditTransaction', { id: item_.id })
-                    }
-                  />
-                  <Button
-                    title="Delete"
-                    color={colors.danger}
-                    onPress={() => handleDelete(item_.id)}
-                  />
+                  <Text
+                    style={[
+                      typography.amountMono,
+                      styles.amount,
+                      { color: isIncome ? colors.success : colors.danger },
+                    ]}>
+                    {isIncome ? '+' : '-'}
+                    {item_.amount.toFixed(2)}
+                  </Text>
+                  <Pressable
+                    hitSlop={8}
+                    style={styles.deleteButton}
+                    onPress={() => handleDelete(item_.id)}>
+                    <Trash2 size={15} color={colors.danger} />
+                  </Pressable>
                 </View>
-              </View>
+              </Pressable>
             );
           }}
         />
@@ -619,89 +783,146 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
       </Modal>
 
       <NumericInputAccessory />
-    </View>
+      </View>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: 16,
+  },
+  header: {
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  eyebrow: {
+    marginBottom: 4,
   },
   empty: {
     padding: 16,
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    alignItems: 'flex-start',
+    paddingVertical: 14,
+  },
+  dateBlock: {
+    width: 40,
+    alignItems: 'flex-start',
+    marginRight: 12,
+  },
+  dateDay: {
+    fontSize: scaleFont(20),
+    fontWeight: '700',
+  },
+  dateMonth: {
+    marginTop: 1,
   },
   rowDetails: {
     flex: 1,
+    paddingRight: 8,
   },
-  rowDate: {
+  rowTitle: {
+    fontSize: scaleFont(15),
     fontWeight: '600',
   },
-  rowAmount: {
-    marginTop: 2,
-    fontWeight: '600',
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
   },
-  rowTags: {
-    marginTop: 2,
-    fontSize: 12,
-    fontWeight: '600',
+  accountRowText: {
+    fontSize: scaleFont(12),
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  badge: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  badgeText: {
+    fontSize: scaleFont(9.5),
+  },
+  excludedText: {
+    fontSize: scaleFont(11),
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   rowActions: {
-    flexDirection: 'row',
-    gap: 4,
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  amount: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  deleteButton: {
+    padding: 2,
+  },
+  listCard: {
+    flex: 1,
+  },
+  listCardContent: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    // Well past the floating tab bar pill's own footprint (see App.tsx),
+    // not just a card-to-card gap — otherwise the last few rows end up
+    // scrollable-but-hidden behind the pill instead of clearing it.
+    marginBottom: 116,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
   },
   searchArea: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 8,
+    gap: 10,
   },
   searchInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  clearSearchButton: {
-    paddingHorizontal: 4,
-    paddingVertical: 8,
+    fontSize: scaleFont(15),
+    padding: 0,
   },
   clearSearchText: {
     fontWeight: '600',
+    fontSize: scaleFont(13),
   },
-  tagFilterRow: {
+  filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    alignItems: 'center',
   },
   tagChip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   tagChipText: {
-    fontSize: 13,
+    fontSize: scaleFont(14),
     fontWeight: '600',
   },
-  searchModeLabel: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    fontSize: 13,
-    fontStyle: 'italic',
+  recentLabel: {
+    marginTop: 18,
+    marginBottom: 8,
   },
   modalBackdrop: {
     flex: 1,
@@ -715,20 +936,20 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   label: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontWeight: '600',
     marginTop: 12,
     marginBottom: 4,
   },
   modalHint: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
   dateRow: {
     flexDirection: 'row',

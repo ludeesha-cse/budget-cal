@@ -3,12 +3,15 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
+import { BarChart, PieChart } from 'react-native-gifted-charts';
+import ScreenBackground from '../components/ScreenBackground';
+import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import {
   getCurrencies,
@@ -22,12 +25,12 @@ import { getReportRange, ReportRangePreset } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import {
-  buildAccountTypeBarData,
   buildCategoryPieSlices,
   buildTrendChartData,
 } from '../utils/chartHelpers';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
+import { typography, scaleFont } from '../theme/typography';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type ReportSummaryResult = Awaited<ReturnType<typeof getReportSummary>>;
@@ -38,9 +41,9 @@ type AccountTypeRow = Awaited<
 type TrendRow = Awaited<ReturnType<typeof getMonthlyTrend>>[number];
 
 const PRESET_OPTIONS: { key: ReportRangePreset; label: string }[] = [
-  { key: 'currentMonth', label: 'Current Month' },
-  { key: 'last3Months', label: 'Last 3 Months' },
-  { key: 'lastYear', label: 'Last Year' },
+  { key: 'currentMonth', label: 'Month' },
+  { key: 'last3Months', label: '3 Months' },
+  { key: 'lastYear', label: 'Year' },
 ];
 
 const MONTH_NAMES = [
@@ -67,14 +70,17 @@ function formatMonthLabel(month: string): string {
   return `${MONTH_NAMES[monthNumber - 1]} ${year}`;
 }
 
-function formatRangeLabel(months: string[]): string {
-  if (months.length === 0) {
-    return '';
+// "1 – 31 August 2026" for a single-month range, or falls back to
+// "August 2026 – October 2026" for a multi-month one — day-level
+// granularity only reads as meaningful within one calendar month.
+function formatRangeHeader(range: { startDate: string; endDate: string; months: string[] }): string {
+  if (range.months.length === 1) {
+    const [, monthNumber, endDay] = range.endDate.split('-').map(Number);
+    const startDay = Number(range.startDate.split('-')[2]);
+    const year = Number(range.startDate.split('-')[0]);
+    return `${startDay} – ${endDay} ${MONTH_NAMES[monthNumber - 1]} ${year}`;
   }
-  if (months.length === 1) {
-    return formatMonthLabel(months[0]);
-  }
-  return `${formatMonthLabel(months[0])} – ${formatMonthLabel(months[months.length - 1])}`;
+  return `${formatMonthLabel(range.months[0])} – ${formatMonthLabel(range.months[range.months.length - 1])}`;
 }
 
 // Short 3-letter form of the same month names used above, for chart axis
@@ -84,6 +90,21 @@ function formatRangeLabel(months: string[]): string {
 function formatMonthAxisLabel(month: string): string {
   const [, monthNumber] = month.split('-').map(Number);
   return MONTH_NAMES[monthNumber - 1].slice(0, 3);
+}
+
+// "45.0K" / "1.2M" — the summary card's big figures follow the mockup's
+// compact style rather than a full formatAmount() figure, since three of
+// these need to sit side by side without wrapping.
+function formatAbbreviated(amount: number): string {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+  if (abs >= 1_000_000) {
+    return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
+  }
+  if (abs >= 1000) {
+    return `${sign}${(abs / 1000).toFixed(1)}K`;
+  }
+  return `${sign}${abs.toFixed(0)}`;
 }
 
 // Defined at module scope (not inline in ReportsScreen's JSX) so it isn't
@@ -245,9 +266,12 @@ function ReportsScreen(): React.JSX.Element {
     () => buildCategoryPieSlices(categoryBreakdown, colors),
     [categoryBreakdown, colors],
   );
-  const accountTypeBars = useMemo(
-    () => buildAccountTypeBarData(accountTypeBreakdown, colors),
-    [accountTypeBreakdown, colors],
+  // Denominator for each account type's proportional bar width below — at
+  // least 1 so a lone $0 row can't divide by zero, though `.length === 0`
+  // already short-circuits before this is ever read in that case.
+  const maxAccountTypeTotal = useMemo(
+    () => Math.max(1, ...accountTypeBreakdown.map(row => row.total)),
+    [accountTypeBreakdown],
   );
   const trendChartData = useMemo(
     () => buildTrendChartData(trend, formatMonthAxisLabel),
@@ -267,11 +291,27 @@ function ReportsScreen(): React.JSX.Element {
     [summary, selectedCurrencyCode, colors],
   );
 
+  const pieRadius = Math.min(chartWidth * 0.32, 70);
+
   return (
-    <ScrollView
-      style={[styles.scroll, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.container}>
-      <Text style={[styles.title, { color: colors.text }]}>Reports</Text>
+    // Reports' own Tab.Screen now sets headerShown:false (see App.tsx) so
+    // this screen's custom "Statistics/Reports" header — previously
+    // stacked underneath React Navigation's own default native header,
+    // since nothing had opted this tab out of it — is the only header, and
+    // needs its own top safe-area inset the native header used to provide
+    // for free. ScreenBackground (not a plain SafeAreaView) so a gradient
+    // palette like Platinum paints its sweep behind this content.
+    <ScreenBackground colors={colors} edges={['top']}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <Text
+          style={[typography.eyebrow, styles.eyebrow, { color: colors.primary }]}>
+          Statistics
+        </Text>
+        <Text style={[typography.screenTitle, { color: colors.text }]}>
+          Reports
+        </Text>
+      </View>
 
       <View style={styles.toggleRow}>
         {PRESET_OPTIONS.map(option => (
@@ -279,14 +319,17 @@ function ReportsScreen(): React.JSX.Element {
             key={option.key}
             style={[
               styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.primary },
-              preset === option.key && { backgroundColor: colors.primary },
+              { borderColor: colors.border, backgroundColor: colors.surface },
+              preset === option.key && {
+                backgroundColor: colors.primary,
+                borderColor: colors.primary,
+              },
             ]}
             onPress={() => setPreset(option.key)}>
             <Text
               style={[
                 styles.toggleButtonText,
-                { color: colors.primary },
+                { color: colors.text },
                 preset === option.key && { color: colors.primaryText },
               ]}>
               {option.label}
@@ -295,11 +338,17 @@ function ReportsScreen(): React.JSX.Element {
         ))}
       </View>
 
-      <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>
-        {formatRangeLabel(range.months)}
+      <Text
+        style={[
+          typography.amountMono,
+          styles.rangeLabel,
+          { color: colors.textSecondary },
+        ]}>
+        {formatRangeHeader(range)}
+        {selectedCurrencyCode !== 'Select currency' ? ` · ${selectedCurrencyCode}` : ''}
       </Text>
 
-      {availableCurrencies.length > 0 && (
+      {availableCurrencies.length > 1 && (
         <>
           <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
           <CollapsiblePicker
@@ -314,25 +363,17 @@ function ReportsScreen(): React.JSX.Element {
         </>
       )}
 
-      <Pressable
-        style={styles.checkboxRow}
-        onPress={() => setIncludeExcluded(current => !current)}>
-        <View
-          style={[
-            styles.checkboxBox,
-            { borderColor: colors.primary },
-            includeExcluded && { backgroundColor: colors.primary },
-          ]}>
-          {includeExcluded && (
-            <Text style={[styles.checkboxMark, { color: colors.primaryText }]}>
-              ✓
-            </Text>
-          )}
-        </View>
-        <Text style={[styles.checkboxLabel, { color: colors.text }]}>
+      <View style={styles.switchRow}>
+        <Text style={[styles.switchLabel, { color: colors.text }]}>
           Include excluded transactions
         </Text>
-      </Pressable>
+        <Switch
+          value={includeExcluded}
+          onValueChange={setIncludeExcluded}
+          trackColor={{ false: colors.border, true: colors.primarySoft }}
+          thumbColor={includeExcluded ? colors.primary : colors.surface}
+        />
+      </View>
 
       {loading ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -344,72 +385,128 @@ function ReportsScreen(): React.JSX.Element {
         </Text>
       ) : (
         <>
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            Summary
-          </Text>
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}>
-            <Text style={[styles.row, { color: colors.success }]}>
-              Total income: {formatAmount(summary.totalIncome, selectedCurrencyCode)}
-            </Text>
-            <Text style={[styles.row, { color: colors.danger }]}>
-              Total expenses:{' '}
-              {formatAmount(summary.totalExpenses, selectedCurrencyCode)}
-            </Text>
-            <Text
-              style={[
-                styles.rowNet,
-                { color: summary.net >= 0 ? colors.success : colors.danger },
-              ]}>
-              Net: {formatAmount(summary.net, selectedCurrencyCode)}
-            </Text>
-          </View>
+          <Card colors={colors} style={[styles.card, styles.summaryCard]}>
+            <View style={styles.summaryColumn}>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.summaryLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                Income
+              </Text>
+              <Text
+                style={[
+                  typography.amountMono,
+                  styles.summaryValue,
+                  { color: colors.success },
+                ]}>
+                {formatAbbreviated(summary.totalIncome)}
+              </Text>
+            </View>
+            <View style={styles.summaryColumn}>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.summaryLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                Expense
+              </Text>
+              <Text
+                style={[
+                  typography.amountMono,
+                  styles.summaryValue,
+                  { color: colors.danger },
+                ]}>
+                {formatAbbreviated(summary.totalExpenses)}
+              </Text>
+            </View>
+            <View style={styles.summaryColumn}>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.summaryLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                Net
+              </Text>
+              <Text
+                style={[
+                  typography.amountMono,
+                  styles.summaryValue,
+                  { color: colors.text },
+                ]}>
+                {formatAbbreviated(summary.net)}
+              </Text>
+            </View>
+          </Card>
 
-          <Text style={[styles.subtitle, { color: colors.text }]}>
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
             Spending by Category
           </Text>
           {categoryBreakdown.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              No expenses in this range.
-            </Text>
+            <Card colors={colors} style={styles.card}>
+              <Text style={{ color: colors.textSecondary }}>
+                No expenses in this range.
+              </Text>
+            </Card>
           ) : (
             <>
-              <View style={styles.chartWrap}>
+              <Card colors={colors} style={[styles.card, styles.categoryCard]}>
                 <PieChart
                   data={pieSlices}
                   donut
-                  radius={Math.min(chartWidth, 260) / 2}
-                  innerRadius={Math.min(chartWidth, 260) / 2 * 0.6}
+                  radius={pieRadius}
+                  innerRadius={pieRadius * 0.6}
                   innerCircleColor={colors.surface}
                   // No in-slice text and no onPress/focus config — the
-                  // exact figures already live in the numeric list right
-                  // below, and skipping the library's own label/touch
+                  // exact figures already live in the legend right next
+                  // to it, and skipping the library's own label/touch
                   // handling avoids the iOS/Android rendering
-                  // inconsistencies that feature is prone to. A pie with
-                  // a single slice (e.g. Current Month with one category)
-                  // still renders as a full circle with no special-casing
-                  // needed here.
+                  // inconsistencies that feature is prone to.
                   showText={false}
                   centerLabelComponent={renderPieCenterLabel}
                 />
-              </View>
-              <View style={styles.legendRow}>
-                {pieSlices.map(slice => (
-                  <View key={slice.label} style={styles.legendItem}>
-                    <View
-                      style={[styles.legendSwatch, { backgroundColor: slice.color }]}
-                    />
-                    <Text
-                      style={[styles.legendLabel, { color: colors.textSecondary }]}
-                      numberOfLines={1}>
-                      {slice.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
+                <View style={styles.legendColumn}>
+                  {pieSlices.map(slice => (
+                    <View key={slice.label} style={styles.legendItem}>
+                      <View
+                        style={[
+                          styles.legendSwatch,
+                          { backgroundColor: slice.color },
+                        ]}
+                      />
+                      <Text
+                        style={[styles.legendLabel, { color: colors.text }]}
+                        numberOfLines={1}>
+                        {slice.label}
+                      </Text>
+                      <Text
+                        style={[
+                          typography.amountMono,
+                          styles.legendPercent,
+                          { color: colors.textSecondary },
+                        ]}>
+                        {(
+                          (slice.value /
+                            Math.max(
+                              1,
+                              pieSlices.reduce((sum, s) => sum + s.value, 0),
+                            )) *
+                          100
+                        ).toFixed(0)}
+                        %
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </Card>
               {categoryBreakdown.map(row => (
                 <View
                   key={row.categoryId ?? 'uncategorized'}
@@ -430,75 +527,91 @@ function ReportsScreen(): React.JSX.Element {
             </>
           )}
 
-          <Text style={[styles.subtitle, { color: colors.text }]}>
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
             Spending by Account Type
           </Text>
           {accountTypeBreakdown.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              No expenses in this range.
-            </Text>
+            <Card colors={colors} style={styles.card}>
+              <Text style={{ color: colors.textSecondary }}>
+                No expenses in this range.
+              </Text>
+            </Card>
           ) : (
-            <>
-              <View style={[styles.chartWrap, { width: chartWidth }]}>
-                <BarChart
-                  data={accountTypeBars}
-                  horizontal
-                  width={chartWidth - 90}
-                  height={Math.max(90, accountTypeBars.length * 46)}
-                  barWidth={22}
-                  spacing={24}
-                  barBorderRadius={4}
-                  yAxisLabelWidth={80}
-                  yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
-                  xAxisLabelTextStyle={[
-                    styles.chartAxisLabelSmall,
-                    { color: colors.textSecondary },
-                  ]}
-                  xAxisColor={colors.border}
-                  yAxisColor={colors.border}
-                  rulesColor={colors.border}
-                  hideRules={false}
-                  // No onPress supplied and touch-driven focus explicitly
-                  // disabled — same reasoning as the pie chart above:
-                  // fewer library-owned touch code paths means fewer
-                  // places for iOS/Android to disagree. A single account
-                  // type still renders as one readable bar with no
-                  // special-casing needed.
-                  disablePress
-                  isAnimated={false}
-                />
-              </View>
-              {accountTypeBreakdown.map(row => (
+            // gifted-charts' horizontal BarChart used to render here, but its
+            // auto-computed x-axis scale (0, 251, 502, ...) routinely ran
+            // wider than the card and got clipped/illegible — especially
+            // with just one or two account types, which is the common case.
+            // A plain proportional bar per row (same track/fill language as
+            // the budget progress bars elsewhere on this screen and on
+            // Dashboard) can't overflow, since its width is always a
+            // percentage of the card, and reads just as clearly with a
+            // single row as with five.
+            <Card colors={colors} style={styles.card}>
+              {accountTypeBreakdown.map((row, index) => (
                 <View
                   key={row.accountType}
-                  style={[styles.listRow, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.listRowName, { color: colors.text }]}>
-                    {row.accountType}
-                  </Text>
-                  <Text style={{ color: colors.text }}>
-                    {formatAmount(row.total, selectedCurrencyCode)}
-                  </Text>
+                  style={
+                    index === accountTypeBreakdown.length - 1
+                      ? styles.accountTypeRowLast
+                      : styles.accountTypeRow
+                  }>
+                  <View style={styles.accountTypeHeaderRow}>
+                    <Text style={[styles.listRowName, { color: colors.text }]}>
+                      {row.accountType}
+                    </Text>
+                    <Text style={{ color: colors.text }}>
+                      {formatAmount(row.total, selectedCurrencyCode)}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.accountTypeTrack,
+                      { backgroundColor: colors.border },
+                    ]}>
+                    <View
+                      style={[
+                        styles.accountTypeFill,
+                        {
+                          width: `${Math.max(
+                            4,
+                            (row.total / maxAccountTypeTotal) * 100,
+                          )}%`,
+                          backgroundColor: colors.primary,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
               ))}
-            </>
+            </Card>
           )}
 
-          <Text style={[styles.subtitle, { color: colors.text }]}>
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
             Monthly Trend
           </Text>
-          {trend.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              No trend data for this range.
-            </Text>
-          ) : trendChartData.length === 1 ? (
-            // A one-point "trend" is a contradiction in terms — a line
-            // chart would either render as a single dot or fail to draw
-            // any line segment at all. Current Month always produces
-            // exactly one month, so instead of a line chart this shows
-            // the same two figures as a small two-bar comparison, which
-            // is the sensible reading of "trend" when there's only one
-            // period.
-            <View style={styles.chartWrap}>
+          <Card colors={colors} style={[styles.card, styles.trendCard]}>
+            {trend.length === 0 ? (
+              <Text style={{ color: colors.textSecondary }}>
+                No trend data for this range.
+              </Text>
+            ) : trendChartData.length === 1 ? (
+              // A one-point "trend" is a contradiction in terms — a line
+              // chart would either render as a single dot or fail to draw
+              // any line segment at all. Current Month always produces
+              // exactly one month, so instead of a line chart this shows
+              // the same two figures as a small two-bar comparison, which
+              // is the sensible reading of "trend" when there's only one
+              // period.
               <BarChart
                 data={[
                   {
@@ -512,77 +625,46 @@ function ReportsScreen(): React.JSX.Element {
                     frontColor: colors.danger,
                   },
                 ]}
-                width={chartWidth - 40}
-                height={180}
+                width={chartWidth - 72}
+                height={160}
                 barWidth={48}
                 spacing={40}
                 barBorderRadius={4}
-                yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
+                hideYAxisText
+                yAxisColor="transparent"
+                xAxisColor={colors.border}
+                hideRules
                 xAxisLabelTextStyle={[
                   styles.chartAxisLabel,
                   { color: colors.textSecondary },
                 ]}
-                xAxisColor={colors.border}
-                yAxisColor={colors.border}
-                rulesColor={colors.border}
                 disablePress
                 isAnimated={false}
               />
-            </View>
-          ) : (
-            <View style={styles.chartWrap}>
-              <LineChart
-                data={trendChartData.map(point => ({ value: point.income }))}
-                data2={trendChartData.map(point => ({ value: point.expenses }))}
-                xAxisLabelTexts={trendChartData.map(point => point.label)}
-                width={chartWidth - 40}
-                height={200}
-                color1={colors.success}
-                color2={colors.danger}
-                dataPointsColor1={colors.success}
-                dataPointsColor2={colors.danger}
-                thickness1={2}
-                thickness2={2}
-                yAxisTextStyle={[styles.chartAxisLabel, { color: colors.textSecondary }]}
+            ) : (
+              <BarChart
+                data={trendChartData.flatMap(point => [
+                  { value: point.income, frontColor: colors.success, spacing: 2, label: point.label },
+                  { value: point.expenses, frontColor: colors.danger },
+                ])}
+                width={chartWidth - 72}
+                height={160}
+                barWidth={10}
+                barBorderRadius={3}
+                spacing={18}
+                hideYAxisText
+                yAxisColor="transparent"
+                xAxisColor={colors.border}
+                hideRules
                 xAxisLabelTextStyle={[
                   styles.chartAxisLabelSmall,
                   { color: colors.textSecondary },
                 ]}
-                xAxisColor={colors.border}
-                yAxisColor={colors.border}
-                rulesColor={colors.border}
-                initialSpacing={16}
-                endSpacing={16}
-                spacing={Math.max(
-                  36,
-                  (chartWidth - 80) / Math.max(1, trendChartData.length - 1),
-                )}
-                // Deliberately no pointerConfig/onPress/focusEnabled —
-                // same touch-avoidance reasoning as the other two charts.
-                // Every month in range is zero-filled by getMonthlyTrend
-                // (Stage 16a), so a month with no activity still draws as
-                // a real point at zero rather than a gap in the line.
+                disablePress
+                isAnimated={false}
               />
-              <View style={styles.legendRow}>
-                <View style={styles.legendItem}>
-                  <View
-                    style={[styles.legendSwatch, { backgroundColor: colors.success }]}
-                  />
-                  <Text style={[styles.legendLabel, { color: colors.textSecondary }]}>
-                    Income
-                  </Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View
-                    style={[styles.legendSwatch, { backgroundColor: colors.danger }]}
-                  />
-                  <Text style={[styles.legendLabel, { color: colors.textSecondary }]}>
-                    Expenses
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
+            )}
+          </Card>
           {trend.map(row => (
             <View
               key={row.month}
@@ -602,22 +684,29 @@ function ReportsScreen(): React.JSX.Element {
           ))}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   scroll: {
     flex: 1,
   },
   container: {
     padding: 16,
-    paddingBottom: 40,
+    // Clears the floating tab bar pill + FAB (see App.tsx) — same value
+    // as DashboardScreen's own container for the same reason.
+    paddingBottom: 120,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
+  header: {
     marginBottom: 16,
+  },
+  eyebrow: {
+    marginBottom: 4,
   },
   toggleRow: {
     flexDirection: 'row',
@@ -626,70 +715,102 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
+    borderRadius: 20,
     paddingVertical: 10,
     alignItems: 'center',
   },
   toggleButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: scaleFont(13),
+    fontWeight: '700',
     textAlign: 'center',
   },
   rangeLabel: {
-    fontSize: 14,
-    fontStyle: 'italic',
-    marginTop: 10,
+    fontSize: scaleFont(13),
+    marginTop: 12,
     marginBottom: 4,
   },
   label: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontWeight: '600',
     marginTop: 12,
     marginBottom: 4,
   },
-  checkboxRow: {
+  switchRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    gap: 10,
+    marginTop: 14,
   },
-  checkboxBox: {
-    width: 22,
-    height: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxMark: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  checkboxLabel: {
-    fontSize: 15,
+  switchLabel: {
+    fontSize: scaleFont(15),
     fontWeight: '600',
+    flexShrink: 1,
+    marginRight: 12,
   },
   empty: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     marginTop: 12,
   },
-  subtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 24,
-    marginBottom: 8,
+  sectionLabel: {
+    marginTop: 22,
+    marginBottom: 10,
   },
+  // border/borderRadius/backgroundColor are NOT here — Card (see
+  // components/Card.tsx) owns those so it can swap in a gradient fill for
+  // palettes that define one. This only carries layout.
   card: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    padding: 12,
+    padding: 16,
+  },
+  summaryCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  summaryColumn: {
+    alignItems: 'flex-start',
+  },
+  summaryLabel: {
+    marginBottom: 6,
+  },
+  summaryValue: {
+    fontSize: scaleFont(20),
+    fontWeight: '700',
+  },
+  categoryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendColumn: {
+    flex: 1,
+    marginLeft: 16,
+    gap: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendSwatch: {
+    width: 9,
+    height: 9,
+    borderRadius: 2,
+  },
+  legendLabel: {
+    fontSize: scaleFont(13),
+    fontWeight: '600',
+    flex: 1,
+  },
+  legendPercent: {
+    fontSize: scaleFont(13),
+  },
+  trendCard: {
+    alignItems: 'center',
   },
   row: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     marginBottom: 6,
   },
   rowNet: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '700',
     marginTop: 4,
   },
@@ -701,7 +822,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   listRowName: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '600',
     flex: 1,
   },
@@ -709,48 +830,43 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 2,
   },
-  chartWrap: {
-    alignItems: 'center',
-    marginTop: 8,
+  accountTypeRow: {
+    marginBottom: 16,
+  },
+  accountTypeRowLast: {
+    marginBottom: 0,
+  },
+  accountTypeHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  accountTypeTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  accountTypeFill: {
+    height: '100%',
+    borderRadius: 4,
   },
   pieCenter: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   pieCenterValue: {
-    fontSize: 14,
+    fontSize: scaleFont(13),
     fontWeight: '700',
   },
   pieCenterLabel: {
-    fontSize: 11,
+    fontSize: scaleFont(10),
     marginTop: 2,
   },
-  legendRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    maxWidth: 140,
-  },
-  legendSwatch: {
-    width: 10,
-    height: 10,
-    borderRadius: 2,
-  },
-  legendLabel: {
-    fontSize: 12,
-  },
   chartAxisLabel: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
   },
   chartAxisLabelSmall: {
-    fontSize: 11,
+    fontSize: scaleFont(10),
   },
 });
 

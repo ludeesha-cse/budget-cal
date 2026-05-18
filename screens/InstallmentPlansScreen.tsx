@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
@@ -42,6 +43,7 @@ import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
+import type { SettingsStackParamList } from '../navigation/types';
 
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
@@ -51,7 +53,19 @@ type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 type Mode = 'principal' | 'monthly';
 
-function InstallmentPlansScreen(): React.JSX.Element {
+// "1st" / "2nd" / "3rd" / "4th" — only ever fed a day-of-month (1-31) from
+// this screen, so no need to handle negative numbers or anything outside
+// that range.
+function ordinalSuffix(day: number): string {
+  if (day % 10 === 1 && day !== 11) return 'st';
+  if (day % 10 === 2 && day !== 12) return 'nd';
+  if (day % 10 === 3 && day !== 13) return 'rd';
+  return 'th';
+}
+
+type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
+
+function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
@@ -85,6 +99,12 @@ function InstallmentPlansScreen(): React.JSX.Element {
   const [interestRatePercent, setInterestRatePercent] = useState('');
   const [monthlyAmountInput, setMonthlyAmountInput] = useState('');
   const [numberOfMonths, setNumberOfMonths] = useState('');
+  // Plain text input, 1-31 — kept as a string (like every other numeric
+  // field in this form) so an in-progress/empty entry never fights the
+  // user's typing; parsed and range-checked only at submit time in
+  // buildParams. Left blank means "no reminder" (dueDayOfMonth stays
+  // null), same optional convention buildParams already uses for it.
+  const [dueDayOfMonth, setDueDayOfMonth] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [currencyId, setCurrencyId] = useState('');
   const [startDate, setStartDate] = useState(formatDateString(new Date()));
@@ -137,6 +157,7 @@ function InstallmentPlansScreen(): React.JSX.Element {
     setInterestRatePercent('');
     setMonthlyAmountInput('');
     setNumberOfMonths('');
+    setDueDayOfMonth('');
     setCategoryId(categories[0] ? String(categories[0].id) : '');
     setCurrencyId(defaultCurrencyId());
     setStartDate(formatDateString(new Date()));
@@ -163,6 +184,9 @@ function InstallmentPlansScreen(): React.JSX.Element {
       plan.principalAmount == null ? String(plan.monthlyAmount) : '',
     );
     setNumberOfMonths(String(plan.numberOfMonths));
+    setDueDayOfMonth(
+      plan.dueDayOfMonth != null ? String(plan.dueDayOfMonth) : '',
+    );
     setCategoryId(String(plan.categoryId));
     setCurrencyId(String(plan.currencyId));
     setStartDate(plan.startDate);
@@ -242,6 +266,15 @@ function InstallmentPlansScreen(): React.JSX.Element {
       setError('Select a currency');
       return null;
     }
+    let parsedDueDay: number | null = null;
+    if (dueDayOfMonth !== '') {
+      const candidate = Number(dueDayOfMonth);
+      if (!Number.isInteger(candidate) || candidate < 1 || candidate > 31) {
+        setError('Due date must be a day between 1 and 31, or left blank');
+        return null;
+      }
+      parsedDueDay = candidate;
+    }
     if (mode === 'principal') {
       const parsedPrincipal = Number(principalAmount);
       const parsedRatePercent = Number(interestRatePercent);
@@ -271,6 +304,7 @@ function InstallmentPlansScreen(): React.JSX.Element {
         categoryId: Number(categoryId),
         currencyId: Number(currencyId),
         startDate,
+        dueDayOfMonth: parsedDueDay,
       };
     }
     const parsedMonthly = Number(monthlyAmountInput);
@@ -287,6 +321,7 @@ function InstallmentPlansScreen(): React.JSX.Element {
       categoryId: Number(categoryId),
       currencyId: Number(currencyId),
       startDate,
+      dueDayOfMonth: parsedDueDay,
     };
   };
 
@@ -333,9 +368,19 @@ function InstallmentPlansScreen(): React.JSX.Element {
     };
 
     if (tier === 'free') {
+      // Hide this screen's own form Modal before showing the paywall's —
+      // on iOS, two native <Modal>s both visible at once (this form's and
+      // PaywallModal's) never finishes presenting and the whole app
+      // freezes solid, needing a force-quit to recover. Android tolerates
+      // it, which is why this only ever showed up on iOS. onDismiss
+      // brings the form back with everything still filled in if the user
+      // backs out without buying — the fields themselves live in this
+      // component's own state, untouched by the Modal being hidden.
+      setFormVisible(false);
       openPaywall({
         reason: 'Installment plans require Premium.',
         onPurchaseSuccess: performCreate,
+        onDismiss: () => setFormVisible(true),
       });
       return;
     }
@@ -401,6 +446,25 @@ function InstallmentPlansScreen(): React.JSX.Element {
     setPayDate(formatDateString(new Date()));
     setShowPayDatePicker(false);
   };
+
+  // Arriving here via Dashboard's installment reminder "Pay" button —
+  // route.params.payPlanId is only ever set for that one navigation.
+  // Waits for `plans` to actually contain the target (the list is still
+  // loading on first render) before opening, and clears the param
+  // immediately after so navigating back to this screen later — from the
+  // tab bar, from "Add" — never reopens the same pay modal unexpectedly.
+  useEffect(() => {
+    const targetId = route.params?.payPlanId;
+    if (targetId == null) {
+      return;
+    }
+    const plan = plans.find(p => p.id === targetId);
+    if (plan) {
+      openPayModal(plan);
+      navigation.setParams({ payPlanId: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plans, route.params?.payPlanId]);
 
   const handlePayDateChange = (
     _event: DateTimePickerEvent,
@@ -491,6 +555,8 @@ function InstallmentPlansScreen(): React.JSX.Element {
                 </Text>
                 <Text style={{ color: colors.textSecondary }}>
                   {item.categoryName} · {item.currencyCode}
+                  {item.dueDayOfMonth != null &&
+                    ` · Due on the ${item.dueDayOfMonth}${ordinalSuffix(item.dueDayOfMonth)}`}
                 </Text>
                 <Text style={[styles.rowLine, { color: colors.text }]}>
                   {isFullyPaid ? (
@@ -725,6 +791,29 @@ function InstallmentPlansScreen(): React.JSX.Element {
                     returnKeyType="done"
                     inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
                     placeholder="12"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+
+                  <Text style={[styles.label, { color: colors.text }]}>
+                    Due date (day of month)
+                  </Text>
+                  <Text
+                    style={[styles.fieldHint, { color: colors.textSecondary }]}>
+                    Optional — e.g. 25 for the 25th of every month. When an
+                    installment is due within a few days, it'll show as a
+                    reminder on the Dashboard.
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                    ]}
+                    value={dueDayOfMonth}
+                    onChangeText={setDueDayOfMonth}
+                    keyboardType="numeric"
+                    returnKeyType="done"
+                    inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+                    placeholder="e.g. 25"
                     placeholderTextColor={colors.textSecondary}
                   />
 
@@ -1048,6 +1137,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 12,
     marginBottom: 4,
+  },
+  fieldHint: {
+    fontSize: 12,
+    marginBottom: 6,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,

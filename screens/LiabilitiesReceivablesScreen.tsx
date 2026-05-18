@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -12,10 +12,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import type { SettingsStackParamList } from '../navigation/types';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -82,7 +83,23 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
-  const [type, setType] = useState<LoanAccountType>('Liability');
+  const route =
+    useRoute<RouteProp<SettingsStackParamList, 'LiabilitiesReceivables'>>();
+  const [type, setType] = useState<LoanAccountType>(
+    route.params?.type ?? 'Liability',
+  );
+
+  // Reacts to the FAB's "Liability Repayment" / "Receivable Income"
+  // shortcuts (App.tsx) navigating here with a fresh `type` param while
+  // this screen is already mounted from an earlier visit — a plain
+  // useState initializer only runs once, so without this the tab would
+  // silently stay on whichever type it last showed instead of jumping to
+  // the one the user just tapped.
+  useEffect(() => {
+    if (route.params?.type) {
+      setType(route.params.type);
+    }
+  }, [route.params?.type]);
   // Both types are loaded regardless of the toggle so the totals header
   // can show each side at once without a refetch when the toggle flips.
   const [activeLiabilities, setActiveLiabilities] = useState<ActiveLoan[]>([]);

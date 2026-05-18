@@ -807,6 +807,11 @@ export async function validateExcelFile(
         'currency',
       );
       const startDate = v.requiredDate('StartDate');
+      // Optional and not in checkRequiredHeaders' list above — a workbook
+      // exported before this column existed still imports cleanly, the
+      // plan just never surfaces as a Dashboard reminder (same as any
+      // plan created with the due date left blank).
+      const dueDayOfMonth = v.optionalNumber('DueDayOfMonth');
       const createdAt = v.string('CreatedAt');
       if (name) {
         installmentPlanNameSet.add(name);
@@ -822,6 +827,7 @@ export async function validateExcelFile(
         CategoryName: categoryName,
         CurrencyCode: currencyCode,
         StartDate: startDate,
+        DueDayOfMonth: dueDayOfMonth ?? '',
         CreatedAt: createdAt,
       });
     });

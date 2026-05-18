@@ -45,6 +45,13 @@ function PaywallModal(): React.JSX.Element {
 
   const handleClose = () => {
     setPurchaseMessage(null);
+    // Fires before closePaywall() clears `request` — lets whichever
+    // gated screen opened this restore its own form Modal (see the iOS
+    // fix in AccountsScreen/CategoriesScreen/InstallmentPlansScreen: they
+    // hide that Modal before calling openPaywall so only one native
+    // Modal is ever visible at once, and use this to bring it back now
+    // that the paywall itself is going away).
+    request?.onDismiss?.();
     // Just hides the overlay — the screen underneath was never
     // unmounted, so whatever the user had filled in is still there.
     closePaywall();

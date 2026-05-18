@@ -17,9 +17,30 @@ import {
   errorCodes,
   isErrorWithCode,
 } from '@react-native-documents/picker';
+import {
+  ChevronRight,
+  CreditCard,
+  Download,
+  FolderTree,
+  HandCoins,
+  ListChecks,
+  PiggyBank,
+  Receipt,
+  Repeat,
+  Settings as SettingsIcon,
+  SlidersHorizontal,
+  Tags as TagsIcon,
+  Upload,
+  Wallet,
+  Banknote,
+} from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDevEntitlementToggle } from '../hooks/useEntitlement';
 import { useTheme } from '../contexts/ThemeContext';
+import type { ThemeColors } from '../contexts/ThemeContext';
+import ScreenBackground from '../components/ScreenBackground';
+import Card from '../components/Card';
+import { typography, scaleFont } from '../theme/typography';
 import {
   getAllDataForExport,
   importData,
@@ -39,6 +60,28 @@ type SettingsHomeNavigationProp = NativeStackNavigationProp<
 
 type Props = {
   navigation: SettingsHomeNavigationProp;
+};
+
+// The flat "one long list" this screen used to be became hard to scan once
+// it grew past a handful of destinations — grouping into labeled sections
+// (same eyebrow-label-over-card language every other screen already uses,
+// see DashboardScreen's "By Category"/"Cash & Debt" sections) gives the
+// list actual structure without inventing a new visual pattern. Icons are
+// purely a scan aid — every row's real behavior lives in its own onPress.
+type IconComponent = React.ComponentType<{ color: string; size: number }>;
+
+type SettingsRow = {
+  key: string;
+  label: string;
+  subtitle?: string;
+  icon: IconComponent;
+  onPress: () => void;
+  loading?: boolean;
+};
+
+type SettingsSection = {
+  title: string;
+  rows: SettingsRow[];
 };
 
 function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
@@ -256,11 +299,139 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
     );
   };
 
+  const sections: SettingsSection[] = [
+    {
+      title: 'Budget',
+      rows: [
+        {
+          key: 'budget',
+          label: 'Monthly Budget',
+          icon: SlidersHorizontal,
+          onPress: () => navigation.navigate('BudgetSettings'),
+        },
+        {
+          key: 'categoryBudgets',
+          label: 'Category Budgets',
+          icon: ListChecks,
+          onPress: () => navigation.navigate('CategoryBudgets'),
+        },
+      ],
+    },
+    {
+      title: 'Accounts & Balances',
+      rows: [
+        {
+          key: 'accounts',
+          label: 'Accounts',
+          icon: Wallet,
+          onPress: () => navigation.navigate('Accounts'),
+        },
+        {
+          key: 'liabilities',
+          label: 'Liabilities & Receivables',
+          icon: HandCoins,
+          onPress: () => navigation.navigate('LiabilitiesReceivables'),
+        },
+        {
+          key: 'currencies',
+          label: 'Currencies',
+          icon: Banknote,
+          onPress: () => navigation.navigate('Currencies'),
+        },
+      ],
+    },
+    {
+      title: 'Transactions',
+      rows: [
+        {
+          key: 'expensesByType',
+          label: 'Expenses by Type',
+          icon: Receipt,
+          onPress: () => navigation.navigate('ExpensesByType'),
+        },
+        {
+          key: 'categories',
+          label: 'Categories',
+          icon: FolderTree,
+          onPress: () => navigation.navigate('Categories'),
+        },
+        {
+          key: 'tags',
+          label: 'Tags',
+          icon: TagsIcon,
+          onPress: () => navigation.navigate('Tags'),
+        },
+        {
+          key: 'recurring',
+          label: 'Recurring',
+          icon: Repeat,
+          onPress: () => navigation.navigate('RecurringRules'),
+        },
+        {
+          key: 'installments',
+          label: 'Installments',
+          icon: CreditCard,
+          onPress: () => navigation.navigate('InstallmentPlans'),
+        },
+      ],
+    },
+    {
+      title: 'Goals',
+      rows: [
+        {
+          key: 'savingsGoals',
+          label: 'Savings Goals',
+          icon: PiggyBank,
+          onPress: () => navigation.navigate('SavingsGoals'),
+        },
+      ],
+    },
+    {
+      title: 'Data',
+      rows: [
+        {
+          key: 'export',
+          label: 'Export Data',
+          subtitle:
+            'Saves every record to an Excel file you can use to restore on another device.',
+          icon: Download,
+          onPress: handleExport,
+          loading: exporting,
+        },
+        {
+          key: 'import',
+          label: 'Import Data',
+          subtitle:
+            'Restore from a previously exported Excel file, or bulk-add transactions from one.',
+          icon: Upload,
+          onPress: handleImportPress,
+          loading: importing,
+        },
+      ],
+    },
+    {
+      title: 'App',
+      rows: [
+        {
+          key: 'appSettings',
+          label: 'App Settings',
+          icon: SettingsIcon,
+          onPress: () => navigation.navigate('AppSettings'),
+        },
+      ],
+    },
+  ];
+
   return (
-    <ScrollView
-      style={[styles.screen, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.container}
-    >
+    // No edges passed to ScreenBackground — this screen sits under a real
+    // native-stack header (SettingsStack's own 'More' title, see App.tsx),
+    // which already provides its own top safe-area inset; adding one here
+    // too would just double it up as dead space. Still uses
+    // ScreenBackground (not a plain ScrollView backgroundColor) so a
+    // gradient palette like Platinum paints its sweep behind this screen
+    // too.
+    <ScreenBackground colors={colors}>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       {devEntitlement && (
         <Pressable
           style={[
@@ -281,148 +452,77 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
           </Text>
         </Pressable>
       )}
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('BudgetSettings')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Monthly Budget
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('Accounts')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>Accounts</Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('LiabilitiesReceivables')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Liabilities & Receivables
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('Categories')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Categories
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('CategoryBudgets')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Category Budgets
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('Currencies')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Currencies
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('InstallmentPlans')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Installments
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('RecurringRules')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>Recurring</Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('SavingsGoals')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          Savings Goals
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('Tags')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>Tags</Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.row, { borderBottomColor: colors.border }]}
-        onPress={() => navigation.navigate('AppSettings')}
-      >
-        <Text style={[styles.rowLabel, { color: colors.text }]}>
-          App Settings
-        </Text>
-        <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-      </Pressable>
-      <Pressable
-        style={[
-          styles.row,
-          styles.exportRow,
-          { borderBottomColor: colors.border },
-        ]}
-        disabled={exporting}
-        onPress={handleExport}
-      >
-        <View style={styles.exportTextArea}>
-          <Text style={[styles.rowLabel, { color: colors.text }]}>
-            Export Data
+
+      {sections.map(section => (
+        <View key={section.title}>
+          <Text
+            style={[
+              typography.eyebrow,
+              styles.sectionLabel,
+              { color: colors.textSecondary },
+            ]}>
+            {section.title}
           </Text>
-          <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
-            Saves every record to an Excel file you can use to restore on
-            another device.
-          </Text>
+          <Card colors={colors} style={styles.card}>
+            {section.rows.map((row, index) => (
+              <SettingsListRow
+                key={row.key}
+                row={row}
+                colors={colors}
+                isLast={index === section.rows.length - 1}
+              />
+            ))}
+          </Card>
         </View>
-        {exporting ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : (
-          <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
-        )}
-      </Pressable>
-      <Pressable
-        style={[
-          styles.row,
-          styles.exportRow,
-          { borderBottomColor: colors.border },
-        ]}
-        disabled={importing}
-        onPress={handleImportPress}
-      >
-        <View style={styles.exportTextArea}>
-          <Text style={[styles.rowLabel, { color: colors.text }]}>
-            Import Data
-          </Text>
+      ))}
+      </ScrollView>
+    </ScreenBackground>
+  );
+}
+
+// Extracted rather than inlined in the sections.map above so each row's
+// icon/chevron/spinner rendering only has to be written once — the export
+// and import rows are the same component as every other row, just with a
+// subtitle and a loading spinner substituted in for the chevron.
+function SettingsListRow({
+  row,
+  colors,
+  isLast,
+}: {
+  row: SettingsRow;
+  colors: ThemeColors;
+  isLast: boolean;
+}): React.JSX.Element {
+  const Icon = row.icon;
+  const disabled = row.loading === true;
+  return (
+    <Pressable
+      style={[
+        styles.row,
+        !isLast && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth },
+      ]}
+      disabled={disabled}
+      onPress={row.onPress}
+    >
+      <View style={[styles.iconCircle, { backgroundColor: colors.primarySoft }]}>
+        <Icon color={colors.primary} size={18} />
+      </View>
+      <View style={styles.rowTextArea}>
+        <Text style={[styles.rowLabel, { color: colors.text }]}>
+          {row.label}
+        </Text>
+        {row.subtitle && (
           <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
-            Restore from a previously exported Excel file, or bulk-add
-            transactions from one.
+            {row.subtitle}
           </Text>
-        </View>
-        {importing ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : (
-          <Text style={[styles.chevron, { color: colors.chevron }]}>{'>'}</Text>
         )}
-      </Pressable>
-    </ScrollView>
+      </View>
+      {disabled ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : (
+        <ChevronRight size={18} color={colors.chevron} />
+      )}
+    </Pressable>
   );
 }
 
@@ -432,32 +532,44 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
+    // Clears the floating tab bar pill + FAB (see App.tsx) — same
+    // reasoning as DashboardScreen's own container.
+    paddingBottom: 120,
+  },
+  sectionLabel: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  // border/borderRadius/backgroundColor are NOT here — Card (see
+  // components/Card.tsx) owns those so it can swap in a gradient fill for
+  // palettes that define one. This only carries layout.
+  card: {
+    paddingHorizontal: 12,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
   },
-  rowLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  rowSubtitle: {
-    fontSize: 12,
-    marginTop: 3,
-  },
-  exportRow: {
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  exportTextArea: {
+  rowTextArea: {
     flex: 1,
     paddingRight: 12,
   },
-  chevron: {
-    fontSize: 16,
+  rowLabel: {
+    fontSize: scaleFont(15),
+    fontWeight: '600',
+  },
+  rowSubtitle: {
+    fontSize: scaleFont(12),
+    marginTop: 3,
   },
   devRow: {
     flexDirection: 'row',
@@ -470,11 +582,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   devRowLabel: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontWeight: '600',
   },
   devRowHint: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
   },
 });
 

@@ -33,6 +33,31 @@ export function clampDayToMonth(
   return Math.min(dayOfMonth, daysInMonth);
 }
 
+// The next clamped occurrence of `dayOfMonth` on or after `fromDate` —
+// this month's clamped date if that hasn't passed yet, otherwise next
+// month's. Used for installment plan due-date reminders (Dashboard),
+// which only ever care about the single next occurrence, unlike
+// getOccurrenceDatesBetween's whole-range walk below.
+export function getNextOccurrenceDate(
+  dayOfMonth: number,
+  fromDate: string,
+): string {
+  const [year, month] = fromDate.split('-').map(Number);
+  const thisMonthDay = clampDayToMonth(year, month, dayOfMonth);
+  const thisMonthDate = `${year}-${String(month).padStart(2, '0')}-${String(
+    thisMonthDay,
+  ).padStart(2, '0')}`;
+  if (thisMonthDate >= fromDate) {
+    return thisMonthDate;
+  }
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonthDay = clampDayToMonth(nextYear, nextMonth, dayOfMonth);
+  return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(
+    nextMonthDay,
+  ).padStart(2, '0')}`;
+}
+
 // Every clamped occurrence date for `dayOfMonth` between fromDate and
 // toDate inclusive, one per calendar month in range. Pure — no DB access
 // — so generatePendingOccurrences (db/queries.ts) can lean on this for

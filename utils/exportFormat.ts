@@ -157,6 +157,7 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
     'CategoryName',
     'CurrencyCode',
     'StartDate',
+    'DueDayOfMonth',
     'CreatedAt',
   ],
   // No transaction reference needed — (PlanName, InstallmentNumber) is

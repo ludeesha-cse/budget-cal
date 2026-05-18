@@ -1,0 +1,1 @@
+ALTER TABLE `installment_plans` ADD `due_day_of_month` integer;

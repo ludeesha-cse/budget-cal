@@ -26,6 +26,7 @@ import {
 import {
   formatDateString,
   getCurrentDateString,
+  getNextOccurrenceDate,
   getOccurrenceDatesBetween,
 } from '../utils/date';
 import { getTotalOwed } from '../utils/interestCalculations';
@@ -40,6 +41,7 @@ import {
   type ExportWorkbookData,
   type SheetName,
 } from '../utils/exportFormat';
+import { DEFAULT_PALETTE_ID } from '../theme/palettes';
 import { version as APP_VERSION } from '../package.json';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
@@ -177,6 +179,12 @@ export async function getTransactionsByMonth(month: string) {
       .select({
         id: transactions.id,
         accountId: transactions.accountId,
+        // Joined in (Stage: History account display) so HistoryListScreen
+        // can show which account each expense/income actually moved
+        // through, the same way it already shows from/to for transfers
+        // and loan payments — accountId alone meant looking that up meant
+        // a second round trip per row.
+        accountName: accounts.name,
         amount: transactions.amount,
         categoryId: transactions.categoryId,
         categoryName: categories.name,
@@ -188,6 +196,7 @@ export async function getTransactionsByMonth(month: string) {
         createdAt: transactions.createdAt,
       })
       .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(like(transactions.date, `${month}%`));
   } catch (error) {
@@ -207,6 +216,8 @@ export async function getTransactionsByYear(year: string) {
       .select({
         id: transactions.id,
         accountId: transactions.accountId,
+        // See getTransactionsByMonth's own comment on this same join.
+        accountName: accounts.name,
         amount: transactions.amount,
         categoryId: transactions.categoryId,
         categoryName: categories.name,
@@ -218,6 +229,7 @@ export async function getTransactionsByYear(year: string) {
         createdAt: transactions.createdAt,
       })
       .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(like(transactions.date, `${year}%`));
   } catch (error) {
@@ -2291,6 +2303,42 @@ export async function setThemeMode(mode: ThemeMode): Promise<void> {
   }
 }
 
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/settings, keeping the same return type. Mirrors
+// getThemeMode exactly, just for the other independent preference
+// (which entry of theme/palettes.ts's PALETTES is active) — kept as its
+// own column/function rather than folded into ThemeMode since "light vs
+// dark" and "which palette" are separate choices.
+export async function getPaletteId(): Promise<string> {
+  try {
+    const [row] = await db.select().from(appSettings).limit(1);
+    return row?.paletteId ?? DEFAULT_PALETTE_ID;
+  } catch (error) {
+    console.error('getPaletteId: failed to read palette id', error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to PATCH /api/settings, keeping the same input shape. Mirrors
+// setThemeMode exactly.
+export async function setPaletteId(paletteId: string): Promise<void> {
+  try {
+    const [row] = await db.select().from(appSettings).limit(1);
+    if (row) {
+      await db
+        .update(appSettings)
+        .set({ paletteId })
+        .where(eq(appSettings.id, row.id));
+    } else {
+      await db.insert(appSettings).values({ paletteId });
+    }
+  } catch (error) {
+    console.error('setPaletteId: failed to save palette id', paletteId, error);
+    throw error;
+  }
+}
+
 // Mode A (principal + rate) and Mode B (a known flat monthly amount)
 // share every field except how the schedule is derived — a tagged union
 // keeps the two call shapes from being confused with each other (e.g.
@@ -2301,6 +2349,10 @@ export type NewInstallmentPlanParams = {
   categoryId: number;
   currencyId: number;
   startDate: string; // 'YYYY-MM-DD'
+  // 1-31, optional — no due day set means this plan never surfaces as a
+  // Dashboard reminder (see getInstallmentReminders). Same
+  // clamp-to-shorter-month convention as recurring_rules.dayOfMonth.
+  dueDayOfMonth?: number | null;
 } & (
   | { mode: 'principal'; principalAmount: number; interestRate: number }
   | { mode: 'monthly'; monthlyAmount: number }
@@ -2346,6 +2398,14 @@ export async function createInstallmentPlan(
     if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
       throw new Error('Number of months must be a whole number greater than zero.');
     }
+    if (
+      params.dueDayOfMonth != null &&
+      (!Number.isInteger(params.dueDayOfMonth) ||
+        params.dueDayOfMonth < 1 ||
+        params.dueDayOfMonth > 31)
+    ) {
+      throw new Error('Due date must be a day between 1 and 31.');
+    }
     const schedule = scheduleForInstallmentPlan(params);
     const [plan] = await db
       .insert(installmentPlans)
@@ -2361,6 +2421,7 @@ export async function createInstallmentPlan(
         categoryId: params.categoryId,
         currencyId: params.currencyId,
         startDate: params.startDate,
+        dueDayOfMonth: params.dueDayOfMonth ?? null,
         createdAt: Date.now(),
       })
       .returning();
@@ -2396,6 +2457,7 @@ export async function getInstallmentPlans() {
         currencyId: installmentPlans.currencyId,
         currencyCode: currencies.code,
         startDate: installmentPlans.startDate,
+        dueDayOfMonth: installmentPlans.dueDayOfMonth,
         createdAt: installmentPlans.createdAt,
       })
       .from(installmentPlans)
@@ -2405,6 +2467,96 @@ export async function getInstallmentPlans() {
   } catch (error) {
     console.error(
       'getInstallmentPlans: failed to load installment plans',
+      error,
+    );
+    throw error;
+  }
+}
+
+export type InstallmentReminderRow = {
+  id: number;
+  name: string;
+  currencyCode: string;
+  nextInstallmentNumber: number;
+  numberOfMonths: number;
+  nextAmountDue: number;
+  nextDueDate: string; // 'YYYY-MM-DD'
+};
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/installment-plans/reminders, keeping the same return
+// shape. Dashboard-facing — only plans with a dueDayOfMonth set AND not
+// yet fully paid ever show up here; the "within N days" cutoff itself is
+// left to the caller (DashboardScreen), same as upcomingLoans' own
+// daysUntil filtering, so both reminder types share one filtering
+// convention instead of each baking its own window into the query layer.
+//
+// Fetches every installment_payments row in one query and counts paid
+// installments per plan in JS rather than a SQL GROUP BY — same
+// "plan/payment counts are small in a personal tracker" reasoning
+// InstallmentPlansScreen's own load() already leans on.
+export async function getInstallmentReminders(): Promise<
+  InstallmentReminderRow[]
+> {
+  try {
+    const plans = await db
+      .select({
+        id: installmentPlans.id,
+        name: installmentPlans.name,
+        numberOfMonths: installmentPlans.numberOfMonths,
+        monthlyAmount: installmentPlans.monthlyAmount,
+        finalInstallmentAmount: installmentPlans.finalInstallmentAmount,
+        dueDayOfMonth: installmentPlans.dueDayOfMonth,
+        currencyCode: currencies.code,
+      })
+      .from(installmentPlans)
+      .innerJoin(currencies, eq(installmentPlans.currencyId, currencies.id));
+
+    const plansWithDueDate = plans.filter(
+      (plan): plan is typeof plan & { dueDayOfMonth: number } =>
+        plan.dueDayOfMonth != null,
+    );
+    if (plansWithDueDate.length === 0) {
+      return [];
+    }
+
+    const allPayments = await db
+      .select({ installmentPlanId: installmentPayments.installmentPlanId })
+      .from(installmentPayments);
+    const paidCountByPlan = new Map<number, number>();
+    for (const payment of allPayments) {
+      paidCountByPlan.set(
+        payment.installmentPlanId,
+        (paidCountByPlan.get(payment.installmentPlanId) ?? 0) + 1,
+      );
+    }
+
+    const today = getCurrentDateString();
+    const reminders: InstallmentReminderRow[] = [];
+    for (const plan of plansWithDueDate) {
+      const paidCount = paidCountByPlan.get(plan.id) ?? 0;
+      if (paidCount >= plan.numberOfMonths) {
+        continue;
+      }
+      const nextInstallmentNumber = paidCount + 1;
+      const nextAmountDue =
+        nextInstallmentNumber === plan.numberOfMonths
+          ? plan.finalInstallmentAmount
+          : plan.monthlyAmount;
+      reminders.push({
+        id: plan.id,
+        name: plan.name,
+        currencyCode: plan.currencyCode,
+        nextInstallmentNumber,
+        numberOfMonths: plan.numberOfMonths,
+        nextAmountDue,
+        nextDueDate: getNextOccurrenceDate(plan.dueDayOfMonth, today),
+      });
+    }
+    return reminders;
+  } catch (error) {
+    console.error(
+      'getInstallmentReminders: failed to load installment reminders',
       error,
     );
     throw error;
@@ -2436,6 +2588,14 @@ export async function updateInstallmentPlan(
     if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
       throw new Error('Number of months must be a whole number greater than zero.');
     }
+    if (
+      params.dueDayOfMonth != null &&
+      (!Number.isInteger(params.dueDayOfMonth) ||
+        params.dueDayOfMonth < 1 ||
+        params.dueDayOfMonth > 31)
+    ) {
+      throw new Error('Due date must be a day between 1 and 31.');
+    }
     const schedule = scheduleForInstallmentPlan(params);
     await db
       .update(installmentPlans)
@@ -2451,6 +2611,7 @@ export async function updateInstallmentPlan(
         categoryId: params.categoryId,
         currencyId: params.currencyId,
         startDate: params.startDate,
+        dueDayOfMonth: params.dueDayOfMonth ?? null,
       })
       .where(eq(installmentPlans.id, id));
   } catch (error) {
@@ -4305,6 +4466,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
           CategoryName: categoryName.get(p.categoryId) ?? '',
           CurrencyCode: currencyCode.get(p.currencyId) ?? '',
           StartDate: p.startDate,
+          DueDayOfMonth: p.dueDayOfMonth ?? '',
           CreatedAt: toDateOnly(p.createdAt),
         }),
       ),
@@ -4853,6 +5015,10 @@ export async function importData(
             categoryId,
             currencyId,
             startDate: String(row.StartDate),
+            dueDayOfMonth:
+              row.DueDayOfMonth === '' || row.DueDayOfMonth == null
+                ? null
+                : Number(row.DueDayOfMonth),
             createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
           })
           .returning();

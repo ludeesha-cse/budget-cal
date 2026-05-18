@@ -1,0 +1,1 @@
+ALTER TABLE `app_settings` ADD `palette_id` text DEFAULT 'ledger' NOT NULL;

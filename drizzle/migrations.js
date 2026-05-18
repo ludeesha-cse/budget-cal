@@ -21,6 +21,8 @@ import m0016 from './0016_add_recurring_occurrences.sql';
 import m0017 from './0017_add_savings_goals.sql';
 import m0018 from './0018_add_tags.sql';
 import m0019 from './0019_add_exclude_from_budget.sql';
+import m0020 from './0020_add_palette_id.sql';
+import m0021 from './0021_add_installment_due_day.sql';
 
   export default {
     journal,
@@ -44,7 +46,9 @@ m0015,
 m0016,
 m0017,
 m0018,
-m0019
+m0019,
+m0020,
+m0021
     }
   }
   

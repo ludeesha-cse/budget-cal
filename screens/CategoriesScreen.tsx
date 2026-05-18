@@ -84,9 +84,16 @@ function CategoriesScreen(): React.JSX.Element {
       const userCategoryCount = await getUserCategoryCount();
       const check = canAddCategory(userCategoryCount, tier);
       if (!check.allowed) {
+        // Hide this screen's own form Modal first — showing PaywallModal's
+        // <Modal> while this one is still visible=true is what freezes
+        // iOS solid (two native Modals open at once never finishes
+        // presenting there; Android tolerates it). onDismiss restores the
+        // form, still filled in, if the user backs out without buying.
+        setFormVisible(false);
         openPaywall({
           reason: check.reason ?? 'Additional categories require Premium.',
           onPurchaseSuccess: performCreate,
+          onDismiss: () => setFormVisible(true),
         });
         return;
       }

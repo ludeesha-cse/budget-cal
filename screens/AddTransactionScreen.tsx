@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import TransactionForm, {
   TransactionFormSubmitValues,
@@ -34,7 +34,10 @@ const TABS: { key: AddTab; label: string }[] = [
 function AddScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const navigation = useNavigation<AddScreenNavigationProp>();
-  const [activeTab, setActiveTab] = useState<AddTab>('Expense');
+  const route = useRoute<RouteProp<RootTabParamList, 'Add'>>();
+  const [activeTab, setActiveTab] = useState<AddTab>(
+    route.params?.initialTab ?? 'Expense',
+  );
   const [formKey, setFormKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -42,6 +45,16 @@ function AddScreen(): React.JSX.Element {
     setActiveTab(tab);
     setSuccessMessage(null);
   };
+
+  // Same reasoning as LiabilitiesReceivablesScreen's identical effect —
+  // the FAB (App.tsx) navigates here with a fresh `initialTab` while this
+  // tab may already be mounted from an earlier visit, so the useState
+  // initializer above alone won't react to a second navigation.
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      switchTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
 
   const handleExpenseSubmit = async (values: TransactionFormSubmitValues) => {
     const [inserted] = await addTransaction({

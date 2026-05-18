@@ -162,6 +162,16 @@ export const appSettings = sqliteTable('app_settings', {
     .notNull()
     .default('system')
     .$type<'light' | 'dark' | 'system'>(),
+  // Which entry of theme/palettes.ts's PALETTES array is active — decoupled
+  // from themeMode on purpose, since "light vs dark" and "which color
+  // scheme" are independent choices (a future palette might itself only
+  // define a light variant, or the user might want the same palette's
+  // light/dark pairing regardless of which color theme they picked).
+  // Free-text rather than a $type union, since PALETTES is meant to grow
+  // over time without a schema migration for every new entry — an
+  // unrecognized value just falls back to the default palette (see
+  // contexts/ThemeContext.tsx).
+  paletteId: text('palette_id').notNull().default('ledger'),
 });
 
 // One row per payoff payment against a credit card. Deliberately separate
@@ -236,6 +246,13 @@ export const installmentPlans = sqliteTable('installment_plans', {
     .notNull()
     .references(() => currencies.id),
   startDate: text('start_date').notNull(), // 'YYYY-MM-DD'
+  // Nullable — a plan created before this column existed, or one the user
+  // never bothered setting a due date for, simply never surfaces as a
+  // Dashboard reminder (see getInstallmentReminders). 1-31, same
+  // clamp-to-shorter-month convention as recurring_rules.dayOfMonth: a
+  // plan due on the 31st still fires on the last real day of a 30-day
+  // month rather than being skipped.
+  dueDayOfMonth: int('due_day_of_month'),
   createdAt: int('created_at').notNull(),
 });
 
