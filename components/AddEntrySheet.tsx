@@ -1,6 +1,13 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ArrowDownLeft, ArrowUpRight, Minus, Plus } from 'lucide-react-native';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Banknote,
+  Minus,
+  Plus,
+  Repeat,
+} from 'lucide-react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -8,7 +15,9 @@ export type AddEntryKind =
   | 'Expense'
   | 'Income'
   | 'LiabilityRepayment'
-  | 'ReceivableIncome';
+  | 'ReceivableIncome'
+  | 'Withdraw'
+  | 'Transfer';
 
 type AddEntryOption = {
   kind: AddEntryKind;
@@ -18,7 +27,11 @@ type AddEntryOption = {
 
 const OPTIONS: AddEntryOption[] = [
   { kind: 'Expense', title: 'Expense', subtitle: 'Category required' },
-  { kind: 'Income', title: 'Income', subtitle: 'No category — description only' },
+  {
+    kind: 'Income',
+    title: 'Income',
+    subtitle: 'No category — description only',
+  },
   {
     kind: 'LiabilityRepayment',
     title: 'Liability Repayment',
@@ -28,6 +41,16 @@ const OPTIONS: AddEntryOption[] = [
     kind: 'ReceivableIncome',
     title: 'Receivable Income',
     subtitle: 'Collect on money you lent',
+  },
+  {
+    kind: 'Withdraw',
+    title: 'Withdraw',
+    subtitle: 'Move money from a bank account to cash',
+  },
+  {
+    kind: 'Transfer',
+    title: 'Transfer',
+    subtitle: 'Move money between any two accounts',
   },
 ];
 
@@ -42,7 +65,11 @@ type Props = {
 // Tapping the dimmed backdrop or any row closes it; onSelect fires after
 // the sheet is already closing so the destination screen never has to
 // render underneath a still-visible modal.
-function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element {
+function AddEntrySheet({
+  visible,
+  onClose,
+  onSelect,
+}: Props): React.JSX.Element {
   const { colors } = useTheme();
 
   const handleSelect = (kind: AddEntryKind) => {
@@ -55,7 +82,8 @@ function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <Pressable style={styles.backdrop} onPress={onClose}>
         <View style={styles.sheetWrap} pointerEvents="box-none">
           <Pressable
@@ -63,13 +91,15 @@ function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element
               styles.sheet,
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
-            onPress={() => {}}>
+            onPress={() => {}}
+          >
             <Text
               style={[
                 styles.eyebrow,
                 typography.eyebrow,
                 { color: colors.textSecondary },
-              ]}>
+              ]}
+            >
               Add Entry
             </Text>
             {OPTIONS.map(option => (
@@ -79,7 +109,8 @@ function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element
                   styles.row,
                   pressed && { opacity: 0.6 },
                 ]}
-                onPress={() => handleSelect(option.kind)}>
+                onPress={() => handleSelect(option.kind)}
+              >
                 <View
                   style={[
                     styles.iconCircle,
@@ -96,7 +127,15 @@ function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element
                       styles.iconCircleOutline,
                       { borderColor: colors.border },
                     ],
-                  ]}>
+                    option.kind === 'Withdraw' && {
+                      backgroundColor: colors.primarySoft,
+                    },
+                    option.kind === 'Transfer' && [
+                      styles.iconCircleOutline,
+                      { borderColor: colors.border },
+                    ],
+                  ]}
+                >
                   {option.kind === 'Expense' && (
                     <Minus size={18} color={colors.danger} strokeWidth={2.5} />
                   )}
@@ -117,13 +156,27 @@ function AddEntrySheet({ visible, onClose, onSelect }: Props): React.JSX.Element
                       strokeWidth={2.5}
                     />
                   )}
+                  {option.kind === 'Withdraw' && (
+                    <Banknote
+                      size={18}
+                      color={colors.primary}
+                      strokeWidth={2.5}
+                    />
+                  )}
+                  {option.kind === 'Transfer' && (
+                    <Repeat size={18} color={colors.text} strokeWidth={2.5} />
+                  )}
                 </View>
                 <View style={styles.rowText}>
                   <Text style={[styles.rowTitle, { color: colors.text }]}>
                     {option.title}
                   </Text>
                   <Text
-                    style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
+                    style={[
+                      styles.rowSubtitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
                     {option.subtitle}
                   </Text>
                 </View>

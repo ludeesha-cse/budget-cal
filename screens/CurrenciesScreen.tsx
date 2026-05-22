@@ -1,14 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  Button,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Crown, Plus, Trash2 } from 'lucide-react-native';
+import Card from '../components/Card';
+import BottomSheetModal from '../components/BottomSheetModal';
 import {
   addCurrency,
   deleteCurrency,
@@ -16,6 +11,7 @@ import {
   setDefaultCurrency,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont } from '../theme/typography';
 
 // Lists existing currencies and lets the user add new ones; the seeded
 // default currency is flagged with a badge and can't be added again.
@@ -105,86 +101,59 @@ function CurrenciesScreen(): React.JSX.Element {
     );
   };
 
+  const formCanSave = code.trim() !== '' && name.trim() !== '';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {formVisible ? (
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Code</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={code}
-            onChangeText={setCode}
-            placeholder="e.g. JPY"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="characters"
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Japanese Yen"
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          <View style={styles.formActions}>
-            <Button
-              title="Cancel"
-              color={colors.primary}
-              onPress={() => {
-                setFormVisible(false);
-                resetForm();
-              }}
-            />
-            <Button title="Add" color={colors.primary} onPress={handleSubmit} />
-          </View>
-        </View>
-      ) : (
-        <Button title="Add Currency" color={colors.primary} onPress={handleAddPress} />
-      )}
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          Add Currency
+        </Text>
+      </Pressable>
 
       <FlatList
         style={styles.list}
         data={currencies}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+          <Card colors={colors} style={styles.row}>
+            <View style={[styles.codeBadge, { backgroundColor: colors.neutralSoft }]}>
+              <Text style={[styles.codeBadgeText, { color: colors.text }]}>
+                {item.code.slice(0, 2)}
+              </Text>
+            </View>
             <View style={styles.rowDetails}>
               <Text style={[styles.rowCode, { color: colors.text }]}>
                 {item.code}
               </Text>
               <Text style={{ color: colors.textSecondary }}>{item.name}</Text>
             </View>
-            <View style={styles.rowActions}>
-              {item.isDefault ? (
-                <Text
-                  style={[
-                    styles.defaultBadge,
-                    { color: colors.success, borderColor: colors.success },
-                  ]}>
+            {item.isDefault ? (
+              <View style={[styles.defaultBadge, { backgroundColor: colors.primarySoft }]}>
+                <Crown size={12} color={colors.primary} />
+                <Text style={[styles.defaultBadgeText, { color: colors.primary }]}>
                   Default
                 </Text>
-              ) : (
-                <Button
-                  title="Set as Default"
-                  color={colors.primary}
-                  onPress={() => handleSetDefault(item.id)}
-                />
-              )}
-              <Button
-                title="Delete"
-                color={colors.danger}
-                onPress={() => handleDelete(item.id, item.code)}
-              />
-            </View>
-          </View>
+              </View>
+            ) : (
+              <View style={styles.rowActions}>
+                <Pressable onPress={() => handleSetDefault(item.id)}>
+                  <Text style={[styles.setDefaultLink, { color: colors.primary }]}>
+                    Set Default
+                  </Text>
+                </Pressable>
+                <Pressable
+                  hitSlop={8}
+                  style={styles.iconButton}
+                  onPress={() => handleDelete(item.id, item.code)}>
+                  <Trash2 size={16} color={colors.danger} />
+                </Pressable>
+              </View>
+            )}
+          </Card>
         )}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -192,6 +161,42 @@ function CurrenciesScreen(): React.JSX.Element {
           </Text>
         }
       />
+
+      <BottomSheetModal
+        visible={formVisible}
+        onClose={() => {
+          setFormVisible(false);
+          resetForm();
+        }}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title="Add Currency"
+        saveLabel="Add">
+        <Text style={[styles.label, { color: colors.text }]}>Code</Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={code}
+          onChangeText={setCode}
+          placeholder="e.g. JPY"
+          placeholderTextColor={colors.textSecondary}
+          autoCapitalize="characters"
+        />
+
+        <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Japanese Yen"
+          placeholderTextColor={colors.textSecondary}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -201,8 +206,19 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  form: {
-    marginBottom: 16,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   label: {
     fontSize: 14,
@@ -217,13 +233,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
   list: {
-    marginTop: 8,
+    marginTop: 16,
   },
   empty: {
     fontSize: 14,
@@ -231,10 +242,21 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    marginBottom: 10,
+  },
+  codeBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  codeBadgeText: {
+    fontSize: scaleFont(12),
+    fontWeight: '700',
   },
   rowDetails: {
     flex: 1,
@@ -242,18 +264,29 @@ const styles = StyleSheet.create({
   rowActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 12,
   },
   rowCode: {
     fontWeight: '600',
   },
+  setDefaultLink: {
+    fontSize: scaleFont(13),
+    fontWeight: '700',
+  },
+  iconButton: {
+    padding: 4,
+  },
   defaultBadge: {
-    fontSize: 12,
-    fontWeight: '600',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  defaultBadgeText: {
+    fontSize: scaleFont(12),
+    fontWeight: '700',
   },
 });
 

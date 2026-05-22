@@ -17,6 +17,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
@@ -405,6 +406,16 @@ function SavingsGoalsScreen(): React.JSX.Element {
   );
   const today = getCurrentDateString();
 
+  // Mirrors handleSubmitGoal's own checks — target date is genuinely
+  // optional (per its own "(optional)" label), so it's deliberately left
+  // out of this gate.
+  const goalFormCanSave =
+    goalName.trim() !== '' &&
+    goalTargetAmount !== '' &&
+    !Number.isNaN(Number(goalTargetAmount)) &&
+    Number(goalTargetAmount) > 0 &&
+    goalCurrencyId != null;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={[styles.explainer, { color: colors.textSecondary }]}>
@@ -757,22 +768,13 @@ function SavingsGoalsScreen(): React.JSX.Element {
         <Button title="Add Goal" color={colors.primary} onPress={handleAddGoalPress} />
       </View>
 
-      <Modal
+      <BottomSheetModal
         visible={formVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelGoalForm}>
-        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <FlatList
-              data={[0]}
-              keyExtractor={() => 'form'}
-              renderItem={() => (
-                <View>
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    {editingGoalId ? 'Edit Goal' : 'New Savings Goal'}
-                  </Text>
-
+        onClose={handleCancelGoalForm}
+        onSave={handleSubmitGoal}
+        canSave={goalFormCanSave}
+        title={editingGoalId ? 'Edit Goal' : 'New Savings Goal'}
+        saveLabel={editingGoalId ? 'Save' : 'Create'}>
                   <Text style={[styles.label, { color: colors.text }]}>Name</Text>
                   <TextInput
                     style={[
@@ -861,25 +863,8 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     </Text>
                   )}
 
-                  <View style={styles.formActions}>
-                    <Button
-                      title="Cancel"
-                      color={colors.primary}
-                      onPress={handleCancelGoalForm}
-                    />
-                    <Button
-                      title={editingGoalId ? 'Save' : 'Create'}
-                      color={colors.primary}
-                      onPress={handleSubmitGoal}
-                    />
-                  </View>
                   <NumericInputAccessory />
-                </View>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
 
       {Platform.OS === 'android' ? (
         datePickerTarget && (
@@ -1040,11 +1025,6 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: 12,
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
   },
 });
 

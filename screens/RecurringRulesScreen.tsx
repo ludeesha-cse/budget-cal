@@ -3,8 +3,6 @@ import {
   Alert,
   Button,
   FlatList,
-  Keyboard,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
@@ -285,6 +284,21 @@ function RecurringRulesScreen(): React.JSX.Element {
   const visibleRules = rules.filter(r => r.ruleType === listType);
   const parsedDayPreview = Number(dayOfMonth);
 
+  // Mirrors handleSubmit's own checks (minus trimming/rounding, which
+  // only matter at actual submit time) so Save disables the instant a
+  // required field is missing, rather than only failing after a tap.
+  const formCanSave =
+    name.trim() !== '' &&
+    amount !== '' &&
+    !Number.isNaN(Number(amount)) &&
+    Number(amount) > 0 &&
+    Number.isInteger(parsedDayPreview) &&
+    parsedDayPreview >= 1 &&
+    parsedDayPreview <= 31 &&
+    accountId != null &&
+    currencyId != null &&
+    (ruleType !== 'Expense' || categoryId != null);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.toggleRow}>
@@ -415,24 +429,13 @@ function RecurringRulesScreen(): React.JSX.Element {
         <Button title="Add Rule" color={colors.primary} onPress={handleAddPress} />
       </View>
 
-      <Modal
+      <BottomSheetModal
         visible={formVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancel}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <FlatList
-              data={[0]}
-              keyExtractor={() => 'form'}
-              renderItem={() => (
-                <View>
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    {editingId ? 'Edit Rule' : 'New Recurring Rule'}
-                  </Text>
-
+        onClose={handleCancel}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title={editingId ? 'Edit Rule' : 'New Recurring Rule'}
+        saveLabel={editingId ? 'Save' : 'Create'}>
                   <Text style={[styles.label, { color: colors.text }]}>
                     Type
                   </Text>
@@ -593,21 +596,8 @@ function RecurringRulesScreen(): React.JSX.Element {
                     </Text>
                   )}
 
-                  <View style={styles.formActions}>
-                    <Button title="Cancel" color={colors.primary} onPress={handleCancel} />
-                    <Button
-                      title={editingId ? 'Save' : 'Create'}
-                      color={colors.primary}
-                      onPress={handleSubmit}
-                    />
-                  </View>
                   <NumericInputAccessory />
-                </View>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -673,18 +663,6 @@ const styles = StyleSheet.create({
   addButton: {
     marginTop: 12,
   },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-    maxHeight: '90%',
-  },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -704,11 +682,6 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: 12,
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
   },
 });
 

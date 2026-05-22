@@ -67,6 +67,11 @@ yarn-error.log
 # testing
 /coverage
 
+# FUSE mount artifacts (orphaned file handles left behind by some
+# editors/tools when a file open on a FUSE-mounted directory is
+# replaced while still referenced)
+.fuse_hidden*
+
 # Yarn
 .yarn/*
 !.yarn/patches

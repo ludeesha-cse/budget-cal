@@ -1,14 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  Button,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Lock, Pencil, Plus, Trash2 } from 'lucide-react-native';
+import Card from '../components/Card';
+import BottomSheetModal from '../components/BottomSheetModal';
 import {
   addCategory,
   deleteCategory,
@@ -20,8 +15,20 @@ import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { canAddCategory } from '../utils/entitlementChecks';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont } from '../theme/typography';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
+
+// Cycles the palette's own `chart` colors (already tuned for telling
+// categories apart at a glance in Reports' pie chart) rather than
+// inventing a separate avatar color set — the "soft" background is that
+// same color with alpha appended (RN supports #RRGGBBAA), so this stays
+// correct across every palette, including gradient ones, without needing
+// its own soft-color entries in ThemeColors.
+function avatarColorsFor(index: number, chart: string[]): { bg: string; fg: string } {
+  const base = chart[index % chart.length];
+  return { bg: `${base}26`, fg: base };
+}
 
 function CategoriesScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -84,7 +91,7 @@ function CategoriesScreen(): React.JSX.Element {
       const userCategoryCount = await getUserCategoryCount();
       const check = canAddCategory(userCategoryCount, tier);
       if (!check.allowed) {
-        // Hide this screen's own form Modal first — showing PaywallModal's
+        // Hide this screen's own form popup first — showing PaywallModal's
         // <Modal> while this one is still visible=true is what freezes
         // iOS solid (two native Modals open at once never finishes
         // presenting there; Android tolerates it). onDismiss restores the
@@ -131,70 +138,100 @@ function CategoriesScreen(): React.JSX.Element {
     );
   };
 
+  const hasReserved = categories.some(c => c.isSystemReserved);
+  const formCanSave = name.trim() !== '';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {formVisible ? (
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          <View style={styles.formActions}>
-            <Button
-              title="Cancel"
-              color={colors.primary}
-              onPress={() => {
-                setFormVisible(false);
-                resetForm();
-              }}
-            />
-            <Button
-              title={editingId ? 'Update' : 'Add'}
-              color={colors.primary}
-              onPress={handleSubmit}
-            />
-          </View>
-        </View>
-      ) : (
-        <Button title="Add Category" color={colors.primary} onPress={handleAddPress} />
-      )}
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          Add Category
+        </Text>
+      </Pressable>
 
       <FlatList
         style={styles.list}
         data={categories}
         keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.rowName, { color: colors.text }]}>
-              {item.name}
-            </Text>
-            <View style={styles.rowActions}>
-              <Button
-                title="Edit"
-                color={colors.primary}
-                onPress={() => handleEditPress(item)}
-              />
-              <Button
-                title="Delete"
-                color={colors.danger}
-                onPress={() => handleDelete(item.id)}
-              />
-            </View>
-          </View>
-        )}
+        renderItem={({ item, index }) => {
+          const { bg, fg } = avatarColorsFor(index, colors.chart);
+          return (
+            <Card colors={colors} style={styles.row}>
+              <View style={[styles.avatar, { backgroundColor: bg }]}>
+                <Text style={[styles.avatarText, { color: fg }]}>
+                  {item.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              {item.isSystemReserved ? (
+                <View style={styles.reservedBadge}>
+                  <Lock size={13} color={colors.textSecondary} />
+                  <Text
+                    style={[styles.reservedBadgeText, { color: colors.textSecondary }]}>
+                    RESERVED
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.rowActions}>
+                  <Pressable
+                    hitSlop={8}
+                    style={styles.iconButton}
+                    onPress={() => handleEditPress(item)}>
+                    <Pencil size={16} color={colors.primary} />
+                  </Pressable>
+                  <Pressable
+                    hitSlop={8}
+                    style={styles.iconButton}
+                    onPress={() => handleDelete(item.id)}>
+                    <Trash2 size={16} color={colors.danger} />
+                  </Pressable>
+                </View>
+              )}
+            </Card>
+          );
+        }}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
             No categories yet.
           </Text>
         }
+        ListFooterComponent={
+          hasReserved ? (
+            <Text style={[styles.footerHint, { color: colors.textSecondary }]}>
+              Bank is reserved for balance corrections and can't be deleted —
+              that's why it shows a lock instead of edit/delete.
+            </Text>
+          ) : null
+        }
       />
+
+      <BottomSheetModal
+        visible={formVisible}
+        onClose={() => {
+          setFormVisible(false);
+          resetForm();
+        }}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title={editingId ? 'Edit Category' : 'Add Category'}
+        saveLabel={editingId ? 'Save' : 'Add'}>
+        <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Groceries"
+          placeholderTextColor={colors.textSecondary}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -204,13 +241,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  form: {
-    marginBottom: 16,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginTop: 12,
+    marginTop: 4,
     marginBottom: 4,
   },
   input: {
@@ -220,13 +268,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
   list: {
-    marginTop: 8,
+    marginTop: 16,
   },
   empty: {
     fontSize: 14,
@@ -234,17 +277,50 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    marginBottom: 10,
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   rowName: {
+    flex: 1,
+    fontSize: scaleFont(15),
     fontWeight: '600',
   },
   rowActions: {
     flexDirection: 'row',
+    gap: 10,
+  },
+  iconButton: {
+    padding: 6,
+  },
+  reservedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
+  },
+  reservedBadgeText: {
+    fontSize: scaleFont(10.5),
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  footerHint: {
+    fontSize: scaleFont(12.5),
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    lineHeight: scaleFont(18),
   },
 });
 

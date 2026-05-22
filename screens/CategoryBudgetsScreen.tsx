@@ -1,26 +1,43 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Button,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Check } from 'lucide-react-native';
+import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
 import {
   getCategories,
   getCategoryBudgetsForMonth,
+  getDefaultCurrency,
+  getSpendingByCategory,
   upsertCategoryBudget,
 } from '../db/queries';
-import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
+import type { ThemeColors } from '../contexts/ThemeContext';
+import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
+
+// Same three-tier read as Dashboard's own budget card (statusColorsFor) —
+// duplicated locally rather than imported since Dashboard doesn't export
+// it and pulling in a whole extra screen module just for one small color
+// function isn't worth the coupling.
+function statusColorFor(spent: number, budgetAmount: number, colors: ThemeColors): string {
+  if (budgetAmount <= 0) {
+    return colors.textSecondary;
+  }
+  const used = spent / budgetAmount;
+  if (used > 1) {
+    return colors.danger;
+  }
+  if (used >= 0.9) {
+    return colors.warning;
+  }
+  return colors.success;
+}
 
 function CategoryBudgetsScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -28,15 +45,18 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   const [year, setYear] = useState(getCurrentYearString());
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [amounts, setAmounts] = useState<Record<number, string>>({});
+  const [spentByCategory, setSpentByCategory] = useState<Record<number, number>>({});
+  const [currencyCode, setCurrencyCode] = useState('');
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const selectedMonth = `${year}-${month}`;
 
   const load = useCallback(async () => {
     setSavedMessage(null);
-    const [allCategories, existingBudgets] = await Promise.all([
+    const [allCategories, existingBudgets, defaultCurrency] = await Promise.all([
       getCategories(),
       getCategoryBudgetsForMonth(selectedMonth),
+      getDefaultCurrency(),
     ]);
     setCategories(allCategories);
     const byCategory: Record<number, string> = {};
@@ -44,6 +64,24 @@ function CategoryBudgetsScreen(): React.JSX.Element {
       byCategory[budget.categoryId] = String(budget.amount);
     }
     setAmounts(byCategory);
+    setCurrencyCode(defaultCurrency?.code ?? '');
+
+    if (defaultCurrency) {
+      const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
+      const lastDay = clampDayToMonth(yearNum, monthNum, 31);
+      const startDate = `${selectedMonth}-01`;
+      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+      const spendingRows = await getSpendingByCategory(startDate, endDate, defaultCurrency.id);
+      const spendByCategory: Record<number, number> = {};
+      for (const row of spendingRows) {
+        if (row.categoryId != null) {
+          spendByCategory[row.categoryId] = row.total;
+        }
+      }
+      setSpentByCategory(spendByCategory);
+    } else {
+      setSpentByCategory({});
+    }
   }, [selectedMonth]);
 
   useFocusEffect(
@@ -54,6 +92,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
 
   const handleAmountChange = (categoryId: number, value: string) => {
     setAmounts(current => ({ ...current, [categoryId]: value }));
+    setSavedMessage(null);
   };
 
   const handleSaveAll = async () => {
@@ -79,7 +118,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>
+      <Text style={[typography.screenTitle, styles.title, { color: colors.text }]}>
         Category Budgets
       </Text>
       <MonthYearPicker
@@ -89,38 +128,70 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         onYearChange={setYear}
       />
 
-      <Text style={[styles.label, { color: colors.text }]}>
-        Budgets for {selectedMonth}
+      <Text
+        style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
+        BUDGETS FOR {selectedMonth}
+        {currencyCode ? ` · ${currencyCode}` : ''}
       </Text>
+
       {savedMessage && (
-        <Text style={[styles.success, { color: colors.success }]}>
-          {savedMessage}
-        </Text>
+        <View style={[styles.successBanner, { backgroundColor: colors.successSoft }]}>
+          <Check size={14} color={colors.success} />
+          <Text style={[styles.successText, { color: colors.success }]}>
+            {savedMessage}
+          </Text>
+        </View>
       )}
 
       <FlatList
+        style={styles.list}
         data={categories}
         keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.rowName, { color: colors.text }]}>
-              {item.name}
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-              ]}
-              value={amounts[item.id] ?? ''}
-              onChangeText={value => handleAmountChange(item.id, value)}
-              keyboardType="numeric"
-              returnKeyType="done"
-              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-              placeholder="0.00"
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const budgetAmount = Number(amounts[item.id] ?? 0);
+          const spent = spentByCategory[item.id] ?? 0;
+          const hasBudget = (amounts[item.id] ?? '').trim() !== '' && budgetAmount > 0;
+          const percent = hasBudget ? Math.min(100, (spent / budgetAmount) * 100) : 0;
+          const statusColor = hasBudget
+            ? statusColorFor(spent, budgetAmount, colors)
+            : colors.border;
+          return (
+            <Card colors={colors} style={styles.row}>
+              <View style={styles.rowHeader}>
+                <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.background },
+                  ]}
+                  value={amounts[item.id] ?? ''}
+                  onChangeText={value => handleAmountChange(item.id, value)}
+                  keyboardType="numeric"
+                  returnKeyType="done"
+                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+              <View
+                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${percent}%`, backgroundColor: statusColor },
+                  ]}
+                />
+              </View>
+              <Text style={[typography.amountMono, styles.rowSpent, { color: colors.textSecondary }]}>
+                {hasBudget
+                  ? `Spent ${spent.toFixed(2)} of ${budgetAmount.toFixed(2)}`
+                  : `Spent ${spent.toFixed(2)} · no budget set`}
+              </Text>
+            </Card>
+          );
+        }}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
             No categories yet.
@@ -128,7 +199,13 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         }
       />
 
-      <Button title="Save All" color={colors.primary} onPress={handleSaveAll} />
+      <Pressable
+        style={[styles.saveButton, { backgroundColor: colors.primary }]}
+        onPress={handleSaveAll}>
+        <Text style={[styles.saveButtonText, { color: colors.primaryText }]}>
+          Save All
+        </Text>
+      </Pressable>
 
       <NumericInputAccessory />
     </View>
@@ -141,43 +218,79 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
+  sectionLabel: {
     marginTop: 16,
-    marginBottom: 4,
-  },
-  success: {
     marginBottom: 8,
   },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  successText: {
+    fontSize: scaleFont(13),
+    fontWeight: '600',
+  },
+  list: {
+    marginTop: 4,
+  },
   row: {
+    padding: 14,
+    marginBottom: 10,
+  },
+  rowHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
     flex: 1,
+    marginRight: 12,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 16,
-    width: 120,
+    fontSize: 15,
+    width: 110,
     textAlign: 'right',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 10,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  rowSpent: {
+    fontSize: scaleFont(12.5),
+    marginTop: 6,
   },
   empty: {
     fontSize: 14,
     marginTop: 8,
+  },
+  saveButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  saveButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
 });
 

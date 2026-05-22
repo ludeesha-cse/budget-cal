@@ -1,16 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  Button,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Pencil, Plus, Tag as TagIcon, Trash2 } from 'lucide-react-native';
+import Card from '../components/Card';
+import BottomSheetModal from '../components/BottomSheetModal';
 import { addTag, deleteTag, getTags, updateTag } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont } from '../theme/typography';
 
 type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 
@@ -100,68 +96,46 @@ function TagsScreen(): React.JSX.Element {
     );
   };
 
+  const formCanSave = name.trim() !== '';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {formVisible ? (
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                borderColor: colors.border,
-                color: colors.text,
-                backgroundColor: colors.surface,
-              },
-            ]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Reimbursable"
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          <View style={styles.formActions}>
-            <Button
-              title="Cancel"
-              color={colors.primary}
-              onPress={() => {
-                setFormVisible(false);
-                resetForm();
-              }}
-            />
-            <Button
-              title={editingId ? 'Update' : 'Add'}
-              color={colors.primary}
-              onPress={handleSubmit}
-            />
-          </View>
-        </View>
-      ) : (
-        <Button title="Add Tag" color={colors.primary} onPress={handleAddPress} />
-      )}
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          Add Tag
+        </Text>
+      </Pressable>
 
       <FlatList
         style={styles.list}
         data={tags}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.rowName, { color: colors.text }]}>
+          <Card colors={colors} style={styles.row}>
+            <View style={[styles.iconCircle, { backgroundColor: colors.primarySoft }]}>
+              <TagIcon size={16} color={colors.primary} />
+            </View>
+            <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
               {item.name}
             </Text>
             <View style={styles.rowActions}>
-              <Button
-                title="Edit"
-                color={colors.primary}
-                onPress={() => handleEditPress(item)}
-              />
-              <Button
-                title="Delete"
-                color={colors.danger}
-                onPress={() => handleDelete(item)}
-              />
+              <Pressable
+                hitSlop={8}
+                style={styles.iconButton}
+                onPress={() => handleEditPress(item)}>
+                <Pencil size={16} color={colors.primary} />
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                style={styles.iconButton}
+                onPress={() => handleDelete(item)}>
+                <Trash2 size={16} color={colors.danger} />
+              </Pressable>
             </View>
-          </View>
+          </Card>
         )}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -169,6 +143,33 @@ function TagsScreen(): React.JSX.Element {
           </Text>
         }
       />
+
+      <BottomSheetModal
+        visible={formVisible}
+        onClose={() => {
+          setFormVisible(false);
+          resetForm();
+        }}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title={editingId ? 'Edit Tag' : 'Add Tag'}
+        saveLabel={editingId ? 'Save' : 'Add'}>
+        <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              borderColor: colors.border,
+              color: colors.text,
+              backgroundColor: colors.surface,
+            },
+          ]}
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Reimbursable"
+          placeholderTextColor={colors.textSecondary}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -178,8 +179,19 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  form: {
-    marginBottom: 16,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   label: {
     fontSize: 14,
@@ -194,13 +206,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
   list: {
-    marginTop: 8,
+    marginTop: 16,
   },
   empty: {
     fontSize: 14,
@@ -208,17 +215,29 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    marginBottom: 10,
+  },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   rowName: {
+    flex: 1,
+    fontSize: scaleFont(15),
     fontWeight: '600',
   },
   rowActions: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 10,
+  },
+  iconButton: {
+    padding: 6,
   },
 });
 

@@ -16,7 +16,14 @@ export type DashboardStackParamList = {
 export type SettingsStackParamList = {
   SettingsHome: undefined;
   BudgetSettings: undefined;
-  Accounts: undefined;
+  // openTransfer/withdrawMode are optional — set only when the FAB's
+  // "Transfer"/"Withdraw" actions navigate here, so AccountsScreen can
+  // auto-open its transfer sheet instead of just landing on the list.
+  // withdrawMode further constrains that sheet's own account pickers
+  // (from: Bank only, to: Cash only) — see AccountsScreen's own comment
+  // on its transfer sheet for why. Consumed once, same pattern as
+  // InstallmentPlans' payPlanId.
+  Accounts: { openTransfer?: boolean; withdrawMode?: boolean } | undefined;
   // Optional preset for the FAB's "Liability Repayment" / "Receivable
   // Income" shortcuts (see App.tsx's AddEntrySheet) — undefined/omitted
   // still defaults to 'Liability', same as navigating here any other way.

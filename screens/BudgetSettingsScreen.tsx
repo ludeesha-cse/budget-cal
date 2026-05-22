@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Button,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Check, Info } from 'lucide-react-native';
+import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
 import {
   getAccountBalance,
@@ -19,8 +21,9 @@ import {
   settleCreditCardAccount,
   upsertBudget,
 } from '../db/queries';
-import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
@@ -37,6 +40,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [amount, setAmount] = useState('');
+  const [currencyCode, setCurrencyCode] = useState('');
   const [allBudgets, setAllBudgets] = useState<BudgetRow[]>([]);
   const [creditCards, setCreditCards] = useState<CreditCardRow[]>([]);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -44,19 +48,20 @@ function BudgetSettingsScreen(): React.JSX.Element {
   const selectedMonth = `${year}-${month}`;
 
   const load = useCallback(async () => {
-    const [existing, all, accounts] = await Promise.all([
+    const [existing, all, accounts, defaultCurrency] = await Promise.all([
       getBudgetForMonth(selectedMonth),
       getAllBudgets(),
       getAccounts(),
+      getDefaultCurrency(),
     ]);
     setAmount(existing ? String(existing.limitAmount) : '');
     setAllBudgets(all);
+    setCurrencyCode(defaultCurrency?.code ?? '');
 
     const cardAccounts = accounts.filter(
       account => account.type === CREDIT_CARD_TYPE,
     );
     // Card debt is computed in the default currency only for now.
-    const defaultCurrency = await getDefaultCurrency();
     const withDebt = await Promise.all(
       cardAccounts.map(async account => ({
         ...account,
@@ -78,9 +83,14 @@ function BudgetSettingsScreen(): React.JSX.Element {
     setSavedMessage(null);
   }, [selectedMonth]);
 
+  const parsedAmount = Number(amount);
+  const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
+  const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
+  const daysInMonth = clampDayToMonth(yearNum, monthNum, 31);
+  const perDayRate = amountValid ? parsedAmount / daysInMonth : null;
+
   const handleSave = async () => {
-    const parsedAmount = Number(amount);
-    if (!amount || Number.isNaN(parsedAmount)) {
+    if (!amountValid) {
       return;
     }
     await upsertBudget(selectedMonth, parsedAmount);
@@ -107,8 +117,8 @@ function BudgetSettingsScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>
-        Budget Settings
+      <Text style={[typography.screenTitle, styles.title, { color: colors.text }]}>
+        Monthly Budget
       </Text>
       <MonthYearPicker
         month={month}
@@ -117,42 +127,68 @@ function BudgetSettingsScreen(): React.JSX.Element {
         onYearChange={setYear}
       />
 
-      <Text style={[styles.label, { color: colors.text }]}>
-        Budget amount for {selectedMonth}
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-        ]}
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="numeric"
-        returnKeyType="done"
-        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-        placeholder="0.00"
-        placeholderTextColor={colors.textSecondary}
-      />
-      {savedMessage && (
-        <Text style={[styles.success, { color: colors.success }]}>
-          {savedMessage}
+      <Card colors={colors} style={styles.amountCard}>
+        <Text
+          style={[typography.eyebrow, styles.amountLabel, { color: colors.textSecondary }]}>
+          BUDGET FOR {selectedMonth}
+          {currencyCode ? ` · ${currencyCode}` : ''}
         </Text>
-      )}
-      <Button title="Save" color={colors.primary} onPress={handleSave} />
+        <TextInput
+          style={[typography.amountLarge, styles.amountInput, { color: colors.text }]}
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="numeric"
+          returnKeyType="done"
+          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+          placeholder="0"
+          placeholderTextColor={colors.textSecondary}
+        />
+        {perDayRate !== null && (
+          <Text style={[typography.amountMono, styles.perDayText, { color: colors.textSecondary }]}>
+            ≈ {perDayRate.toFixed(2)} / day across {daysInMonth} days
+          </Text>
+        )}
+      </Card>
 
-      <Text style={[styles.subtitle, { color: colors.text }]}>
-        Past budgets
+      {savedMessage && (
+        <View style={[styles.successBanner, { backgroundColor: colors.successSoft }]}>
+          <Check size={14} color={colors.success} />
+          <Text style={[styles.successText, { color: colors.success }]}>
+            {savedMessage}
+          </Text>
+        </View>
+      )}
+
+      <Pressable
+        disabled={!amountValid}
+        style={[
+          styles.saveButton,
+          { backgroundColor: !amountValid ? colors.neutralSoft : colors.primary },
+        ]}
+        onPress={handleSave}>
+        <Text
+          style={[
+            styles.saveButtonText,
+            { color: !amountValid ? colors.textSecondary : colors.primaryText },
+          ]}>
+          Save Budget
+        </Text>
+      </Pressable>
+
+      <Text
+        style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
+        PAST BUDGETS
       </Text>
       <FlatList
         data={allBudgets}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+          <Card colors={colors} style={styles.pastRow}>
             <Text style={{ color: colors.text }}>{item.month ?? '—'}</Text>
-            <Text style={{ color: colors.text }}>
+            <Text style={[typography.amountMono, { color: colors.text }]}>
               {item.limitAmount.toFixed(2)}
             </Text>
-          </View>
+          </Card>
         )}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -161,28 +197,39 @@ function BudgetSettingsScreen(): React.JSX.Element {
         }
       />
 
-      <Text style={[styles.subtitle, { color: colors.text }]}>
-        Credit Cards
+      <Text
+        style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
+        CREDIT CARDS
       </Text>
+      <View style={[styles.noteRow, { backgroundColor: colors.primarySoft }]}>
+        <Info size={14} color={colors.primary} />
+        <Text style={[styles.noteText, { color: colors.text }]}>
+          Credit card debt isn't counted against your monthly budget. Settle
+          a card here once it's paid off — it won't affect past budget
+          history.
+        </Text>
+      </View>
       <FlatList
         data={creditCards}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
-          <View style={[styles.cardRow, { borderBottomColor: colors.border }]}>
+          <Card colors={colors} style={styles.cardRow}>
             <View style={styles.cardInfo}>
               <Text style={[styles.rowName, { color: colors.text }]}>
                 {item.name}
               </Text>
-              <Text style={[styles.rowDebt, { color: colors.danger }]}>
+              <Text style={[typography.amountMono, styles.rowDebt, { color: colors.danger }]}>
                 Owed: {item.debt.toFixed(2)}
               </Text>
             </View>
-            <Button
-              title="Settle"
-              color={colors.primary}
-              onPress={() => handleSettle(item.id, item.name)}
-            />
-          </View>
+            <Pressable
+              style={[styles.settleButton, { borderColor: colors.primary }]}
+              onPress={() => handleSettle(item.id, item.name)}>
+              <Text style={[styles.settleButtonText, { color: colors.primary }]}>
+                Settle
+              </Text>
+            </Pressable>
+          </Card>
         )}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -202,57 +249,102 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 16,
     marginBottom: 12,
   },
-  success: {
+  amountCard: {
+    padding: 16,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  amountLabel: {
     marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
+  amountInput: {
+    textAlign: 'center',
+    minWidth: 140,
+    padding: 0,
+  },
+  perDayText: {
+    marginTop: 8,
+    fontSize: scaleFont(13),
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 12,
+  },
+  successText: {
+    fontSize: scaleFont(13),
     fontWeight: '600',
+  },
+  saveButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  saveButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  sectionLabel: {
     marginTop: 24,
     marginBottom: 8,
   },
-  empty: {
-    fontSize: 14,
-  },
-  row: {
+  pastRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    padding: 12,
+    marginBottom: 8,
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: scaleFont(12.5),
+    lineHeight: scaleFont(18),
+  },
+  empty: {
+    fontSize: 14,
   },
   cardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    marginBottom: 8,
   },
   cardInfo: {
     flex: 1,
   },
   rowName: {
+    fontSize: scaleFont(15),
     fontWeight: '600',
   },
   rowDebt: {
     marginTop: 2,
+    fontSize: scaleFont(13),
+  },
+  settleButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  settleButtonText: {
+    fontSize: scaleFont(13),
+    fontWeight: '700',
   },
 });
 

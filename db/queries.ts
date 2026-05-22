@@ -155,15 +155,43 @@ export async function addIncome(data: NewIncome) {
 // If a backend is added later, replace this with a fetch() call
 // to GET/POST /api/accounts/default, keeping the same
 // return shape.
+const DEFAULT_CASH_ACCOUNT_NAME = 'Cash in wallet';
+// The literal this account used to be seeded with, before the rename —
+// kept only so an existing install's untouched default account can be
+// recognized and renamed in place below. An account a user has since
+// renamed themselves (to anything, including back to plain "Cash") is
+// never touched.
+const LEGACY_DEFAULT_CASH_ACCOUNT_NAME = 'Cash';
+
 export async function ensureDefaultAccount() {
   const existing = await db.select().from(accounts).limit(1);
   if (existing.length > 0) {
+    // Runs on every app start, same idempotent-by-a-gate-check pattern
+    // as seedReservedBankCategory (db/index.ts) — gated on name+type
+    // instead of a missing flag, since there's no dedicated column to
+    // mark "this is still the untouched seeded default."
+    const [legacyDefault] = await db
+      .select()
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.name, LEGACY_DEFAULT_CASH_ACCOUNT_NAME),
+          eq(accounts.type, 'Cash'),
+        ),
+      )
+      .limit(1);
+    if (legacyDefault) {
+      await db
+        .update(accounts)
+        .set({ name: DEFAULT_CASH_ACCOUNT_NAME })
+        .where(eq(accounts.id, legacyDefault.id));
+    }
     return existing[0];
   }
   const [account] = await db
     .insert(accounts)
     .values({
-      name: 'Cash',
+      name: DEFAULT_CASH_ACCOUNT_NAME,
       type: 'Cash',
       createdAt: Date.now(),
     })

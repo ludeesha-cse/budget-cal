@@ -309,6 +309,19 @@ function AppNavigator(): React.JSX.Element {
           screen: 'LiabilitiesReceivables',
           params: { type: 'Receivable' },
         });
+        return;
+      case 'Withdraw':
+        navigationRef.navigate('Settings', {
+          screen: 'Accounts',
+          params: { withdrawMode: true },
+        });
+        return;
+      case 'Transfer':
+        navigationRef.navigate('Settings', {
+          screen: 'Accounts',
+          params: { openTransfer: true },
+        });
+        return;
     }
   };
 

@@ -12,19 +12,29 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { ChevronRight, TrendingUp } from 'lucide-react-native';
+import {
+  CheckCircle2,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Repeat,
+  Trash2,
+  TrendingUp,
+} from 'lucide-react-native';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import Card from '../components/Card';
+import BottomSheetModal from '../components/BottomSheetModal';
 import type { SettingsStackParamList } from '../navigation/types';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
 import PremiumGate from '../components/PremiumGate';
+import { scaleFont, typography } from '../theme/typography';
 import {
   addAccountWithBalance,
   addCurrencyToAccount,
@@ -46,6 +56,7 @@ import { usePaywall } from '../contexts/PaywallContext';
 import { canAddAccount } from '../utils/entitlementChecks';
 import { FREE_ACCOUNT_TYPES } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
+import type { ThemeColors } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
 
 const ACCOUNT_TYPES = [
@@ -64,6 +75,33 @@ const CREDIT_CARD_TYPE = 'CreditCard';
 // a real payment, it's just moving debt around.
 const PAYOFF_SOURCE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
+// Purely a display grouping (matches the mockup's "BANK & CASH" section
+// label) — has no effect on which accounts are eligible for what, that's
+// still governed entirely by each account's own `type`. A section with
+// no matching accounts is simply never rendered.
+const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
+  { label: 'Bank & Cash', types: ['Cash', 'Bank'] },
+  { label: 'Crypto', types: ['CryptoWallet'] },
+  { label: 'Credit Cards', types: ['CreditCard'] },
+  { label: 'Loans', types: ['Liability', 'Receivable'] },
+];
+
+// The left accent bar's color per account type — asset accounts (Cash/
+// Bank/Crypto) get the palette's own primary accent, a credit card's
+// bar reads as debt (danger), and a Liability/Receivable loan account
+// reads as a pending obligation (warning), same semantic colors those
+// account types already use elsewhere (LiabilitiesReceivablesScreen,
+// Dashboard's Due Soon card).
+function accentColorFor(type: string, colors: ThemeColors): string {
+  if (type === CREDIT_CARD_TYPE) {
+    return colors.danger;
+  }
+  if (type === 'Liability' || type === 'Receivable') {
+    return colors.warning;
+  }
+  return colors.primary;
+}
+
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type AccountBalanceRow = Awaited<
   ReturnType<typeof getAccountBalances>
@@ -76,12 +114,12 @@ type AccountWithBalances = Awaited<ReturnType<typeof getAccounts>>[number] & {
   balances: AccountBalanceRow[];
 };
 
-function AccountsScreen(): React.JSX.Element {
+type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;
+
+function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<SettingsStackParamList, 'Accounts'>>();
   const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
@@ -141,6 +179,16 @@ function AccountsScreen(): React.JSX.Element {
   const [transferAmount, setTransferAmount] = useState('');
   const [transferDate, setTransferDate] = useState(formatDateString(new Date()));
   const [showTransferDatePicker, setShowTransferDatePicker] = useState(false);
+  // Set only for Withdraw (FAB's constrained variant of this same sheet)
+  // — narrows the "to" picker to a single account type. The "from" side
+  // doesn't need its own persisted filter past the initial fetch since
+  // transferFromOptions is filtered once at open time and never
+  // re-queried afterward (unlike "to", which re-queries per currency
+  // change below).
+  const [transferToTypeFilter, setTransferToTypeFilter] = useState<
+    string | null
+  >(null);
+  const [transferTitle, setTransferTitle] = useState('Transfer');
 
   const load = useCallback(async () => {
     const [rows, currencyRows] = await Promise.all([
@@ -195,14 +243,16 @@ function AccountsScreen(): React.JSX.Element {
       if (cancelled) {
         return;
       }
-      setTransferToOptions(
-        rows.filter(row => String(row.id) !== transferFromAccountId),
-      );
+      let filtered = rows.filter(row => String(row.id) !== transferFromAccountId);
+      if (transferToTypeFilter) {
+        filtered = filtered.filter(row => row.type === transferToTypeFilter);
+      }
+      setTransferToOptions(filtered);
     });
     return () => {
       cancelled = true;
     };
-  }, [transferCurrencyId, transferFromAccountId]);
+  }, [transferCurrencyId, transferFromAccountId, transferToTypeFilter]);
 
   const defaultCurrencyId = () => {
     const defaultCurrency = currencies.find(c => c.isDefault);
@@ -514,17 +564,53 @@ function AccountsScreen(): React.JSX.Element {
     }
   };
 
-  const openTransferModal = async () => {
+  // fromType/toType are only ever passed by the Withdraw entry point
+  // below — a plain Transfer (whether from this screen's own "Transfer"
+  // button or the FAB) leaves both undefined and gets every transferable
+  // account type, same as always.
+  const openTransferModal = async (options?: {
+    fromType?: string;
+    toType?: string;
+    title?: string;
+  }) => {
     setTransferFromAccountId('');
     setTransferCurrencyId('');
     setTransferToAccountId('');
     setTransferAmount('');
     setTransferDate(formatDateString(new Date()));
     setShowTransferDatePicker(false);
-    const options = await getTransferableAccounts();
-    setTransferFromOptions(options);
+    setTransferToTypeFilter(options?.toType ?? null);
+    setTransferTitle(options?.title ?? 'Transfer');
+    const allOptions = await getTransferableAccounts();
+    setTransferFromOptions(
+      options?.fromType
+        ? allOptions.filter(a => a.type === options.fromType)
+        : allOptions,
+    );
     setTransferModalVisible(true);
   };
+
+  // Arriving here via the FAB's "Withdraw"/"Transfer" actions —
+  // route.params is only ever set for those two navigations (see
+  // navigation/types.ts's own comment on the Accounts route). Withdraw
+  // constrains the sheet to Bank→Cash, matching "move money from a bank
+  // account to cash" exactly rather than exposing every account type.
+  // Params are cleared right after so navigating back here later (tab
+  // bar, "Add" again) never reopens the sheet unexpectedly.
+  useEffect(() => {
+    if (route.params?.withdrawMode) {
+      openTransferModal({
+        fromType: 'Bank',
+        toType: 'Cash',
+        title: 'Withdraw to Cash',
+      });
+      navigation.setParams({ withdrawMode: undefined, openTransfer: undefined });
+    } else if (route.params?.openTransfer) {
+      openTransferModal();
+      navigation.setParams({ withdrawMode: undefined, openTransfer: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.withdrawMode, route.params?.openTransfer]);
 
   const handleTransferDateChange = (
     _event: DateTimePickerEvent,
@@ -602,6 +688,14 @@ function AccountsScreen(): React.JSX.Element {
   // that still needs to look one up) but drop out of the visible list.
   const activeAccounts = accounts.filter(a => a.active);
 
+  const transferCanSave =
+    Boolean(transferFromAccountId) &&
+    Boolean(transferCurrencyId) &&
+    Boolean(transferToAccountId) &&
+    transferAmount !== '' &&
+    !Number.isNaN(Number(transferAmount)) &&
+    Number(transferAmount) > 0;
+
   const payOffPayingAccountOptions = payOffTarget
     ? activeAccounts.filter(
         a =>
@@ -611,96 +705,220 @@ function AccountsScreen(): React.JSX.Element {
       )
     : [];
 
+  // Mirrors handleSubmit's own checks — editing only ever needs a name,
+  // creating additionally needs a starting currency + balance, same
+  // asymmetry handleSubmit itself already has.
+  const accountFormCanSave =
+    name.trim() !== '' &&
+    (editingId != null ||
+      (initialCurrencyId !== '' &&
+        initialBalance !== '' &&
+        !Number.isNaN(Number(initialBalance))));
+
+  const updateBalanceCanSave =
+    updateBalanceNewValue !== '' &&
+    !Number.isNaN(Number(updateBalanceNewValue)) &&
+    updateBalanceDescription.trim() !== '';
+
+  const payOffCanSave =
+    payOffAmount !== '' &&
+    !Number.isNaN(Number(payOffAmount)) &&
+    Number(payOffAmount) > 0 &&
+    payOffPayingAccountId !== '';
+
+  // Not module-scope (react/no-unstable-nested-components would normally
+  // flag that for a function returning JSX) — kept as a plain function
+  // declared inside the component body instead of inlined into the
+  // section .map() below purely for readability, since it closes over
+  // a dozen-plus pieces of local state (colors, addCurrencyAccountId,
+  // currencies, every handler) that would otherwise have to be threaded
+  // through as props for no real benefit — this is never passed to a
+  // list-rendering API as its own component, just called directly.
+  const renderAccountRow = (item: AccountWithBalances) => {
+    const availableCurrencies = currencies.filter(
+      c => !item.balances.some(b => b.currencyId === c.id),
+    );
+    const isCreditCard = item.type === CREDIT_CARD_TYPE;
+    const accent = accentColorFor(item.type, colors);
+    const rowContent = (
+      <Card colors={colors} style={styles.accountCard}>
+        <View style={[styles.accentBar, { backgroundColor: accent }]} />
+        <View style={styles.accountCardContent}>
+          <Text style={[styles.rowName, { color: colors.text }]}>
+            {item.name}
+          </Text>
+          <Text
+            style={[typography.eyebrow, styles.rowType, { color: colors.textSecondary }]}>
+            {item.type.toUpperCase()}
+          </Text>
+          {item.balances.length > 0 ? (
+            <View style={styles.balanceChips}>
+              {item.balances.map(b => (
+                <Pressable
+                  key={b.currencyId}
+                  onPress={() => openUpdateBalance(item, b)}>
+                  <Text
+                    style={[
+                      typography.amountMono,
+                      styles.balanceChip,
+                      { borderColor: colors.border, color: colors.text },
+                    ]}>
+                    {isCreditCard
+                      ? `${b.currencyCode} owes ${(-b.currentBalance).toFixed(2)}`
+                      : `${b.currencyCode} ${b.currentBalance.toFixed(2)}`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.rowBalance, { color: colors.textSecondary }]}>
+              No balances yet
+            </Text>
+          )}
+
+          {isCreditCard && item.balances.length > 0 && (
+            <View style={styles.payOffRow}>
+              {item.balances.map(b => (
+                <Pressable
+                  key={b.currencyId}
+                  style={[styles.outlinePillButton, { borderColor: colors.danger }]}
+                  onPress={() => openPayOffCard(item, b)}>
+                  <Text style={[styles.outlinePillButtonText, { color: colors.danger }]}>
+                    Pay Off Card ({b.currencyCode})
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <View style={styles.accountActionsRow}>
+            <Pressable
+              style={[styles.iconPillButton, { borderColor: colors.border }]}
+              onPress={() => handleEditPress(item)}>
+              <Pencil size={14} color={colors.text} />
+              <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
+                Edit
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.iconPillButton, { borderColor: colors.border }]}
+              onPress={() => handleClose(item)}>
+              <CheckCircle2 size={14} color={colors.text} />
+              <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
+                Close
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
+              onPress={() => handleDelete(item.id)}>
+              <Trash2 size={14} color={colors.danger} />
+              <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
+                Delete
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable onPress={() => toggleAddCurrency(item.id)}>
+            <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
+              {addCurrencyAccountId === item.id ? 'Cancel' : '+ Add Currency'}
+            </Text>
+          </Pressable>
+
+          {addCurrencyAccountId === item.id && (
+            <View style={styles.addCurrencyForm}>
+              {availableCurrencies.length === 0 ? (
+                <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                  This account already has a balance in every currency.
+                </Text>
+              ) : (
+                <>
+                  <CollapsiblePicker
+                    displayLabel={
+                      addCurrencyCurrencyId
+                        ? currencyLabel(addCurrencyCurrencyId)
+                        : 'Select currency'
+                    }
+                    selectedValue={addCurrencyCurrencyId}
+                    onValueChange={setAddCurrencyCurrencyId}
+                    items={availableCurrencies.map(c => ({
+                      label: `${c.code} — ${c.name}`,
+                      value: String(c.id),
+                    }))}
+                  />
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                    ]}
+                    value={addCurrencyBalance}
+                    onChangeText={setAddCurrencyBalance}
+                    keyboardType="numeric"
+                    returnKeyType="done"
+                    inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+                    placeholder="Starting balance"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Pressable
+                    style={[styles.primaryPillButton, { backgroundColor: colors.primary }]}
+                    onPress={() => handleAddCurrencySubmit(item.id)}>
+                    <Text
+                      style={[styles.primaryPillButtonText, { color: colors.primaryText }]}>
+                      Add
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      </Card>
+    );
+    return (
+      <View key={item.id}>
+        {isCreditCard ? (
+          <PremiumGate label="Credit cards are a Premium feature.">
+            {rowContent}
+          </PremiumGate>
+        ) : (
+          rowContent
+        )}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.containerContent}
       keyboardShouldPersistTaps="handled">
-      {formVisible ? (
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>Type</Text>
-          <CollapsiblePicker
-            displayLabel={type}
-            selectedValue={type}
-            onValueChange={setType}
-            items={ACCOUNT_TYPES.map(t => ({ label: t, value: t }))}
-          />
-          {/* Only while creating — editing an existing account of a
-              premium type is never blocked, so flagging it here would be
-              misleading about what's actually gated. */}
-          {!editingId && tier === 'free' && !FREE_ACCOUNT_TYPES.includes(type) && (
-            <Text style={[styles.premiumBadge, { color: colors.warning }]}>
-              🔒 Premium — {type}
-            </Text>
-          )}
-
-          {!editingId && (
-            <>
-              <Text style={[styles.label, { color: colors.text }]}>
-                Initial currency
-              </Text>
-              <CollapsiblePicker
-                displayLabel={currencyLabel(initialCurrencyId)}
-                selectedValue={initialCurrencyId}
-                onValueChange={setInitialCurrencyId}
-                items={currencies.map(c => ({
-                  label: `${c.code} — ${c.name}`,
-                  value: String(c.id),
-                }))}
-              />
-
-              <Text style={[styles.label, { color: colors.text }]}>
-                Initial balance
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-                ]}
-                value={initialBalance}
-                onChangeText={setInitialBalance}
-                keyboardType="numeric"
-                returnKeyType="done"
-                inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </>
-          )}
-
-          <View style={styles.formActions}>
-            <Button
-              title="Cancel"
-              color={colors.primary}
-              onPress={() => {
-                setFormVisible(false);
-                resetForm();
-              }}
-            />
-            <Button
-              title={editingId ? 'Update' : 'Add'}
-              color={colors.primary}
-              onPress={handleSubmit}
-            />
-          </View>
-        </View>
-      ) : (
-        <View style={styles.topActionsRow}>
-          <Button title="Add Account" color={colors.primary} onPress={handleAddPress} />
-          <Button title="Transfer" color={colors.primary} onPress={openTransferModal} />
-        </View>
-      )}
+      <View style={styles.topActionsRow}>
+        <Pressable
+          style={[
+            styles.primaryPillButton,
+            styles.topActionButton,
+            { backgroundColor: colors.primary },
+          ]}
+          onPress={handleAddPress}>
+          <Plus size={16} color={colors.primaryText} strokeWidth={2.5} />
+          <Text style={[styles.primaryPillButtonText, { color: colors.primaryText }]}>
+            Add Account
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.outlinePillButton,
+            styles.topActionButton,
+            { borderColor: colors.border },
+          ]}
+          onPress={() => openTransferModal()}>
+          <Repeat size={16} color={colors.text} />
+          <Text style={[styles.outlinePillButtonText, { color: colors.text }]}>
+            Transfer
+          </Text>
+        </Pressable>
+      </View>
 
       <View style={styles.list}>
         {activeAccounts.length === 0 ? (
@@ -708,146 +926,99 @@ function AccountsScreen(): React.JSX.Element {
             No accounts yet.
           </Text>
         ) : (
-          activeAccounts.map(item => {
-            const availableCurrencies = currencies.filter(
-              c => !item.balances.some(b => b.currencyId === c.id),
-            );
-            const isCreditCard = item.type === CREDIT_CARD_TYPE;
-            const rowContent = (
-              <>
-                <View style={styles.row}>
-                  <View style={styles.rowDetails}>
-                    <Text style={[styles.rowName, { color: colors.text }]}>
-                      {item.name}
-                    </Text>
-                    <Text style={{ color: colors.textSecondary }}>
-                      {item.type}
-                    </Text>
-                    {item.balances.length > 0 ? (
-                      <View style={styles.balanceChips}>
-                        {item.balances.map(b => (
-                          <Pressable
-                            key={b.currencyId}
-                            onPress={() => openUpdateBalance(item, b)}>
-                            <Text
-                              style={[
-                                styles.balanceChip,
-                                { borderColor: colors.primary, color: colors.primary },
-                              ]}>
-                              {isCreditCard
-                                ? `${b.currencyCode} owes ${(-b.currentBalance).toFixed(2)}`
-                                : `${b.currencyCode} ${b.currentBalance.toFixed(2)}`}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text style={[styles.rowBalance, { color: colors.textSecondary }]}>
-                        No balances yet
-                      </Text>
-                    )}
-                  </View>
-                  <View style={styles.rowActions}>
-                    <Button
-                      title="Edit"
-                      color={colors.primary}
-                      onPress={() => handleEditPress(item)}
-                    />
-                    <Button
-                      title="Close"
-                      color={colors.primary}
-                      onPress={() => handleClose(item)}
-                    />
-                    <Button
-                      title="Delete"
-                      color={colors.danger}
-                      onPress={() => handleDelete(item.id)}
-                    />
-                  </View>
-                </View>
-
-                {isCreditCard && item.balances.length > 0 && (
-                  <View style={styles.payOffRow}>
-                    {item.balances.map(b => (
-                      <Button
-                        key={b.currencyId}
-                        title={`Pay Off Card (${b.currencyCode})`}
-                        color={colors.primary}
-                        onPress={() => openPayOffCard(item, b)}
-                      />
-                    ))}
-                  </View>
-                )}
-
-                <Pressable onPress={() => toggleAddCurrency(item.id)}>
-                  <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
-                    {addCurrencyAccountId === item.id
-                      ? 'Cancel'
-                      : '+ Add Currency'}
-                  </Text>
-                </Pressable>
-
-                {addCurrencyAccountId === item.id && (
-                  <View style={styles.addCurrencyForm}>
-                    {availableCurrencies.length === 0 ? (
-                      <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                        This account already has a balance in every currency.
-                      </Text>
-                    ) : (
-                      <>
-                        <CollapsiblePicker
-                          displayLabel={
-                            addCurrencyCurrencyId
-                              ? currencyLabel(addCurrencyCurrencyId)
-                              : 'Select currency'
-                          }
-                          selectedValue={addCurrencyCurrencyId}
-                          onValueChange={setAddCurrencyCurrencyId}
-                          items={availableCurrencies.map(c => ({
-                            label: `${c.code} — ${c.name}`,
-                            value: String(c.id),
-                          }))}
-                        />
-                        <TextInput
-                          style={[
-                            styles.input,
-                            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-                          ]}
-                          value={addCurrencyBalance}
-                          onChangeText={setAddCurrencyBalance}
-                          keyboardType="numeric"
-                          returnKeyType="done"
-                          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-                          placeholder="Starting balance"
-                          placeholderTextColor={colors.textSecondary}
-                        />
-                        <Button
-                          title="Add"
-                          color={colors.primary}
-                          onPress={() => handleAddCurrencySubmit(item.id)}
-                        />
-                      </>
-                    )}
-                  </View>
-                )}
-              </>
-            );
-            return (
-              <View
-                key={item.id}
-                style={[styles.rowContainer, { borderBottomColor: colors.border }]}>
-                {isCreditCard ? (
-                  <PremiumGate label="Credit cards are a Premium feature.">
-                    {rowContent}
-                  </PremiumGate>
-                ) : (
-                  rowContent
-                )}
-              </View>
-            );
-          })
+          ACCOUNT_SECTIONS.filter(section =>
+            activeAccounts.some(a => section.types.includes(a.type)),
+          ).map(section => (
+            <View key={section.label}>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.sectionLabel,
+                  { color: colors.textSecondary },
+                ]}>
+                {section.label.toUpperCase()}
+              </Text>
+              {activeAccounts
+                .filter(a => section.types.includes(a.type))
+                .map(item => renderAccountRow(item))}
+            </View>
+          ))
         )}
       </View>
+
+      <BottomSheetModal
+        visible={formVisible}
+        onClose={() => {
+          setFormVisible(false);
+          resetForm();
+        }}
+        onSave={handleSubmit}
+        canSave={accountFormCanSave}
+        title={editingId ? 'Edit Account' : 'Add Account'}
+        saveLabel={editingId ? 'Update' : 'Add'}>
+        <Text style={[styles.label, { color: colors.text }]}>Name</Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={name}
+          onChangeText={setName}
+          placeholderTextColor={colors.textSecondary}
+        />
+
+        <Text style={[styles.label, { color: colors.text }]}>Type</Text>
+        <CollapsiblePicker
+          displayLabel={type}
+          selectedValue={type}
+          onValueChange={setType}
+          items={ACCOUNT_TYPES.map(t => ({ label: t, value: t }))}
+        />
+        {/* Only while creating — editing an existing account of a
+            premium type is never blocked, so flagging it here would be
+            misleading about what's actually gated. */}
+        {!editingId && tier === 'free' && !FREE_ACCOUNT_TYPES.includes(type) && (
+          <Text style={[styles.premiumBadge, { color: colors.warning }]}>
+            🔒 Premium — {type}
+          </Text>
+        )}
+
+        {!editingId && (
+          <>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Initial currency
+            </Text>
+            <CollapsiblePicker
+              displayLabel={currencyLabel(initialCurrencyId)}
+              selectedValue={initialCurrencyId}
+              onValueChange={setInitialCurrencyId}
+              items={currencies.map(c => ({
+                label: `${c.code} — ${c.name}`,
+                value: String(c.id),
+              }))}
+            />
+
+            <Text style={[styles.label, { color: colors.text }]}>
+              Initial balance
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
+              value={initialBalance}
+              onChangeText={setInitialBalance}
+              keyboardType="numeric"
+              returnKeyType="done"
+              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </>
+        )}
+
+        <NumericInputAccessory />
+      </BottomSheetModal>
 
       {/* Deliberately placed here rather than as a SettingsHome list
           entry or a Dashboard card — net worth is sensitive enough that
@@ -875,94 +1046,72 @@ function AccountsScreen(): React.JSX.Element {
         </Card>
       </Pressable>
 
-      <Modal
+      <BottomSheetModal
         visible={updateBalanceTarget != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setUpdateBalanceTarget(null)}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            {updateBalanceTarget && (
-              <>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Update balance — {updateBalanceTarget.accountName} (
-                  {updateBalanceTarget.currencyCode})
-                </Text>
-                <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
-                  Current: {updateBalanceTarget.currentBalance.toFixed(2)}
-                </Text>
+        onClose={() => setUpdateBalanceTarget(null)}
+        onSave={handleUpdateBalanceSubmit}
+        canSave={updateBalanceCanSave}
+        title={
+          updateBalanceTarget
+            ? `Update balance — ${updateBalanceTarget.accountName} (${updateBalanceTarget.currencyCode})`
+            : undefined
+        }
+        saveLabel="Save">
+        {updateBalanceTarget && (
+          <>
+            <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
+              Current: {updateBalanceTarget.currentBalance.toFixed(2)}
+            </Text>
 
-                <Text style={[styles.label, { color: colors.text }]}>
-                  New balance
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-                  ]}
-                  value={updateBalanceNewValue}
-                  onChangeText={setUpdateBalanceNewValue}
-                  keyboardType="numeric"
-                  returnKeyType="done"
-                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textSecondary}
-                />
+            <Text style={[styles.label, { color: colors.text }]}>
+              New balance
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
+              value={updateBalanceNewValue}
+              onChangeText={setUpdateBalanceNewValue}
+              keyboardType="numeric"
+              returnKeyType="done"
+              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
 
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Description (required)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-                  ]}
-                  value={updateBalanceDescription}
-                  onChangeText={setUpdateBalanceDescription}
-                  placeholder="Why is this balance being corrected?"
-                  placeholderTextColor={colors.textSecondary}
-                />
+            <Text style={[styles.label, { color: colors.text }]}>
+              Description (required)
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
+              value={updateBalanceDescription}
+              onChangeText={setUpdateBalanceDescription}
+              placeholder="Why is this balance being corrected?"
+              placeholderTextColor={colors.textSecondary}
+            />
 
-                <View style={styles.formActions}>
-                  <Button
-                    title="Cancel"
-                    color={colors.primary}
-                    onPress={() => setUpdateBalanceTarget(null)}
-                  />
-                  <Button
-                    title="Save"
-                    color={colors.primary}
-                    onPress={handleUpdateBalanceSubmit}
-                  />
-                </View>
-                {/* Rendered inside this Modal (not just once at screen
-                    level) because RN's Modal presents its content in a
-                    separate native window on iOS — an InputAccessoryView
-                    mounted outside the Modal never gets attached to a
-                    TextInput focused inside it. */}
-                <NumericInputAccessory />
-              </>
-            )}
-          </View>
-        </Pressable>
-      </Modal>
+            <NumericInputAccessory />
+          </>
+        )}
+      </BottomSheetModal>
 
-      <Modal
+      <BottomSheetModal
         visible={payOffTarget != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPayOffTarget(null)}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+        onClose={() => setPayOffTarget(null)}
+        onSave={handlePayOffSubmit}
+        canSave={payOffCanSave}
+        title={
+          payOffTarget
+            ? `Pay off ${payOffTarget.accountName} (${payOffTarget.currencyCode})`
+            : undefined
+        }
+        saveLabel="Pay Off">
             {payOffTarget && (
               <>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Pay off {payOffTarget.accountName} ({payOffTarget.currencyCode})
-                </Text>
                 <Text style={[styles.modalCurrent, { color: colors.danger }]}>
                   Current debt: {payOffTarget.currentDebt.toFixed(2)}{' '}
                   {payOffTarget.currencyCode}
@@ -1061,38 +1210,18 @@ function AccountsScreen(): React.JSX.Element {
                   </Modal>
                 )}
 
-                <View style={styles.formActions}>
-                  <Button
-                    title="Cancel"
-                    color={colors.primary}
-                    onPress={() => setPayOffTarget(null)}
-                  />
-                  <Button
-                    title="Pay Off"
-                    color={colors.primary}
-                    onPress={handlePayOffSubmit}
-                  />
-                </View>
                 <NumericInputAccessory />
               </>
             )}
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
 
-      <Modal
+      <BottomSheetModal
         visible={transferModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTransferModalVisible(false)}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.label, { color: colors.text }]}>
-              Transfer between accounts
-            </Text>
-
+        onClose={() => setTransferModalVisible(false)}
+        onSave={handleTransferSubmit}
+        canSave={transferCanSave}
+        title={transferTitle}
+        saveLabel={transferTitle === 'Withdraw to Cash' ? 'Withdraw' : 'Transfer'}>
             <Text style={[styles.label, { color: colors.text }]}>From</Text>
             {transferFromOptions.length === 0 ? (
               <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -1266,22 +1395,8 @@ function AccountsScreen(): React.JSX.Element {
               </Modal>
             )}
 
-            <View style={styles.formActions}>
-              <Button
-                title="Cancel"
-                color={colors.primary}
-                onPress={() => setTransferModalVisible(false)}
-              />
-              <Button
-                title="Transfer"
-                color={colors.primary}
-                onPress={handleTransferSubmit}
-              />
-            </View>
             <NumericInputAccessory />
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
 
       <NumericInputAccessory />
     </ScrollView>
@@ -1295,12 +1410,44 @@ const styles = StyleSheet.create({
   containerContent: {
     padding: 16,
   },
-  form: {
-    marginBottom: 16,
-  },
   topActionsRow: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: 16,
+  },
+  topActionButton: {
+    flex: 1,
+  },
+  primaryPillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  primaryPillButtonText: {
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+  },
+  outlinePillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  outlinePillButtonText: {
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+  },
+  sectionLabel: {
+    marginTop: 12,
+    marginBottom: 8,
   },
   netWorthLink: {
     flexDirection: 'row',
@@ -1337,11 +1484,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
   premiumBadge: {
     marginTop: 4,
     fontSize: 12,
@@ -1354,29 +1496,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
-  rowContainer: {
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  row: {
+  accountCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    padding: 0,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
-  rowDetails: {
+  accentBar: {
+    width: 4,
+  },
+  accountCardContent: {
     flex: 1,
+    padding: 14,
   },
   rowName: {
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  rowType: {
+    marginTop: 2,
   },
   rowBalance: {
-    marginTop: 2,
+    marginTop: 6,
   },
   balanceChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
+    marginTop: 8,
   },
   balanceChip: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1387,9 +1534,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     overflow: 'hidden',
   },
-  rowActions: {
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 10,
+  },
+  accountActionsRow: {
     flexDirection: 'row',
+    gap: 8,
+  },
+  iconPillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  iconPillButtonText: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
   },
   addCurrencyLink: {
     marginTop: 8,

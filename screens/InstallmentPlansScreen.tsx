@@ -18,6 +18,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
@@ -530,6 +531,36 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     );
   };
 
+  // Mirrors buildParams' own checks exactly (minus the actual number
+  // parsing/rounding it does at submit time) so the Save button disables
+  // the instant a required field goes empty or out of range, rather than
+  // only failing after a tap — buildParams stays the single source of
+  // truth for what "valid" means, this just previews its verdict.
+  const dueDayValid =
+    dueDayOfMonth === '' ||
+    (Number.isInteger(Number(dueDayOfMonth)) &&
+      Number(dueDayOfMonth) >= 1 &&
+      Number(dueDayOfMonth) <= 31);
+  const modeFieldsValid =
+    mode === 'principal'
+      ? principalAmount !== '' &&
+        !Number.isNaN(Number(principalAmount)) &&
+        Number(principalAmount) > 0 &&
+        interestRatePercent !== '' &&
+        !Number.isNaN(Number(interestRatePercent)) &&
+        Number(interestRatePercent) >= 0
+      : monthlyAmountInput !== '' &&
+        !Number.isNaN(Number(monthlyAmountInput)) &&
+        Number(monthlyAmountInput) > 0;
+  const formCanSave =
+    name.trim() !== '' &&
+    monthsValid &&
+    categoryId !== '' &&
+    currencyId !== '' &&
+    dueDayValid &&
+    modeFieldsValid;
+  const payCanSave = payAccountId !== '';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {!formVisible && (
@@ -647,27 +678,16 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
         }
       />
 
-      <Modal
+      <BottomSheetModal
         visible={formVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFormVisible(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
-          <View
-            style={[
-              styles.modalCard,
-              styles.formModalCard,
-              { backgroundColor: colors.surface },
-            ]}>
-            <FlatList
-              data={[0]}
-              keyExtractor={() => 'form'}
-              renderItem={() => (
-                <View>
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    {editingId ? 'Edit Plan' : 'New Installment Plan'}
-                  </Text>
-
+        onClose={() => {
+          setFormVisible(false);
+          resetForm();
+        }}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title={editingId ? 'Edit Plan' : 'New Installment Plan'}
+        saveLabel={editingId ? 'Save' : 'Create'}>
                   <Text style={[styles.label, { color: colors.text }]}>
                     Name
                   </Text>
@@ -929,42 +949,22 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                     </Text>
                   )}
 
-                  <View style={styles.formActions}>
-                    <Button
-                      title="Cancel"
-                      color={colors.primary}
-                      onPress={() => {
-                        setFormVisible(false);
-                        resetForm();
-                      }}
-                    />
-                    <Button
-                      title={editingId ? 'Save' : 'Create'}
-                      color={colors.primary}
-                      onPress={handleSubmit}
-                    />
-                  </View>
                   <NumericInputAccessory />
-                </View>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
 
-      <Modal
+      <BottomSheetModal
         visible={payTarget != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPayTarget(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+        onClose={() => setPayTarget(null)}
+        onSave={handlePaySubmit}
+        canSave={payCanSave}
+        title={
+          payTarget
+            ? `Pay installment ${paidCountFor(payTarget.id) + 1} of ${payTarget.numberOfMonths} — ${payTarget.name}`
+            : undefined
+        }
+        saveLabel="Pay">
             {payTarget && (
               <>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Pay installment {paidCountFor(payTarget.id) + 1} of{' '}
-                  {payTarget.numberOfMonths} — {payTarget.name}
-                </Text>
                 <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
                   Amount: {payTarget.currencyCode}{' '}
                   {nextAmountDueFor(payTarget)?.toFixed(0)}
@@ -1040,23 +1040,9 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   </Modal>
                 )}
 
-                <View style={styles.formActions}>
-                  <Button
-                    title="Cancel"
-                    color={colors.primary}
-                    onPress={() => setPayTarget(null)}
-                  />
-                  <Button
-                    title="Pay"
-                    color={colors.primary}
-                    onPress={handlePaySubmit}
-                  />
-                </View>
               </>
             )}
-          </View>
-        </Pressable>
-      </Modal>
+      </BottomSheetModal>
 
       <NumericInputAccessory />
     </View>
@@ -1129,9 +1115,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
   },
-  formModalCard: {
-    maxHeight: '90%',
-  },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -1175,11 +1158,6 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: 12,
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
   },
 });
 
