@@ -15,13 +15,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { Check } from 'lucide-react-native';
 import { formatDateString } from '../utils/date';
 import { getAccountBalances, getAccounts, getTags } from '../db/queries';
+import Card from './Card';
 import CollapsiblePicker from './CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from './NumericInputAccessory';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont, typography } from '../theme/typography';
 
 // Same exclusion as TransactionForm — Liability/Receivable accounts only
 // ever move through the loan flows, and Income never gets posted to a
@@ -155,12 +158,21 @@ function IncomeForm({
   const selectedAccountName =
     accounts.find(a => a.id === accountId)?.name ?? 'Select account';
 
+  const canSave =
+    amount.trim() !== '' &&
+    !Number.isNaN(Number(amount)) &&
+    accountId != null &&
+    currencyId != null;
+
   return (
     <ScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
-      <Text style={[styles.label, { color: colors.text }]}>Account</Text>
+      <Text
+        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        ACCOUNT
+      </Text>
       <CollapsiblePicker
         displayLabel={selectedAccountName}
         selectedValue={accountId != null ? String(accountId) : ''}
@@ -170,7 +182,10 @@ function IncomeForm({
 
       {accountBalances.length > 1 && (
         <>
-          <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
+          <Text
+            style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+            CURRENCY
+          </Text>
           <CollapsiblePicker
             displayLabel={
               accountBalances.find(b => b.currencyId === currencyId)
@@ -186,7 +201,10 @@ function IncomeForm({
         </>
       )}
 
-      <Text style={[styles.label, { color: colors.text }]}>Date</Text>
+      <Text
+        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        DATE
+      </Text>
       <Button
         title={date}
         color={colors.primary}
@@ -232,10 +250,14 @@ function IncomeForm({
         </Modal>
       )}
 
-      <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
+      <Text
+        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        AMOUNT
+      </Text>
       <TextInput
         style={[
-          styles.input,
+          typography.amountLarge,
+          styles.amountInput,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
         ]}
         value={amount}
@@ -248,7 +270,10 @@ function IncomeForm({
       />
       <NumericInputAccessory />
 
-      <Text style={[styles.label, { color: colors.text }]}>Description</Text>
+      <Text
+        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        DESCRIPTION
+      </Text>
       <TextInput
         style={[
           styles.input,
@@ -260,7 +285,10 @@ function IncomeForm({
         placeholderTextColor={colors.textSecondary}
       />
 
-      <Text style={[styles.label, { color: colors.text }]}>Tags</Text>
+      <Text
+        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        TAGS
+      </Text>
       {tags.length === 0 ? (
         <Text style={[styles.hint, { color: colors.textSecondary }]}>
           No tags yet — add some from Settings.
@@ -274,14 +302,15 @@ function IncomeForm({
                 key={tag.id}
                 style={[
                   styles.tagChip,
-                  { backgroundColor: colors.surface, borderColor: colors.primary },
-                  selected && { backgroundColor: colors.primary },
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  selected && { backgroundColor: colors.primary, borderColor: colors.primary },
                 ]}
                 onPress={() => toggleTag(tag.id)}>
+                {selected && <Check size={12} color={colors.primaryText} strokeWidth={3} />}
                 <Text
                   style={[
                     styles.tagChipText,
-                    { color: colors.primary },
+                    { color: colors.text },
                     selected && { color: colors.primaryText },
                   ]}>
                   {tag.name}
@@ -292,36 +321,50 @@ function IncomeForm({
         </View>
       )}
 
-      <Pressable
-        style={styles.checkboxRow}
-        onPress={() => setExcludeFromBudget(current => !current)}>
-        <View
-          style={[
-            styles.checkboxBox,
-            { borderColor: colors.primary },
-            excludeFromBudget && { backgroundColor: colors.primary },
-          ]}>
-          {excludeFromBudget && (
-            <Text style={[styles.checkboxMark, { color: colors.primaryText }]}>
-              ✓
+      <Card colors={colors} style={styles.checkboxCard}>
+        <Pressable
+          style={styles.checkboxRow}
+          onPress={() => setExcludeFromBudget(current => !current)}>
+          <View
+            style={[
+              styles.checkboxBox,
+              { borderColor: colors.primary },
+              excludeFromBudget && { backgroundColor: colors.primary },
+            ]}>
+            {excludeFromBudget && (
+              <Check size={13} color={colors.primaryText} strokeWidth={3} />
+            )}
+          </View>
+          <View style={styles.checkboxLabelArea}>
+            <Text style={[styles.checkboxLabel, { color: colors.text }]}>
+              Exclude from budget
             </Text>
-          )}
-        </View>
-        <View style={styles.checkboxLabelArea}>
-          <Text style={[styles.checkboxLabel, { color: colors.text }]}>
-            Exclude from budget
-          </Text>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>
-            Still real income, but won't count toward budgets or reports.
-          </Text>
-        </View>
-      </Pressable>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>
+              Still real income, but won't count toward budgets or reports.
+            </Text>
+          </View>
+        </Pressable>
+      </Card>
 
       {error && (
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
       )}
 
-      <Button title={submitLabel} color={colors.primary} onPress={handleSubmit} />
+      <Pressable
+        disabled={!canSave}
+        style={[
+          styles.submitButton,
+          { backgroundColor: !canSave ? colors.neutralSoft : colors.primary },
+        ]}
+        onPress={handleSubmit}>
+        <Text
+          style={[
+            styles.submitButtonText,
+            { color: !canSave ? colors.textSecondary : colors.primaryText },
+          ]}>
+          {submitLabel}
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -334,23 +377,28 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
     marginTop: 16,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
+  },
+  amountInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   error: {
     marginTop: 12,
   },
   hint: {
-    fontSize: 13,
+    fontSize: scaleFont(12.5),
+    lineHeight: scaleFont(17),
   },
   tagRow: {
     flexDirection: 'row',
@@ -358,39 +406,53 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
   tagChipText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontWeight: '600',
+  },
+  checkboxCard: {
+    padding: 14,
+    marginTop: 16,
   },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginTop: 16,
     gap: 10,
   },
   checkboxBox: {
     width: 22,
     height: 22,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 4,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  checkboxMark: {
-    fontSize: 14,
-    fontWeight: '700',
   },
   checkboxLabelArea: {
     flex: 1,
   },
   checkboxLabel: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '600',
+    marginBottom: 2,
+  },
+  submitButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  submitButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,

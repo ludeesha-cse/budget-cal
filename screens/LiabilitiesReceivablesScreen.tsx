@@ -16,7 +16,10 @@ import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { Plus } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
+import Card from '../components/Card';
+import BottomSheetModal from '../components/BottomSheetModal';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -38,6 +41,7 @@ import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { canAddAccount } from '../utils/entitlementChecks';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont, typography } from '../theme/typography';
 
 // Only these can fund a loan — you can't borrow into a Liability or lend
 // out of another Receivable.
@@ -57,6 +61,14 @@ const TYPE_LABELS: Record<LoanAccountType, { heading: string; add: string }> = {
   Liability: { heading: 'Liabilities (borrowed)', add: 'Add Liability' },
   Receivable: { heading: 'Receivables (lended)', add: 'Add Lend' },
 };
+
+// Same "cycle the chart palette + alpha background" avatar convention as
+// CategoriesScreen/TagsScreen — keeps every initial-avatar in the app
+// visually consistent without a dedicated soft-color set per accent.
+function avatarColorsFor(seed: number, chart: string[]): { bg: string; fg: string } {
+  const base = chart[seed % chart.length];
+  return { bg: `${base}26`, fg: base };
+}
 
 // Outstanding totals keyed by currency code. Deliberately a map rather
 // than one number — currency amounts are never summed together anywhere
@@ -400,33 +412,54 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     counterpartAccounts.find(a => String(a.id) === id)?.name ??
     'Select account';
 
+  // Mirrors handleSubmit's own validation, minus the paywall check (that
+  // can only be resolved after tapping Save — it needs a DB round trip —
+  // so it isn't part of "is the form fillable" the way the other fields
+  // are).
+  const formCanSave =
+    counterpartyName.trim() !== '' &&
+    principal.trim() !== '' &&
+    !Number.isNaN(Number(principal)) &&
+    Number(principal) > 0 &&
+    currencyId !== '' &&
+    counterpartAccountId !== '' &&
+    (interestRate.trim() === '' ||
+      (!Number.isNaN(Number(interestRate)) &&
+        Number(interestRate) >= 0 &&
+        interestPeriod !== ''));
+
+  const settleCanSave =
+    settlePaymentAmount.trim() !== '' &&
+    !Number.isNaN(Number(settlePaymentAmount)) &&
+    Number(settlePaymentAmount) > 0 &&
+    settleCounterpartAccountId !== '';
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.containerContent}
       keyboardShouldPersistTaps="handled">
-      <View
-        style={[
-          styles.summaryCard,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}>
+      <Card colors={colors} style={styles.summaryCard}>
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-            Total liabilities
+          <Text
+            style={[typography.eyebrow, styles.summaryLabel, { color: colors.textSecondary }]}>
+            TOTAL LIABILITIES
           </Text>
-          <Text style={[styles.summaryValue, { color: colors.danger }]}>
+          <Text style={[typography.amountMono, styles.summaryValue, { color: colors.danger }]}>
             {formatTotals(totalsByCurrency(activeLiabilities))}
           </Text>
         </View>
+        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-            Total receivables
+          <Text
+            style={[typography.eyebrow, styles.summaryLabel, { color: colors.textSecondary }]}>
+            TOTAL RECEIVABLES
           </Text>
-          <Text style={[styles.summaryValue, { color: colors.success }]}>
+          <Text style={[typography.amountMono, styles.summaryValue, { color: colors.success }]}>
             {formatTotals(totalsByCurrency(activeReceivables))}
           </Text>
         </View>
-      </View>
+      </Card>
 
       <View style={styles.toggleRow}>
         {(['Liability', 'Receivable'] as const).map(option => (
@@ -434,8 +467,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             key={option}
             style={[
               styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.primary },
-              type === option && { backgroundColor: colors.primary },
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              type === option && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => {
               setType(option);
@@ -444,7 +477,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             <Text
               style={[
                 styles.toggleButtonText,
-                { color: colors.primary },
+                { color: colors.text },
                 type === option && { color: colors.primaryText },
               ]}>
               {option === 'Liability' ? 'Liabilities' : 'Receivables'}
@@ -453,358 +486,361 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         ))}
       </View>
 
-      <Text style={[styles.heading, { color: colors.text }]}>
+      <Text style={[typography.cardTitle, styles.heading, { color: colors.text }]}>
         {TYPE_LABELS[type].heading}
       </Text>
 
-      {step === null && (
-        <>
-          {loading ? (
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              Loading...
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          {TYPE_LABELS[type].add}
+        </Text>
+      </Pressable>
+
+      {loading ? (
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          Loading...
+        </Text>
+      ) : loans.length === 0 ? (
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          {type === 'Liability'
+            ? 'Nothing borrowed right now.'
+            : 'Nothing lended out right now.'}
+        </Text>
+      ) : (
+        loans.map((loan, index) => {
+          const { bg, fg } = avatarColorsFor(index, colors.chart);
+          return (
+            <Card
+              key={`${loan.accountId}-${loan.currencyId}`}
+              colors={colors}
+              style={styles.loanCard}>
+              <View style={styles.loanHeader}>
+                <View style={[styles.avatar, { backgroundColor: bg }]}>
+                  <Text style={[styles.avatarText, { color: fg }]}>
+                    {loan.counterpartyName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.loanHeaderText}>
+                  <Text style={[styles.loanName, { color: colors.text }]} numberOfLines={1}>
+                    {loan.counterpartyName}
+                  </Text>
+                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
+                    Principal: {loan.currencyCode} {loan.principal.toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Live figure — principal plus interest accrued since
+                  lastAccrualAnchorDate, recomputed on every load rather
+                  than trusted from a stored column. */}
+              <Text
+                style={[
+                  typography.amountMono,
+                  styles.loanTotalOwed,
+                  { color: type === 'Liability' ? colors.danger : colors.success },
+                ]}>
+                {loan.currencyCode}{' '}
+                {(totalOwedByAccountId[loan.accountId] ?? loan.principal).toFixed(2)}
+              </Text>
+              <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
+                Started {loan.dateCreated}
+                {loan.dueDate ? ` · due ${loan.dueDate}` : ''}
+              </Text>
+              {loan.interestRate != null && (
+                <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
+                  Interest: {(loan.interestRate / 100).toFixed(2)}%{' '}
+                  {loan.interestPeriod ?? ''}
+                </Text>
+              )}
+
+              <Pressable
+                style={[styles.settlePillButton, { backgroundColor: colors.primary }]}
+                onPress={() => openSettle(loan)}>
+                <Text style={[styles.settlePillButtonText, { color: colors.primaryText }]}>
+                  Settle / Pay Off
+                </Text>
+              </Pressable>
+            </Card>
+          );
+        })
+      )}
+
+      <BottomSheetModal
+        visible={step === 'form'}
+        onClose={handleCancel}
+        onSave={handleSubmit}
+        canSave={formCanSave}
+        title={TYPE_LABELS[type].add}
+        saveLabel={reuseAccountId != null ? 'Reopen' : 'Save'}>
+        <Text style={[styles.label, { color: colors.text }]}>
+          Counterparty name
+        </Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={counterpartyName}
+          onChangeText={handleNameChange}
+          placeholder={
+            type === 'Liability' ? 'Borrowed from…' : 'Lended to…'
+          }
+          placeholderTextColor={colors.textSecondary}
+        />
+        {hasNameMatches && (
+          <View
+            style={[
+              styles.suggestions,
+              { borderColor: colors.primary, backgroundColor: colors.surface },
+            ]}>
+            <Text style={[styles.suggestionsHint, { color: colors.textSecondary }]}>
+              Existing accounts matching this name:
             </Text>
-          ) : loans.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              {type === 'Liability'
-                ? 'Nothing borrowed right now.'
-                : 'Nothing lended out right now.'}
-            </Text>
-          ) : (
-            loans.map(loan => (
+            {activeNameMatches.map(loan => (
               <View
-                key={`${loan.accountId}-${loan.currencyId}`}
-                style={[styles.loanRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.loanName, { color: colors.text }]}>
+                key={`active-${loan.accountId}`}
+                style={[styles.suggestionRowInactive, { borderTopColor: colors.border }]}>
+                <Text style={[styles.suggestionName, { color: colors.primary }]}>
                   {loan.counterpartyName}
                 </Text>
                 <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                  Principal: {loan.currencyCode} {loan.principal.toFixed(2)}
+                  Already open · {loan.currencyCode}{' '}
+                  {loan.currentBalance.toFixed(2)} outstanding
                 </Text>
-                {/* Live figure — principal plus interest accrued since
-                    lastAccrualAnchorDate, recomputed on every load rather
-                    than trusted from a stored column. */}
-                <Text style={[styles.loanDetail, styles.loanTotalOwed, { color: colors.text }]}>
-                  Total owed: {loan.currencyCode}{' '}
-                  {(totalOwedByAccountId[loan.accountId] ??
-                    loan.principal
-                  ).toFixed(2)}
+              </View>
+            ))}
+            {inactiveNameMatches.map(loan => (
+              <Pressable
+                key={`inactive-${loan.accountId}`}
+                style={[styles.suggestionRow, { borderTopColor: colors.border }]}
+                onPress={() => handlePickSuggestion(loan)}>
+                <Text style={[styles.suggestionName, { color: colors.primary }]}>
+                  {loan.counterpartyName}
                 </Text>
                 <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                  Started {loan.dateCreated}
-                  {loan.dueDate ? ` · due ${loan.dueDate}` : ''}
-                </Text>
-                {loan.interestRate != null && (
-                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                    Interest: {(loan.interestRate / 100).toFixed(2)}%{' '}
-                    {loan.interestPeriod ?? ''}
-                  </Text>
-                )}
-                <View style={styles.settleButton}>
-                  <Button
-                    title="Settle / Pay Off"
-                    color={colors.primary}
-                    onPress={() => openSettle(loan)}
-                  />
-                </View>
-              </View>
-            ))
-          )}
-          <View style={styles.addButton}>
-            <Button
-              title={TYPE_LABELS[type].add}
-              color={colors.primary}
-              onPress={handleAddPress}
-            />
-          </View>
-        </>
-      )}
-
-      {step === 'form' && (
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>
-            Counterparty name
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={counterpartyName}
-            onChangeText={handleNameChange}
-            placeholder={
-              type === 'Liability' ? 'Borrowed from…' : 'Lended to…'
-            }
-            placeholderTextColor={colors.textSecondary}
-          />
-          {hasNameMatches && (
-            <View
-              style={[
-                styles.suggestions,
-                { borderColor: colors.primary, backgroundColor: colors.surface },
-              ]}>
-              <Text style={[styles.suggestionsHint, { color: colors.textSecondary }]}>
-                Existing accounts matching this name:
-              </Text>
-              {activeNameMatches.map(loan => (
-                <View
-                  key={`active-${loan.accountId}`}
-                  style={[styles.suggestionRowInactive, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.suggestionName, { color: colors.primary }]}>
-                    {loan.counterpartyName}
-                  </Text>
-                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                    Already open · {loan.currencyCode}{' '}
-                    {loan.currentBalance.toFixed(2)} outstanding
-                  </Text>
-                </View>
-              ))}
-              {inactiveNameMatches.map(loan => (
-                <Pressable
-                  key={`inactive-${loan.accountId}`}
-                  style={[styles.suggestionRow, { borderTopColor: colors.border }]}
-                  onPress={() => handlePickSuggestion(loan)}>
-                  <Text style={[styles.suggestionName, { color: colors.primary }]}>
-                    {loan.counterpartyName}
-                  </Text>
-                  <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                    Closed · last opened {loan.dateCreated} · tap to reuse
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-          {reuseAccountId != null && (
-            <View style={[styles.reuseBanner, { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.primary }]}>
-              <Text style={[styles.reuseBannerText, { color: colors.primary }]}>
-                Reopening the closed account for this counterparty.
-              </Text>
-              <Pressable onPress={() => setReuseAccountId(null)}>
-                <Text style={[styles.reuseBannerClear, { color: colors.primary }]}>
-                  Create new instead
+                  Closed · last opened {loan.dateCreated} · tap to reuse
                 </Text>
               </Pressable>
-            </View>
-          )}
-
-          <Text style={[styles.label, { color: colors.text }]}>Principal</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={principal}
-            onChangeText={setPrincipal}
-            keyboardType="numeric"
-            returnKeyType="done"
-            inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-            placeholder="0.00"
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
-          <CollapsiblePicker
-            displayLabel={currencyLabel(currencyId)}
-            selectedValue={currencyId}
-            onValueChange={setCurrencyId}
-            items={currencies.map(c => ({
-              label: `${c.code} — ${c.name}`,
-              value: String(c.id),
-            }))}
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>
-            {type === 'Liability' ? 'Deposit into' : 'Paid from'}
-          </Text>
-          <CollapsiblePicker
-            displayLabel={counterpartLabel(counterpartAccountId)}
-            selectedValue={counterpartAccountId}
-            onValueChange={setCounterpartAccountId}
-            items={counterpartAccounts.map(a => ({
-              label: `${a.name} (${a.type})`,
-              value: String(a.id),
-            }))}
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>
-            Due date (optional)
-          </Text>
-          <View style={styles.dueDateRow}>
-            <View style={styles.dueDateButton}>
-              <Button
-                title={dueDate ?? 'Not set'}
-                color={colors.primary}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setShowDueDatePicker(true);
-                }}
-              />
-            </View>
-            {dueDate && (
-              <Button
-                title="Clear"
-                color={colors.primary}
-                onPress={() => setDueDate(null)}
-              />
-            )}
+            ))}
           </View>
-          {Platform.OS === 'android' ? (
-            showDueDatePicker && (
-              <DateTimePicker
-                value={dueDate ? new Date(dueDate) : new Date()}
-                mode="date"
-                display="default"
-                onChange={handleDueDateChange}
-              />
-            )
-          ) : (
-            <Modal
-              visible={showDueDatePicker}
-              transparent
-              animationType="slide"
-              onRequestClose={() => setShowDueDatePicker(false)}>
-              <Pressable
-                style={styles.modalBackdrop}
-                onPress={() => setShowDueDatePicker(false)}>
-                <Pressable
-                  style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                  onPress={() => {}}>
-                  <DateTimePicker
-                    value={dueDate ? new Date(dueDate) : new Date()}
-                    mode="date"
-                    display="spinner"
-                    onChange={handleDueDateChange}
-                  />
-                  <Button
-                    title="Done"
-                    color={colors.primary}
-                    onPress={() => setShowDueDatePicker(false)}
-                  />
-                </Pressable>
-              </Pressable>
-            </Modal>
-          )}
-
-          <Text style={[styles.label, { color: colors.text }]}>
-            Interest rate % (optional)
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-            ]}
-            value={interestRate}
-            onChangeText={setInterestRate}
-            keyboardType="numeric"
-            returnKeyType="done"
-            inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-            placeholder="e.g. 5.5"
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          {interestRate.trim().length > 0 && (
-            <>
-              <Text style={[styles.label, { color: colors.text }]}>
-                Interest period
-              </Text>
-              <CollapsiblePicker
-                displayLabel={interestPeriod || 'Select period'}
-                selectedValue={interestPeriod}
-                onValueChange={setInterestPeriod}
-                items={INTEREST_PERIODS.map(p => ({ label: p, value: p }))}
-              />
-            </>
-          )}
-
-          {error && (
-            <Text style={[styles.error, { color: colors.danger }]}>
-              {error}
+        )}
+        {reuseAccountId != null && (
+          <View style={[styles.reuseBanner, { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.primary }]}>
+            <Text style={[styles.reuseBannerText, { color: colors.primary }]}>
+              Reopening the closed account for this counterparty.
             </Text>
-          )}
+            <Pressable onPress={() => setReuseAccountId(null)}>
+              <Text style={[styles.reuseBannerClear, { color: colors.primary }]}>
+                Create new instead
+              </Text>
+            </Pressable>
+          </View>
+        )}
 
-          <View style={styles.formActions}>
-            <Button title="Cancel" color={colors.primary} onPress={handleCancel} />
+        <Text style={[styles.label, { color: colors.text }]}>Principal</Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={principal}
+          onChangeText={setPrincipal}
+          keyboardType="numeric"
+          returnKeyType="done"
+          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+          placeholder="0.00"
+          placeholderTextColor={colors.textSecondary}
+        />
+
+        <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
+        <CollapsiblePicker
+          displayLabel={currencyLabel(currencyId)}
+          selectedValue={currencyId}
+          onValueChange={setCurrencyId}
+          items={currencies.map(c => ({
+            label: `${c.code} — ${c.name}`,
+            value: String(c.id),
+          }))}
+        />
+
+        <Text style={[styles.label, { color: colors.text }]}>
+          {type === 'Liability' ? 'Deposit into' : 'Paid from'}
+        </Text>
+        <CollapsiblePicker
+          displayLabel={counterpartLabel(counterpartAccountId)}
+          selectedValue={counterpartAccountId}
+          onValueChange={setCounterpartAccountId}
+          items={counterpartAccounts.map(a => ({
+            label: `${a.name} (${a.type})`,
+            value: String(a.id),
+          }))}
+        />
+
+        <Text style={[styles.label, { color: colors.text }]}>
+          Due date (optional)
+        </Text>
+        <View style={styles.dueDateRow}>
+          <View style={styles.dueDateButton}>
             <Button
-              title={reuseAccountId != null ? 'Reopen' : 'Save'}
+              title={dueDate ?? 'Not set'}
               color={colors.primary}
-              onPress={handleSubmit}
+              onPress={() => {
+                Keyboard.dismiss();
+                setShowDueDatePicker(true);
+              }}
             />
           </View>
+          {dueDate && (
+            <Button
+              title="Clear"
+              color={colors.primary}
+              onPress={() => setDueDate(null)}
+            />
+          )}
         </View>
-      )}
+        {Platform.OS === 'android' ? (
+          showDueDatePicker && (
+            <DateTimePicker
+              value={dueDate ? new Date(dueDate) : new Date()}
+              mode="date"
+              display="default"
+              onChange={handleDueDateChange}
+            />
+          )
+        ) : (
+          <Modal
+            visible={showDueDatePicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowDueDatePicker(false)}>
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => setShowDueDatePicker(false)}>
+              <Pressable
+                style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                onPress={() => {}}>
+                <DateTimePicker
+                  value={dueDate ? new Date(dueDate) : new Date()}
+                  mode="date"
+                  display="spinner"
+                  onChange={handleDueDateChange}
+                />
+                <Button
+                  title="Done"
+                  color={colors.primary}
+                  onPress={() => setShowDueDatePicker(false)}
+                />
+              </Pressable>
+            </Pressable>
+          </Modal>
+        )}
 
-      <Modal
+        <Text style={[styles.label, { color: colors.text }]}>
+          Interest rate % (optional)
+        </Text>
+        <TextInput
+          style={[
+            styles.input,
+            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          ]}
+          value={interestRate}
+          onChangeText={setInterestRate}
+          keyboardType="numeric"
+          returnKeyType="done"
+          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+          placeholder="e.g. 5.5"
+          placeholderTextColor={colors.textSecondary}
+        />
+
+        {interestRate.trim().length > 0 && (
+          <>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Interest period
+            </Text>
+            <CollapsiblePicker
+              displayLabel={interestPeriod || 'Select period'}
+              selectedValue={interestPeriod}
+              onValueChange={setInterestPeriod}
+              items={INTEREST_PERIODS.map(p => ({ label: p, value: p }))}
+            />
+          </>
+        )}
+
+        {error && (
+          <Text style={[styles.error, { color: colors.danger }]}>
+            {error}
+          </Text>
+        )}
+
+        <NumericInputAccessory />
+      </BottomSheetModal>
+
+      <BottomSheetModal
         visible={settleTarget != null}
-        transparent
-        animationType="fade"
-        onRequestClose={closeSettle}>
-        <Pressable style={styles.modalBackdrop} onPress={() => Keyboard.dismiss()}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            {settleTarget && (
-              <>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Settle — {settleTarget.counterpartyName}
-                </Text>
-                <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
-                  Total owed today: {settleTarget.currencyCode}{' '}
-                  {(
-                    totalOwedByAccountId[settleTarget.accountId] ??
-                    settleTarget.principal
-                  ).toFixed(2)}
-                </Text>
+        onClose={closeSettle}
+        onSave={handleSettleSubmit}
+        canSave={settleCanSave}
+        title={settleTarget ? `Settle — ${settleTarget.counterpartyName}` : undefined}
+        saveLabel="Save">
+        {settleTarget && (
+          <>
+            <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
+              Total owed today: {settleTarget.currencyCode}{' '}
+              {(
+                totalOwedByAccountId[settleTarget.accountId] ??
+                settleTarget.principal
+              ).toFixed(2)}
+            </Text>
 
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Payment amount
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-                  ]}
-                  value={settlePaymentAmount}
-                  onChangeText={setSettlePaymentAmount}
-                  keyboardType="numeric"
-                  returnKeyType="done"
-                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                <Text style={[styles.hint, { color: colors.textSecondary }]}>
-                  A payment equal to or greater than the total owed pays
-                  this loan off in full and closes the account.
-                </Text>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Payment amount
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              ]}
+              value={settlePaymentAmount}
+              onChangeText={setSettlePaymentAmount}
+              keyboardType="numeric"
+              returnKeyType="done"
+              inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>
+              A payment equal to or greater than the total owed pays
+              this loan off in full and closes the account.
+            </Text>
 
-                {/* settleTarget is always drawn from `loans`, i.e. whichever
-                    of the two active-loan lists matches the current tab —
-                    so the tab's type is the loan's type too. */}
-                <Text style={[styles.label, { color: colors.text }]}>
-                  {type === 'Receivable' ? 'Deposit into' : 'Pay from'}
-                </Text>
-                <CollapsiblePicker
-                  displayLabel={counterpartLabel(settleCounterpartAccountId)}
-                  selectedValue={settleCounterpartAccountId}
-                  onValueChange={setSettleCounterpartAccountId}
-                  items={counterpartAccounts.map(a => ({
-                    label: `${a.name} (${a.type})`,
-                    value: String(a.id),
-                  }))}
-                />
+            {/* settleTarget is always drawn from `loans`, i.e. whichever
+                of the two active-loan lists matches the current tab —
+                so the tab's type is the loan's type too. */}
+            <Text style={[styles.label, { color: colors.text }]}>
+              {type === 'Receivable' ? 'Deposit into' : 'Pay from'}
+            </Text>
+            <CollapsiblePicker
+              displayLabel={counterpartLabel(settleCounterpartAccountId)}
+              selectedValue={settleCounterpartAccountId}
+              onValueChange={setSettleCounterpartAccountId}
+              items={counterpartAccounts.map(a => ({
+                label: `${a.name} (${a.type})`,
+                value: String(a.id),
+              }))}
+            />
 
-                {settleError && (
-                  <Text style={[styles.error, { color: colors.danger }]}>
-                    {settleError}
-                  </Text>
-                )}
-
-                <View style={styles.formActions}>
-                  <Button title="Cancel" color={colors.primary} onPress={closeSettle} />
-                  <Button title="Save" color={colors.primary} onPress={handleSettleSubmit} />
-                </View>
-                <NumericInputAccessory />
-              </>
+            {settleError && (
+              <Text style={[styles.error, { color: colors.danger }]}>
+                {settleError}
+              </Text>
             )}
-          </View>
-        </Pressable>
-      </Modal>
+            <NumericInputAccessory />
+          </>
+        )}
+      </BottomSheetModal>
 
       <NumericInputAccessory />
     </ScrollView>
@@ -820,23 +856,23 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 12,
+    alignItems: 'center',
+    padding: 14,
     marginBottom: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
   },
   summaryItem: {
     flex: 1,
   },
+  summaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    marginHorizontal: 12,
+  },
   summaryLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    marginBottom: 4,
   },
   summaryValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginTop: 4,
+    fontSize: scaleFont(15),
   },
   toggleRow: {
     flexDirection: 'row',
@@ -845,48 +881,81 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
+    borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center',
   },
   toggleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(14),
+    fontWeight: '700',
   },
   heading: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   empty: {
     fontSize: 14,
     marginTop: 8,
   },
-  addButton: {
-    marginTop: 16,
+  loanCard: {
+    padding: 14,
+    marginBottom: 10,
   },
-  loanRow: {
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  loanHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  loanHeaderText: {
+    flex: 1,
   },
   loanName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   loanDetail: {
-    fontSize: 14,
+    fontSize: scaleFont(12.5),
     marginTop: 2,
   },
   loanTotalOwed: {
+    fontSize: scaleFont(20),
+    marginTop: 10,
+  },
+  settlePillButton: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  settlePillButtonText: {
+    fontSize: scaleFont(13.5),
     fontWeight: '700',
-  },
-  settleButton: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  form: {
-    marginTop: 8,
   },
   label: {
     fontSize: 14,
@@ -949,11 +1018,6 @@ const styles = StyleSheet.create({
   },
   dueDateButton: {
     flex: 1,
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
   },
   error: {
     marginTop: 12,

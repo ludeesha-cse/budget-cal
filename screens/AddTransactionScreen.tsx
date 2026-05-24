@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Check, ChevronRight, Scale } from 'lucide-react-native';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import IncomeForm, { IncomeFormSubmitValues } from '../components/IncomeForm';
+import Card from '../components/Card';
 import { addIncome, addTransaction, setTransactionTags } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont } from '../theme/typography';
 import type { RootTabParamList } from '../navigation/types';
 
 type AddScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Add'>;
@@ -92,18 +95,14 @@ function AddScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[styles.tabRow, { borderBottomColor: colors.border }]}
-        contentContainerStyle={styles.tabRowContent}>
+      <View style={styles.tabRow}>
         {TABS.map(tab => (
           <Pressable
             key={tab.key}
             style={[
               styles.tabButton,
-              { backgroundColor: colors.surface },
-              activeTab === tab.key && { backgroundColor: colors.primary },
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              activeTab === tab.key && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => switchTab(tab.key)}>
             <Text
@@ -116,12 +115,15 @@ function AddScreen(): React.JSX.Element {
             </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
       {successMessage && (
-        <Text style={[styles.success, { color: colors.success }]}>
-          {successMessage}
-        </Text>
+        <View style={[styles.successBanner, { backgroundColor: colors.successSoft }]}>
+          <Check size={14} color={colors.success} />
+          <Text style={[styles.successText, { color: colors.success }]}>
+            {successMessage}
+          </Text>
+        </View>
       )}
 
       <View style={styles.formArea}>
@@ -148,18 +150,20 @@ function AddScreen(): React.JSX.Element {
           screen that actually owns that flow (see
           LiabilitiesReceivablesScreen's Settle / Pay Off action). */}
       <Pressable
-        style={[
-          styles.shortcut,
-          { backgroundColor: colors.surface, borderTopColor: colors.border },
-        ]}
         onPress={() =>
           navigation.navigate('Settings', {
             screen: 'LiabilitiesReceivables',
           })
         }>
-        <Text style={[styles.shortcutText, { color: colors.primary }]}>
-          Liabilities & Receivables
-        </Text>
+        <Card colors={colors} style={styles.shortcut} borderColor={colors.border}>
+          <View style={[styles.shortcutIcon, { backgroundColor: colors.primarySoft }]}>
+            <Scale size={16} color={colors.primary} />
+          </View>
+          <Text style={[styles.shortcutText, { color: colors.text }]}>
+            Liabilities & Receivables
+          </Text>
+          <ChevronRight size={18} color={colors.chevron} />
+        </Card>
       </Pressable>
     </View>
   );
@@ -170,37 +174,58 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabRow: {
-    flexGrow: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  tabRowContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    flexDirection: 'row',
     gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   tabButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
   },
   tabButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: scaleFont(14.5),
+    fontWeight: '700',
   },
-  success: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  successText: {
+    fontSize: scaleFont(13),
+    fontWeight: '600',
   },
   formArea: {
     flex: 1,
   },
   shortcut: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  shortcutIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   shortcutText: {
-    fontSize: 15,
+    flex: 1,
+    fontSize: scaleFont(14.5),
     fontWeight: '600',
   },
 });
