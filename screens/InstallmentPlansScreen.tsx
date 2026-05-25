@@ -17,11 +17,15 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import Svg, { Circle } from 'react-native-svg';
+import { CircleDollarSign, Pencil, Plus, Trash2 } from 'lucide-react-native';
+import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import { scaleFont, typography } from '../theme/typography';
 import {
   createInstallmentPlan,
   deleteInstallmentPlan,
@@ -63,6 +67,74 @@ function ordinalSuffix(day: number): string {
   if (day % 10 === 3 && day !== 13) return 'rd';
   return 'th';
 }
+
+// Small ring showing paid-installment progress per plan — plain SVG
+// (Circle + strokeDasharray), same library Card.tsx already pulls in for
+// its gradient sheen, so this doesn't add a new dependency. Local to this
+// screen since it's the only place a per-row progress ring is needed.
+function ProgressRing({
+  percent,
+  size,
+  strokeWidth,
+  trackColor,
+  fillColor,
+  label,
+  labelColor,
+}: {
+  percent: number;
+  size: number;
+  strokeWidth: number;
+  trackColor: string;
+  fillColor: string;
+  label: string;
+  labelColor: string;
+}): React.JSX.Element {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.min(100, Math.max(0, percent));
+  const dashOffset = circumference * (1 - clamped / 100);
+  return (
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={trackColor}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={fillColor}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+      <View style={ringStyles.center} pointerEvents="none">
+        <Text style={[ringStyles.label, { color: labelColor }]}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
+const ringStyles = StyleSheet.create({
+  center: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: scaleFont(11),
+    fontWeight: '700',
+  },
+});
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
@@ -563,9 +635,14 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {!formVisible && (
-        <Button title="Add Plan" color={colors.primary} onPress={handleAddPress} />
-      )}
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          Add Plan
+        </Text>
+      </Pressable>
 
       <FlatList
         data={plans}
@@ -578,97 +655,131 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
           const remaining = remainingFor(item);
           const payments = paymentsByPlan[item.id] ?? [];
           const isExpanded = expandedPlanId === item.id;
+          const percent = (paidCount / item.numberOfMonths) * 100;
+          const ringColor = isFullyPaid ? colors.success : colors.primary;
           return (
-            <View style={[styles.row, { borderBottomColor: colors.border }]}>
-              <View style={styles.rowDetails}>
-                <Text style={[styles.rowName, { color: colors.text }]}>
-                  {item.name}
-                </Text>
-                <Text style={{ color: colors.textSecondary }}>
-                  {item.categoryName} · {item.currencyCode}
-                  {item.dueDayOfMonth != null &&
-                    ` · Due on the ${item.dueDayOfMonth}${ordinalSuffix(item.dueDayOfMonth)}`}
-                </Text>
-                <Text style={[styles.rowLine, { color: colors.text }]}>
+            <Card colors={colors} style={styles.planCard}>
+              <View style={styles.planHeader}>
+                <ProgressRing
+                  percent={percent}
+                  size={52}
+                  strokeWidth={5}
+                  trackColor={colors.border}
+                  fillColor={ringColor}
+                  label={`${Math.round(percent)}%`}
+                  labelColor={colors.text}
+                />
+                <View style={styles.planHeaderText}>
+                  <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={[styles.rowMeta, { color: colors.textSecondary }]}>
+                    {item.categoryName} · {item.currencyCode}
+                    {item.dueDayOfMonth != null &&
+                      ` · Due ${item.dueDayOfMonth}${ordinalSuffix(item.dueDayOfMonth)}`}
+                  </Text>
                   {isFullyPaid ? (
                     <Text style={[styles.fullyPaidText, { color: colors.success }]}>
                       ✓ Fully paid
                     </Text>
                   ) : (
-                    `Paid ${paidCount} of ${item.numberOfMonths} · Next due: ${item.currencyCode} ${nextAmountDue?.toFixed(0)}`
+                    <Text style={[typography.amountMono, styles.rowLine, { color: colors.text }]}>
+                      Paid {paidCount} of {item.numberOfMonths} · Next{' '}
+                      {item.currencyCode} {nextAmountDue?.toFixed(0)}
+                    </Text>
                   )}
-                </Text>
-                <Text style={{ color: colors.textSecondary }}>
-                  Remaining: {item.currencyCode} {remaining.toFixed(0)} of{' '}
-                  {item.totalRepayable.toFixed(0)}
-                </Text>
+                </View>
+              </View>
 
+              <View
+                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.min(100, percent)}%`, backgroundColor: ringColor },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.rowMeta, { color: colors.textSecondary }]}>
+                Remaining: {item.currencyCode} {remaining.toFixed(0)} of{' '}
+                {item.totalRepayable.toFixed(0)}
+              </Text>
+
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+              <View style={styles.planActionsRow}>
+                {!isFullyPaid && (
+                  <Pressable
+                    style={[styles.payNextButton, { backgroundColor: colors.primary }]}
+                    onPress={() => openPayModal(item)}>
+                    <CircleDollarSign size={14} color={colors.primaryText} />
+                    <Text style={[styles.payNextButtonText, { color: colors.primaryText }]}>
+                      Pay Next
+                    </Text>
+                  </Pressable>
+                )}
                 <Pressable
-                  onPress={() =>
-                    setExpandedPlanId(isExpanded ? null : item.id)
-                  }>
-                  <Text style={[styles.historyLink, { color: colors.primary }]}>
-                    {isExpanded
-                      ? 'Hide history'
-                      : `History (${payments.length})`}
+                  style={[styles.iconPillButton, { borderColor: colors.border }]}
+                  onPress={() => handleEditPress(item)}>
+                  <Pencil size={14} color={colors.text} />
+                  <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
+                    Edit
                   </Text>
                 </Pressable>
+                <Pressable
+                  style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
+                  onPress={() => handleDelete(item.id)}>
+                  <Trash2 size={14} color={colors.danger} />
+                  <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
+                    Delete
+                  </Text>
+                </Pressable>
+              </View>
 
-                {isExpanded && (
-                  <View style={styles.historyList}>
-                    {payments.length === 0 ? (
-                      <Text style={{ color: colors.textSecondary }}>
-                        No payments yet.
-                      </Text>
-                    ) : (
-                      payments.map((payment, index) => {
-                        const isLatest = index === payments.length - 1;
-                        return (
-                          <View
-                            key={payment.id}
-                            style={[
-                              styles.historyRow,
-                              { borderBottomColor: colors.border },
-                            ]}>
-                            <Text style={{ color: colors.text }}>
-                              #{payment.installmentNumber} — {payment.paidDate}{' '}
-                              — {item.currencyCode} {payment.amount.toFixed(0)}{' '}
-                              ({payment.accountName})
-                            </Text>
-                            {isLatest && (
-                              <Button
-                                title="Undo"
-                                color={colors.danger}
-                                onPress={() => handleUndo(payment)}
-                              />
-                            )}
-                          </View>
-                        );
-                      })
-                    )}
-                  </View>
-                )}
-              </View>
-              <View style={styles.rowActions}>
-                {!isFullyPaid && (
-                  <Button
-                    title="Pay Next"
-                    color={colors.primary}
-                    onPress={() => openPayModal(item)}
-                  />
-                )}
-                <Button
-                  title="Edit"
-                  color={colors.primary}
-                  onPress={() => handleEditPress(item)}
-                />
-                <Button
-                  title="Delete"
-                  color={colors.danger}
-                  onPress={() => handleDelete(item.id)}
-                />
-              </View>
-            </View>
+              <Pressable
+                onPress={() => setExpandedPlanId(isExpanded ? null : item.id)}>
+                <Text style={[styles.historyLink, { color: colors.primary }]}>
+                  {isExpanded ? 'Hide history' : `History (${payments.length})`}
+                </Text>
+              </Pressable>
+
+              {isExpanded && (
+                <View style={styles.historyList}>
+                  {payments.length === 0 ? (
+                    <Text style={{ color: colors.textSecondary }}>
+                      No payments yet.
+                    </Text>
+                  ) : (
+                    payments.map((payment, index) => {
+                      const isLatest = index === payments.length - 1;
+                      return (
+                        <View
+                          key={payment.id}
+                          style={[
+                            styles.historyRow,
+                            { borderBottomColor: colors.border },
+                          ]}>
+                          <Text style={[styles.historyRowText, { color: colors.text }]}>
+                            #{payment.installmentNumber} — {payment.paidDate}{' '}
+                            — {item.currencyCode} {payment.amount.toFixed(0)}{' '}
+                            ({payment.accountName})
+                          </Text>
+                          {isLatest && (
+                            <Pressable
+                              style={[styles.undoButton, { borderColor: colors.danger }]}
+                              onPress={() => handleUndo(payment)}>
+                              <Text style={[styles.undoButtonText, { color: colors.danger }]}>
+                                Undo
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+            </Card>
           );
         }}
         ListEmptyComponent={
@@ -1055,39 +1166,101 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   list: {
-    marginTop: 8,
+    marginTop: 4,
   },
   empty: {
     fontSize: 14,
     marginTop: 8,
   },
-  row: {
+  addButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
   },
-  rowDetails: {
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  planCard: {
+    padding: 14,
+    marginBottom: 10,
+  },
+  planHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  planHeaderText: {
     flex: 1,
+    marginLeft: 12,
   },
   rowName: {
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
-  rowLine: {
+  rowMeta: {
+    fontSize: scaleFont(12.5),
     marginTop: 2,
   },
-  rowActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
+  rowLine: {
+    fontSize: scaleFont(13),
+    marginTop: 4,
   },
-  historyLink: {
-    marginTop: 6,
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 12,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 12,
+  },
+  planActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  payNextButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 10,
+    paddingVertical: 8,
+  },
+  payNextButtonText: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '700',
+  },
+  iconPillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  iconPillButtonText: {
+    fontSize: scaleFont(12.5),
     fontWeight: '600',
   },
+  historyLink: {
+    fontWeight: '600',
+    fontSize: scaleFont(13),
+  },
   historyList: {
-    marginTop: 4,
+    marginTop: 8,
     gap: 4,
   },
   historyRow: {
@@ -1097,12 +1270,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  historyRowText: {
+    flex: 1,
+  },
+  undoButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  undoButtonText: {
+    fontSize: scaleFont(12),
+    fontWeight: '700',
+  },
   modalHint: {
     fontSize: 14,
     marginBottom: 8,
   },
   fullyPaidText: {
     fontWeight: '700',
+    marginTop: 4,
   },
   modalBackdrop: {
     flex: 1,

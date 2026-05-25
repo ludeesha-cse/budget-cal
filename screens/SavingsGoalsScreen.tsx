@@ -16,11 +16,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { Info, PiggyBank, Plus } from 'lucide-react-native';
+import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
   createSavingsGoal,
@@ -418,10 +421,14 @@ function SavingsGoalsScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.explainer, { color: colors.textSecondary }]}>
-        Contributions track progress toward a goal — they don't move money.
-        Your money stays in your real accounts until you actually spend it.
-      </Text>
+      <View style={[styles.infoBanner, { backgroundColor: colors.primarySoft }]}>
+        <Info size={14} color={colors.primary} />
+        <Text style={[styles.infoBannerText, { color: colors.text }]}>
+          Contributions track progress toward a goal — they don't move
+          money. Your money stays in your real accounts until you actually
+          spend it.
+        </Text>
+      </View>
 
       <View style={styles.toggleRow}>
         {(
@@ -434,14 +441,14 @@ function SavingsGoalsScreen(): React.JSX.Element {
             key={option.key}
             style={[
               styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.primary },
-              filter === option.key && { backgroundColor: colors.primary },
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              filter === option.key && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setFilter(option.key)}>
             <Text
               style={[
                 styles.toggleButtonText,
-                { color: colors.primary },
+                { color: colors.text },
                 filter === option.key && { color: colors.primaryText },
               ]}>
               {option.label}
@@ -449,6 +456,15 @@ function SavingsGoalsScreen(): React.JSX.Element {
           </Pressable>
         ))}
       </View>
+
+      <Pressable
+        style={[styles.addGoalButton, { borderColor: colors.primary }]}
+        onPress={handleAddGoalPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addGoalButtonText, { color: colors.primary }]}>
+          Add Goal
+        </Text>
+      </Pressable>
 
       {loading ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -469,25 +485,45 @@ function SavingsGoalsScreen(): React.JSX.Element {
             const expanded = expandedGoalId === goal.id;
             const contributions = contributionsByGoal[goal.id];
 
+            const funded = progressPct >= 100;
             return (
-              <View
-                style={[
-                  styles.card,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}>
-                <Text style={[styles.goalName, { color: colors.text }]}>
-                  {goal.name}
-                  {goal.status !== 'active' && (
-                    <Text style={{ color: colors.textSecondary }}>
-                      {' '}
-                      ({goal.status})
+              <Card colors={colors} style={styles.card}>
+                <View style={styles.goalHeader}>
+                  <View style={[styles.goalIcon, { backgroundColor: colors.primarySoft }]}>
+                    <PiggyBank size={16} color={colors.primary} />
+                  </View>
+                  <View style={styles.goalHeaderText}>
+                    <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>
+                      {goal.name}
+                      {goal.status !== 'active' && (
+                        <Text style={[styles.goalStatusTag, { color: colors.textSecondary }]}>
+                          {' '}
+                          ({goal.status})
+                        </Text>
+                      )}
                     </Text>
-                  )}
-                </Text>
-                <Text style={{ color: colors.textSecondary }}>
-                  {goal.currencyCode} {goal.totalContributed.toFixed(2)} of{' '}
-                  {goal.targetAmount.toFixed(2)}
-                </Text>
+                    <Text style={[typography.amountMono, styles.goalAmount, { color: colors.text }]}>
+                      {goal.currencyCode} {goal.totalContributed.toFixed(2)}{' '}
+                      <Text style={[styles.goalAmountOf, { color: colors.textSecondary }]}>
+                        of {goal.targetAmount.toFixed(2)}
+                      </Text>
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.fundedPill,
+                      { backgroundColor: funded ? colors.successSoft : colors.neutralSoft },
+                    ]}>
+                    <Text
+                      style={[
+                        typography.amountMono,
+                        styles.fundedPillText,
+                        { color: funded ? colors.success : colors.text },
+                      ]}>
+                      {progressPct.toFixed(0)}%
+                    </Text>
+                  </View>
+                </View>
 
                 <View
                   style={[
@@ -499,15 +535,11 @@ function SavingsGoalsScreen(): React.JSX.Element {
                       styles.progressBarFill,
                       {
                         width: `${Math.min(Math.max(progressPct, 0), 100)}%`,
-                        backgroundColor:
-                          progressPct >= 100 ? colors.success : colors.primary,
+                        backgroundColor: funded ? colors.success : colors.primary,
                       },
                     ]}
                   />
                 </View>
-                <Text style={{ color: colors.textSecondary }}>
-                  {progressPct.toFixed(0)}% funded
-                </Text>
 
                 {goal.targetDate ? (
                   requiredPerMonth === null ? (
@@ -515,13 +547,13 @@ function SavingsGoalsScreen(): React.JSX.Element {
                       Overdue — target date {goal.targetDate} has passed
                     </Text>
                   ) : (
-                    <Text style={{ color: colors.textSecondary }}>
+                    <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
                       Target {goal.targetDate} — {goal.currencyCode}{' '}
                       {(requiredPerMonth ?? 0).toFixed(2)}/month needed
                     </Text>
                   )
                 ) : (
-                  <Text style={{ color: colors.textSecondary }}>
+                  <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
                     No target date set
                   </Text>
                 )}
@@ -571,17 +603,19 @@ function SavingsGoalsScreen(): React.JSX.Element {
                               placeholder="Amount"
                               placeholderTextColor={colors.textSecondary}
                             />
-                            <Button
-                              title={editDate}
-                              color={colors.primary}
+                            <Pressable
+                              style={[styles.smallPillButton, { borderColor: colors.border }]}
                               onPress={() => {
                                 Keyboard.dismiss();
                                 setDatePickerTarget({
                                   kind: 'editContribution',
                                   contributionId: contribution.id,
                                 });
-                              }}
-                            />
+                              }}>
+                              <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                {editDate}
+                              </Text>
+                            </Pressable>
                             <TextInput
                               style={[
                                 styles.input,
@@ -597,16 +631,20 @@ function SavingsGoalsScreen(): React.JSX.Element {
                               placeholderTextColor={colors.textSecondary}
                             />
                             <View style={styles.rowActions}>
-                              <Button
-                                title="Cancel"
-                                color={colors.primary}
-                                onPress={() => setEditingContributionId(null)}
-                              />
-                              <Button
-                                title="Save"
-                                color={colors.primary}
-                                onPress={() => handleSaveEditContribution(goal.id)}
-                              />
+                              <Pressable
+                                style={[styles.smallPillButton, { borderColor: colors.border }]}
+                                onPress={() => setEditingContributionId(null)}>
+                                <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                  Cancel
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                style={[styles.smallPillButtonSolid, { backgroundColor: colors.primary }]}
+                                onPress={() => handleSaveEditContribution(goal.id)}>
+                                <Text style={[styles.smallPillButtonText, { color: colors.primaryText }]}>
+                                  Save
+                                </Text>
+                              </Pressable>
                             </View>
                             <NumericInputAccessory />
                           </View>
@@ -623,16 +661,20 @@ function SavingsGoalsScreen(): React.JSX.Element {
                               {contribution.note ? ` — ${contribution.note}` : ''}
                             </Text>
                             <View style={styles.rowActions}>
-                              <Button
-                                title="Edit"
-                                color={colors.primary}
-                                onPress={() => handleStartEditContribution(contribution)}
-                              />
-                              <Button
-                                title="Delete"
-                                color={colors.danger}
-                                onPress={() => handleDeleteContribution(goal.id, contribution)}
-                              />
+                              <Pressable
+                                style={[styles.smallPillButton, { borderColor: colors.border }]}
+                                onPress={() => handleStartEditContribution(contribution)}>
+                                <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                  Edit
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]}
+                                onPress={() => handleDeleteContribution(goal.id, contribution)}>
+                                <Text style={[styles.smallPillButtonText, { color: colors.danger }]}>
+                                  Delete
+                                </Text>
+                              </Pressable>
                             </View>
                           </View>
                         ),
@@ -665,17 +707,19 @@ function SavingsGoalsScreen(): React.JSX.Element {
                           <Text style={[styles.label, { color: colors.text }]}>
                             Date
                           </Text>
-                          <Button
-                            title={contributionDate}
-                            color={colors.primary}
+                          <Pressable
+                            style={[styles.smallPillButton, { borderColor: colors.border }]}
                             onPress={() => {
                               Keyboard.dismiss();
                               setDatePickerTarget({
                                 kind: 'newContribution',
                                 goalId: goal.id,
                               });
-                            }}
-                          />
+                            }}>
+                            <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                              {contributionDate}
+                            </Text>
+                          </Pressable>
                           <Text style={[styles.label, { color: colors.text }]}>
                             Note (optional)
                           </Text>
@@ -694,64 +738,81 @@ function SavingsGoalsScreen(): React.JSX.Element {
                             placeholderTextColor={colors.textSecondary}
                           />
                           <View style={styles.rowActions}>
-                            <Button
-                              title="Cancel"
-                              color={colors.primary}
-                              onPress={() => setAddingContributionFor(null)}
-                            />
-                            <Button
-                              title="Add"
-                              color={colors.primary}
-                              onPress={() => handleSubmitContribution(goal)}
-                            />
+                            <Pressable
+                              style={[styles.smallPillButton, { borderColor: colors.border }]}
+                              onPress={() => setAddingContributionFor(null)}>
+                              <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                Cancel
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.smallPillButtonSolid, { backgroundColor: colors.primary }]}
+                              onPress={() => handleSubmitContribution(goal)}>
+                              <Text style={[styles.smallPillButtonText, { color: colors.primaryText }]}>
+                                Add
+                              </Text>
+                            </Pressable>
                           </View>
                           <NumericInputAccessory />
                         </View>
                       ) : (
-                        <View style={styles.addContributionButton}>
-                          <Button
-                            title="Add Contribution"
-                            color={colors.primary}
-                            onPress={() => handleOpenAddContribution(goal)}
-                          />
-                        </View>
+                        <Pressable
+                          style={[styles.addContributionButton, { borderColor: colors.primary }]}
+                          onPress={() => handleOpenAddContribution(goal)}>
+                          <Plus size={14} color={colors.primary} strokeWidth={2.5} />
+                          <Text style={[styles.addContributionButtonText, { color: colors.primary }]}>
+                            Add Contribution
+                          </Text>
+                        </Pressable>
                       ))}
 
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
                     <View style={styles.goalActions}>
-                      <Button
-                        title="Edit Goal"
-                        color={colors.primary}
-                        onPress={() => handleEditGoalPress(goal)}
-                      />
+                      <Pressable
+                        style={[styles.actionPill, { borderColor: colors.border }]}
+                        onPress={() => handleEditGoalPress(goal)}>
+                        <Text style={[styles.actionPillText, { color: colors.text }]}>
+                          Edit Goal
+                        </Text>
+                      </Pressable>
                       {goal.status === 'active' ? (
                         <>
-                          <Button
-                            title="Mark Achieved"
-                            color={colors.success}
-                            onPress={() => handleSetStatus(goal, 'achieved')}
-                          />
-                          <Button
-                            title="Abandon"
-                            color={colors.warning}
-                            onPress={() => handleSetStatus(goal, 'abandoned')}
-                          />
+                          <Pressable
+                            style={[styles.actionPill, { borderColor: colors.success }]}
+                            onPress={() => handleSetStatus(goal, 'achieved')}>
+                            <Text style={[styles.actionPillText, { color: colors.success }]}>
+                              Mark Achieved
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.actionPill, { borderColor: colors.warning }]}
+                            onPress={() => handleSetStatus(goal, 'abandoned')}>
+                            <Text style={[styles.actionPillText, { color: colors.warning }]}>
+                              Abandon
+                            </Text>
+                          </Pressable>
                         </>
                       ) : (
-                        <Button
-                          title="Reactivate"
-                          color={colors.primary}
-                          onPress={() => handleSetStatus(goal, 'active')}
-                        />
+                        <Pressable
+                          style={[styles.actionPill, { borderColor: colors.primary }]}
+                          onPress={() => handleSetStatus(goal, 'active')}>
+                          <Text style={[styles.actionPillText, { color: colors.primary }]}>
+                            Reactivate
+                          </Text>
+                        </Pressable>
                       )}
-                      <Button
-                        title="Delete"
-                        color={colors.danger}
-                        onPress={() => handleDeleteGoal(goal)}
-                      />
+                      <Pressable
+                        style={[styles.actionPill, { borderColor: colors.dangerSoft }]}
+                        onPress={() => handleDeleteGoal(goal)}>
+                        <Text style={[styles.actionPillText, { color: colors.danger }]}>
+                          Delete
+                        </Text>
+                      </Pressable>
                     </View>
                   </View>
                 )}
-              </View>
+              </Card>
             );
           }}
           ListEmptyComponent={
@@ -763,10 +824,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
           }
         />
       )}
-
-      <View style={styles.addGoalButton}>
-        <Button title="Add Goal" color={colors.primary} onPress={handleAddGoalPress} />
-      </View>
 
       <BottomSheetModal
         visible={formVisible}
@@ -840,20 +897,24 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     Target date (optional)
                   </Text>
                   <View style={styles.rowActions}>
-                    <Button
-                      title={goalTargetDate ?? 'No target date'}
-                      color={colors.primary}
+                    <Pressable
+                      style={[styles.smallPillButton, { borderColor: colors.border }]}
                       onPress={() => {
                         Keyboard.dismiss();
                         setDatePickerTarget({ kind: 'goalForm' });
-                      }}
-                    />
+                      }}>
+                      <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                        {goalTargetDate ?? 'No target date'}
+                      </Text>
+                    </Pressable>
                     {goalTargetDate && (
-                      <Button
-                        title="Clear"
-                        color={colors.danger}
-                        onPress={() => setGoalTargetDate(null)}
-                      />
+                      <Pressable
+                        style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]}
+                        onPress={() => setGoalTargetDate(null)}>
+                        <Text style={[styles.smallPillButtonText, { color: colors.danger }]}>
+                          Clear
+                        </Text>
+                      </Pressable>
                     )}
                   </View>
 
@@ -911,9 +972,18 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  explainer: {
-    fontSize: 13,
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 12,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: scaleFont(12.5),
+    lineHeight: scaleFont(18),
   },
   toggleRow: {
     flexDirection: 'row',
@@ -922,13 +992,28 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
+    borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center',
   },
   toggleButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+  },
+  addGoalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  addGoalButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   list: {
     marginTop: 12,
@@ -938,19 +1023,56 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   card: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    padding: 12,
+    padding: 14,
     marginBottom: 12,
   },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  goalIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  goalHeaderText: {
+    flex: 1,
+  },
   goalName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  goalStatusTag: {
+    fontWeight: '400',
+    fontSize: scaleFont(13),
+  },
+  goalAmount: {
+    fontSize: scaleFont(14),
+    marginTop: 2,
+  },
+  goalAmountOf: {
+    fontWeight: '400',
+  },
+  fundedPill: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginLeft: 8,
+  },
+  fundedPillText: {
+    fontSize: scaleFont(13),
+  },
+  goalMeta: {
+    fontSize: scaleFont(12.5),
+    marginTop: 8,
   },
   progressBarBg: {
     height: 8,
     borderRadius: 4,
-    marginTop: 8,
+    marginTop: 10,
     overflow: 'hidden',
   },
   progressBarFill: {
@@ -958,14 +1080,21 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   detailsLink: {
-    marginTop: 8,
+    marginTop: 10,
     fontWeight: '600',
+    fontSize: scaleFont(13),
   },
   overdueText: {
     fontWeight: '600',
+    fontSize: scaleFont(12.5),
+    marginTop: 8,
   },
   detailsSection: {
     marginTop: 8,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 10,
   },
   subheading: {
     fontSize: 14,
@@ -981,22 +1110,57 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   addContributionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    paddingVertical: 10,
     marginTop: 12,
+  },
+  addContributionButtonText: {
+    fontSize: scaleFont(13),
+    fontWeight: '700',
   },
   goalActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 16,
+    gap: 8,
+  },
+  actionPill: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  actionPillText: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
+  },
+  smallPillButton: {
+    alignSelf: 'flex-start',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  smallPillButtonSolid: {
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  smallPillButtonText: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
   },
   rowActions: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
     gap: 8,
     marginTop: 4,
-  },
-  addGoalButton: {
-    marginTop: 12,
   },
   modalBackdrop: {
     flex: 1,

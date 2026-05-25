@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Button,
   FlatList,
   Pressable,
   StyleSheet,
@@ -10,6 +9,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ban, CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react-native';
+import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
@@ -28,6 +29,15 @@ import {
   type NewRecurringRuleParams,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import { scaleFont, typography } from '../theme/typography';
+
+// Same "cycle the chart palette + alpha background" convention as the day
+// badge on each rule row — consistent with the avatar treatment on
+// Categories/Tags/Liabilities rows elsewhere in the app.
+function badgeColorsFor(seed: number, chart: string[]): { bg: string; fg: string } {
+  const base = chart[seed % chart.length];
+  return { bg: `${base}26`, fg: base };
+}
 
 // Same exclusion as TransactionForm/IncomeForm — a Liability/Receivable
 // account only ever moves through the loan flows, never an ordinary
@@ -307,14 +317,14 @@ function RecurringRulesScreen(): React.JSX.Element {
             key={option}
             style={[
               styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.primary },
-              listType === option && { backgroundColor: colors.primary },
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              listType === option && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setListType(option)}>
             <Text
               style={[
                 styles.toggleButtonText,
-                { color: colors.primary },
+                { color: colors.text },
                 listType === option && { color: colors.primaryText },
               ]}>
               {option} rules
@@ -322,6 +332,15 @@ function RecurringRulesScreen(): React.JSX.Element {
           </Pressable>
         ))}
       </View>
+
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.primary }]}
+        onPress={handleAddPress}>
+        <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+        <Text style={[styles.addButtonText, { color: colors.primary }]}>
+          Add Rule
+        </Text>
+      </Pressable>
 
       {loading ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
@@ -332,29 +351,74 @@ function RecurringRulesScreen(): React.JSX.Element {
           data={visibleRules}
           keyExtractor={item => String(item.id)}
           style={styles.list}
-          renderItem={({ item }) => (
-            <View style={[styles.row, { borderBottomColor: colors.border }]}>
-              <View style={styles.rowDetails}>
-                <Text style={[styles.rowName, { color: colors.text }]}>
-                  {item.name}
-                  {!item.active && (
-                    <Text style={{ color: colors.textSecondary }}>
-                      {' '}
-                      (inactive)
+          renderItem={({ item, index }) => {
+            const { bg, fg } = badgeColorsFor(index, colors.chart);
+            return (
+              <Card colors={colors} style={[styles.ruleCard, !item.active && styles.ruleCardInactive]}>
+                <View style={styles.ruleHeader}>
+                  <View style={[styles.dayBadge, { backgroundColor: bg }]}>
+                    <Text style={[styles.dayBadgeText, { color: fg }]}>
+                      {item.dayOfMonth}
                     </Text>
-                  )}
-                </Text>
-                <Text style={{ color: colors.textSecondary }}>
-                  {item.currencyCode} {item.amount.toFixed(2)} — day{' '}
-                  {item.dayOfMonth} — {item.accountName}
-                  {item.ruleType === 'Expense' && item.categoryName
-                    ? ` — ${item.categoryName}`
-                    : ''}
-                </Text>
+                  </View>
+                  <View style={styles.ruleHeaderText}>
+                    <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                      {item.name}
+                      {!item.active && (
+                        <Text style={[styles.inactiveTag, { color: colors.textSecondary }]}>
+                          {' '}
+                          (inactive)
+                        </Text>
+                      )}
+                    </Text>
+                    <Text style={[typography.amountMono, styles.rowMeta, { color: colors.text }]}>
+                      {item.currencyCode} {item.amount.toFixed(2)}
+                    </Text>
+                    <Text style={[styles.rowSubMeta, { color: colors.textSecondary }]}>
+                      Day {item.dayOfMonth} · {item.accountName}
+                      {item.ruleType === 'Expense' && item.categoryName
+                        ? ` · ${item.categoryName}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <View style={styles.ruleActionsRow}>
+                  <Pressable
+                    style={[styles.iconPillButton, { borderColor: colors.border }]}
+                    onPress={() => handleEditPress(item)}>
+                    <Pencil size={14} color={colors.text} />
+                    <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
+                      Edit
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.iconPillButton, { borderColor: colors.border }]}
+                    onPress={() => handleToggleActive(item)}>
+                    {item.active ? (
+                      <Ban size={14} color={colors.text} />
+                    ) : (
+                      <CheckCircle2 size={14} color={colors.text} />
+                    )}
+                    <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
+                      {item.active ? 'Deactivate' : 'Activate'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
+                    onPress={() => handleDelete(item)}>
+                    <Trash2 size={14} color={colors.danger} />
+                    <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
+                      Delete
+                    </Text>
+                  </Pressable>
+                </View>
 
                 <Pressable onPress={() => handleToggleHistory(item)}>
                   <Text style={[styles.historyLink, { color: colors.primary }]}>
-                    {expandedRuleId === item.id ? 'Hide history' : 'History'}
+                    {expandedRuleId === item.id ? 'Hide history' : 'View history'}
                   </Text>
                 </Pressable>
 
@@ -395,26 +459,9 @@ function RecurringRulesScreen(): React.JSX.Element {
                     )}
                   </View>
                 )}
-              </View>
-              <View style={styles.rowActions}>
-                <Button
-                  title="Edit"
-                  color={colors.primary}
-                  onPress={() => handleEditPress(item)}
-                />
-                <Button
-                  title={item.active ? 'Deactivate' : 'Activate'}
-                  color={colors.primary}
-                  onPress={() => handleToggleActive(item)}
-                />
-                <Button
-                  title="Delete"
-                  color={colors.danger}
-                  onPress={() => handleDelete(item)}
-                />
-              </View>
-            </View>
-          )}
+              </Card>
+            );
+          }}
           ListEmptyComponent={
             <Text style={[styles.empty, { color: colors.textSecondary }]}>
               {listType === 'Income'
@@ -424,10 +471,6 @@ function RecurringRulesScreen(): React.JSX.Element {
           }
         />
       )}
-
-      <View style={styles.addButton}>
-        <Button title="Add Rule" color={colors.primary} onPress={handleAddPress} />
-      </View>
 
       <BottomSheetModal
         visible={formVisible}
@@ -629,39 +672,97 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
-  row: {
+  addButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 12,
   },
-  rowDetails: {
+  addButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  ruleCard: {
+    padding: 14,
+    marginBottom: 10,
+  },
+  ruleCardInactive: {
+    opacity: 0.6,
+  },
+  ruleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dayBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  dayBadgeText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  ruleHeaderText: {
     flex: 1,
   },
   rowName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
-  rowActions: {
+  inactiveTag: {
+    fontWeight: '400',
+  },
+  rowMeta: {
+    fontSize: scaleFont(14),
+    marginTop: 2,
+  },
+  rowSubMeta: {
+    fontSize: scaleFont(12.5),
+    marginTop: 2,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 12,
+  },
+  ruleActionsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  iconPillButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+  },
+  iconPillButtonText: {
+    fontSize: scaleFont(12),
+    fontWeight: '600',
   },
   historyLink: {
-    marginTop: 6,
     fontWeight: '600',
+    fontSize: scaleFont(13),
   },
   historyList: {
-    marginTop: 4,
+    marginTop: 8,
     gap: 4,
   },
   historyRow: {
     paddingVertical: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  addButton: {
-    marginTop: 12,
   },
   label: {
     fontSize: 14,
