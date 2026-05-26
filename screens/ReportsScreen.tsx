@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -13,6 +12,8 @@ import { BarChart, PieChart } from 'react-native-gifted-charts';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
+import EmptyState from '../components/common/EmptyState';
+import SegmentedToggle from '../components/common/SegmentedToggle';
 import {
   getCurrencies,
   getDefaultCurrency,
@@ -313,30 +314,7 @@ function ReportsScreen(): React.JSX.Element {
         </Text>
       </View>
 
-      <View style={styles.toggleRow}>
-        {PRESET_OPTIONS.map(option => (
-          <Pressable
-            key={option.key}
-            style={[
-              styles.toggleButton,
-              { borderColor: colors.border, backgroundColor: colors.surface },
-              preset === option.key && {
-                backgroundColor: colors.primary,
-                borderColor: colors.primary,
-              },
-            ]}
-            onPress={() => setPreset(option.key)}>
-            <Text
-              style={[
-                styles.toggleButtonText,
-                { color: colors.text },
-                preset === option.key && { color: colors.primaryText },
-              ]}>
-              {option.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedToggle options={PRESET_OPTIONS} value={preset} onChange={setPreset} />
 
       <Text
         style={[
@@ -376,13 +354,9 @@ function ReportsScreen(): React.JSX.Element {
       </View>
 
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : currencyId == null || !summary ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          No transactions in this range yet.
-        </Text>
+        <EmptyState message="No transactions in this range yet." />
       ) : (
         <>
           <Card colors={colors} style={[styles.card, styles.summaryCard]}>
@@ -708,22 +682,6 @@ const styles = StyleSheet.create({
   eyebrow: {
     marginBottom: 4,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 20,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontSize: scaleFont(13),
-    fontWeight: '700',
-    textAlign: 'center',
-  },
   rangeLabel: {
     fontSize: scaleFont(13),
     marginTop: 12,
@@ -746,10 +704,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
     marginRight: 12,
-  },
-  empty: {
-    fontSize: scaleFont(14),
-    marginTop: 12,
   },
   sectionLabel: {
     marginTop: 22,

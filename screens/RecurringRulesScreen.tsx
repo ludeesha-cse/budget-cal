@@ -16,6 +16,10 @@ import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
+import SegmentedToggle, {
+  type SegmentedToggleOption,
+} from '../components/common/SegmentedToggle';
 import {
   createRecurringRule,
   deleteRecurringRule,
@@ -28,16 +32,22 @@ import {
   updateRecurringRule,
   type NewRecurringRuleParams,
 } from '../db/queries';
+import { avatarColorsFor } from '../utils/avatarColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
-// Same "cycle the chart palette + alpha background" convention as the day
-// badge on each rule row — consistent with the avatar treatment on
-// Categories/Tags/Liabilities rows elsewhere in the app.
-function badgeColorsFor(seed: number, chart: string[]): { bg: string; fg: string } {
-  const base = chart[seed % chart.length];
-  return { bg: `${base}26`, fg: base };
-}
+// List-filter labels ("Income rules"/"Expense rules") and the form's own
+// type toggle ("Income"/"Expense") show the same two keys with different
+// wording, so they need their own option arrays even though both drive a
+// SegmentedToggle.
+const LIST_TYPE_OPTIONS: SegmentedToggleOption<'Income' | 'Expense'>[] = [
+  { key: 'Income', label: 'Income rules' },
+  { key: 'Expense', label: 'Expense rules' },
+];
+const RULE_TYPE_OPTIONS: SegmentedToggleOption<'Income' | 'Expense'>[] = [
+  { key: 'Income', label: 'Income' },
+  { key: 'Expense', label: 'Expense' },
+];
 
 // Same exclusion as TransactionForm/IncomeForm — a Liability/Receivable
 // account only ever moves through the loan flows, never an ordinary
@@ -154,6 +164,19 @@ function RecurringRulesScreen(): React.JSX.Element {
   const handleAddPress = () => {
     resetForm();
     setFormVisible(true);
+  };
+
+  const handleRuleTypeChange = (option: 'Income' | 'Expense') => {
+    setRuleType(option);
+    // Selecting Income hides the category picker entirely (see the render
+    // below) rather than leaving it present-but-unused — clearing it here
+    // means an Income rule never silently carries a category picked
+    // before the switch.
+    if (option === 'Income') {
+      setCategoryId(null);
+    } else if (categoryId == null) {
+      setCategoryId(categories[0]?.id ?? null);
+    }
   };
 
   const handleEditPress = (rule: RuleRow) => {
@@ -311,27 +334,11 @@ function RecurringRulesScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.toggleRow}>
-        {(['Income', 'Expense'] as const).map(option => (
-          <Pressable
-            key={option}
-            style={[
-              styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-              listType === option && { backgroundColor: colors.primary, borderColor: colors.primary },
-            ]}
-            onPress={() => setListType(option)}>
-            <Text
-              style={[
-                styles.toggleButtonText,
-                { color: colors.text },
-                listType === option && { color: colors.primaryText },
-              ]}>
-              {option} rules
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedToggle
+        options={LIST_TYPE_OPTIONS}
+        value={listType}
+        onChange={setListType}
+      />
 
       <Pressable
         style={[styles.addButton, { borderColor: colors.primary }]}
@@ -343,16 +350,14 @@ function RecurringRulesScreen(): React.JSX.Element {
       </Pressable>
 
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : (
         <FlatList
           data={visibleRules}
           keyExtractor={item => String(item.id)}
           style={styles.list}
           renderItem={({ item, index }) => {
-            const { bg, fg } = badgeColorsFor(index, colors.chart);
+            const { bg, fg } = avatarColorsFor(index, colors.chart);
             return (
               <Card colors={colors} style={[styles.ruleCard, !item.active && styles.ruleCardInactive]}>
                 <View style={styles.ruleHeader}>
@@ -463,11 +468,7 @@ function RecurringRulesScreen(): React.JSX.Element {
             );
           }}
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              {listType === 'Income'
-                ? 'No income rules yet.'
-                : 'No expense rules yet.'}
-            </Text>
+            <EmptyState message={listType === 'Income' ? 'No income rules yet.' : 'No expense rules yet.'} />
           }
         />
       )}
@@ -482,39 +483,11 @@ function RecurringRulesScreen(): React.JSX.Element {
                   <Text style={[styles.label, { color: colors.text }]}>
                     Type
                   </Text>
-                  <View style={styles.toggleRow}>
-                    {(['Income', 'Expense'] as const).map(option => (
-                      <Pressable
-                        key={option}
-                        style={[
-                          styles.toggleButton,
-                          { backgroundColor: colors.surface, borderColor: colors.primary },
-                          ruleType === option && { backgroundColor: colors.primary },
-                        ]}
-                        onPress={() => {
-                          setRuleType(option);
-                          // Selecting Income hides the category picker
-                          // entirely (see the render below) rather than
-                          // leaving it present-but-unused — clearing it
-                          // here means an Income rule never silently
-                          // carries a category picked before the switch.
-                          if (option === 'Income') {
-                            setCategoryId(null);
-                          } else if (categoryId == null) {
-                            setCategoryId(categories[0]?.id ?? null);
-                          }
-                        }}>
-                        <Text
-                          style={[
-                            styles.toggleButtonText,
-                            { color: colors.primary },
-                            ruleType === option && { color: colors.primaryText },
-                          ]}>
-                          {option}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
+                  <SegmentedToggle
+                    options={RULE_TYPE_OPTIONS}
+                    value={ruleType}
+                    onChange={handleRuleTypeChange}
+                  />
 
                   <Text style={[styles.label, { color: colors.text }]}>
                     Name
@@ -569,9 +542,7 @@ function RecurringRulesScreen(): React.JSX.Element {
                     Account
                   </Text>
                   {accounts.length === 0 ? (
-                    <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                      No eligible accounts available.
-                    </Text>
+                    <EmptyState message="No eligible accounts available." />
                   ) : (
                     <CollapsiblePicker
                       displayLabel={
@@ -613,9 +584,7 @@ function RecurringRulesScreen(): React.JSX.Element {
                         Category
                       </Text>
                       {categories.length === 0 ? (
-                        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                          No categories available.
-                        </Text>
+                        <EmptyState message="No categories available." />
                       ) : (
                         <CollapsiblePicker
                           displayLabel={
@@ -650,27 +619,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   list: {
     marginTop: 12,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   addButton: {
     flexDirection: 'row',

@@ -2,6 +2,8 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Card from '../components/Card';
+import EmptyState from '../components/common/EmptyState';
+import ProgressBar from '../components/common/ProgressBar';
 import { getExpensesByType } from '../db/queries';
 import { getCurrentMonthString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
@@ -45,9 +47,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : sorted.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          No expenses recorded this month.
-        </Text>
+        <EmptyState message="No expenses recorded this month." />
       ) : (
         <FlatList
           style={styles.list}
@@ -67,15 +67,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
                     {item.total.toFixed(2)}
                   </Text>
                 </View>
-                <View
-                  style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      { width: `${percent}%`, backgroundColor: dotColor },
-                    ]}
-                  />
-                </View>
+                <ProgressBar percent={percent} color={dotColor} style={styles.progressTrack} />
               </Card>
             );
           }}
@@ -127,19 +119,7 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(15),
   },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
     marginTop: 10,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  empty: {
-    fontSize: 15,
-    marginTop: 24,
-    textAlign: 'center',
   },
   hint: {
     fontSize: scaleFont(12.5),

@@ -5,7 +5,6 @@ import {
   FlatList,
   Keyboard,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,9 +13,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Search, Trash2, Wallet } from 'lucide-react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import type { HistoryStackParamList } from '../navigation/types';
@@ -38,11 +34,12 @@ import {
   updateTransfer,
 } from '../db/queries';
 import {
-  formatDateString,
   getCurrentMonthString,
   getCurrentYearString,
 } from '../utils/date';
 import MonthYearPicker, { MONTH_OPTIONS } from '../components/MonthYearPicker';
+import EmptyState from '../components/common/EmptyState';
+import DateField from '../components/common/DateField';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -152,8 +149,6 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
     useState<TransferRow | null>(null);
   const [editTransferAmount, setEditTransferAmount] = useState('');
   const [editTransferDate, setEditTransferDate] = useState('');
-  const [showEditTransferDatePicker, setShowEditTransferDatePicker] =
-    useState(false);
 
   // Loads each currently-displayed transaction's own tags in one batch —
   // small dataset (a personal tracker's month or search-result page), so
@@ -283,19 +278,6 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
     setEditTransferTarget(transfer);
     setEditTransferAmount(String(transfer.amount));
     setEditTransferDate(transfer.date);
-    setShowEditTransferDatePicker(false);
-  };
-
-  const handleEditTransferDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setEditTransferDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowEditTransferDatePicker(false);
-    }
   };
 
   const handleEditTransferSubmit = async () => {
@@ -425,15 +407,9 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
       </Text>
 
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : rows.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          {isSearchMode
-            ? 'No matches for your search.'
-            : 'No transactions found.'}
-        </Text>
+        <EmptyState message={isSearchMode ? 'No matches for your search.' : 'No transactions found.'} />
       ) : (
         <FlatList
           data={rows}
@@ -716,52 +692,9 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 <Text style={[styles.label, { color: colors.text }]}>Date</Text>
                 <View style={styles.dateRow}>
                   <View style={styles.dateButton}>
-                    <Button
-                      title={editTransferDate}
-                      color={colors.primary}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        setShowEditTransferDatePicker(true);
-                      }}
-                    />
+                    <DateField value={editTransferDate} onChange={setEditTransferDate} />
                   </View>
                 </View>
-                {Platform.OS === 'android' ? (
-                  showEditTransferDatePicker && (
-                    <DateTimePicker
-                      value={new Date(editTransferDate)}
-                      mode="date"
-                      display="default"
-                      onChange={handleEditTransferDateChange}
-                    />
-                  )
-                ) : (
-                  <Modal
-                    visible={showEditTransferDatePicker}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowEditTransferDatePicker(false)}>
-                    <Pressable
-                      style={styles.modalBackdrop}
-                      onPress={() => setShowEditTransferDatePicker(false)}>
-                      <Pressable
-                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                        onPress={() => {}}>
-                        <DateTimePicker
-                          value={new Date(editTransferDate)}
-                          mode="date"
-                          display="spinner"
-                          onChange={handleEditTransferDateChange}
-                        />
-                        <Button
-                          title="Done"
-                          color={colors.primary}
-                          onPress={() => setShowEditTransferDatePicker(false)}
-                        />
-                      </Pressable>
-                    </Pressable>
-                  </Modal>
-                )}
 
                 <View style={styles.formActions}>
                   <Button
@@ -799,9 +732,6 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     marginBottom: 4,
-  },
-  empty: {
-    padding: 16,
   },
   row: {
     flexDirection: 'row',

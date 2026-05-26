@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Crown, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
+import EmptyState from '../components/common/EmptyState';
 import {
   addCurrency,
   deleteCurrency,
@@ -156,9 +157,7 @@ function CurrenciesScreen(): React.JSX.Element {
           </Card>
         )}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No currencies yet.
-          </Text>
+          <EmptyState message="No currencies yet." />
         }
       />
 
@@ -235,10 +234,6 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 16,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   row: {
     flexDirection: 'row',

@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Button,
   FlatList,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,10 +10,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
-import Svg, { Circle } from 'react-native-svg';
 import { CircleDollarSign, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
@@ -25,6 +17,13 @@ import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
+import SegmentedToggle, {
+  type SegmentedToggleOption,
+} from '../components/common/SegmentedToggle';
+import DateField from '../components/common/DateField';
+import ProgressRing from '../components/common/ProgressRing';
+import ProgressBar from '../components/common/ProgressBar';
 import { scaleFont, typography } from '../theme/typography';
 import {
   createInstallmentPlan,
@@ -58,6 +57,11 @@ type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 type Mode = 'principal' | 'monthly';
 
+const MODE_OPTIONS: SegmentedToggleOption<Mode>[] = [
+  { key: 'principal', label: 'Principal + Rate' },
+  { key: 'monthly', label: 'Fixed Monthly' },
+];
+
 // "1st" / "2nd" / "3rd" / "4th" — only ever fed a day-of-month (1-31) from
 // this screen, so no need to handle negative numbers or anything outside
 // that range.
@@ -67,74 +71,6 @@ function ordinalSuffix(day: number): string {
   if (day % 10 === 3 && day !== 13) return 'rd';
   return 'th';
 }
-
-// Small ring showing paid-installment progress per plan — plain SVG
-// (Circle + strokeDasharray), same library Card.tsx already pulls in for
-// its gradient sheen, so this doesn't add a new dependency. Local to this
-// screen since it's the only place a per-row progress ring is needed.
-function ProgressRing({
-  percent,
-  size,
-  strokeWidth,
-  trackColor,
-  fillColor,
-  label,
-  labelColor,
-}: {
-  percent: number;
-  size: number;
-  strokeWidth: number;
-  trackColor: string;
-  fillColor: string;
-  label: string;
-  labelColor: string;
-}): React.JSX.Element {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const clamped = Math.min(100, Math.max(0, percent));
-  const dashOffset = circumference * (1 - clamped / 100);
-  return (
-    <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={trackColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={fillColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </Svg>
-      <View style={ringStyles.center} pointerEvents="none">
-        <Text style={[ringStyles.label, { color: labelColor }]}>{label}</Text>
-      </View>
-    </View>
-  );
-}
-
-const ringStyles = StyleSheet.create({
-  center: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  label: {
-    fontSize: scaleFont(11),
-    fontWeight: '700',
-  },
-});
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
@@ -159,7 +95,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   const [payTarget, setPayTarget] = useState<PlanRow | null>(null);
   const [payAccountId, setPayAccountId] = useState('');
   const [payDate, setPayDate] = useState(formatDateString(new Date()));
-  const [showPayDatePicker, setShowPayDatePicker] = useState(false);
 
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -181,7 +116,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   const [categoryId, setCategoryId] = useState('');
   const [currencyId, setCurrencyId] = useState('');
   const [startDate, setStartDate] = useState(formatDateString(new Date()));
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -234,7 +168,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     setCategoryId(categories[0] ? String(categories[0].id) : '');
     setCurrencyId(defaultCurrencyId());
     setStartDate(formatDateString(new Date()));
-    setShowDatePicker(false);
     setError(null);
   };
 
@@ -263,21 +196,8 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     setCategoryId(String(plan.categoryId));
     setCurrencyId(String(plan.currencyId));
     setStartDate(plan.startDate);
-    setShowDatePicker(false);
     setError(null);
     setFormVisible(true);
-  };
-
-  const handleDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setStartDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
   };
 
   // Live preview only — same math the DB layer runs, computed here purely
@@ -517,7 +437,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     setPayTarget(plan);
     setPayAccountId(activeAccounts[0] ? String(activeAccounts[0].id) : '');
     setPayDate(formatDateString(new Date()));
-    setShowPayDatePicker(false);
   };
 
   // Arriving here via Dashboard's installment reminder "Pay" button —
@@ -538,18 +457,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plans, route.params?.payPlanId]);
-
-  const handlePayDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setPayDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowPayDatePicker(false);
-    }
-  };
 
   const handlePaySubmit = async () => {
     if (!payTarget) {
@@ -691,15 +598,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                 </View>
               </View>
 
-              <View
-                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${Math.min(100, percent)}%`, backgroundColor: ringColor },
-                  ]}
-                />
-              </View>
+              <ProgressBar percent={percent} color={ringColor} style={styles.progressTrack} />
               <Text style={[styles.rowMeta, { color: colors.textSecondary }]}>
                 Remaining: {item.currencyCode} {remaining.toFixed(0)} of{' '}
                 {item.totalRepayable.toFixed(0)}
@@ -783,9 +682,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
           );
         }}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No installment plans yet.
-          </Text>
+          <EmptyState message="No installment plans yet." />
         }
       />
 
@@ -816,40 +713,11 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   <Text style={[styles.label, { color: colors.text }]}>
                     Mode
                   </Text>
-                  <View style={styles.toggleRow}>
-                    <Pressable
-                      style={[
-                        styles.toggleButton,
-                        { backgroundColor: colors.surface, borderColor: colors.primary },
-                        mode === 'principal' && { backgroundColor: colors.primary },
-                      ]}
-                      onPress={() => setMode('principal')}>
-                      <Text
-                        style={[
-                          styles.toggleButtonText,
-                          { color: colors.primary },
-                          mode === 'principal' && { color: colors.primaryText },
-                        ]}>
-                        Principal + Rate
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.toggleButton,
-                        { backgroundColor: colors.surface, borderColor: colors.primary },
-                        mode === 'monthly' && { backgroundColor: colors.primary },
-                      ]}
-                      onPress={() => setMode('monthly')}>
-                      <Text
-                        style={[
-                          styles.toggleButtonText,
-                          { color: colors.primary },
-                          mode === 'monthly' && { color: colors.primaryText },
-                        ]}>
-                        Fixed Monthly
-                      </Text>
-                    </Pressable>
-                  </View>
+                  <SegmentedToggle
+                    options={MODE_OPTIONS}
+                    value={mode}
+                    onChange={setMode}
+                  />
 
                   {mode === 'principal' ? (
                     <>
@@ -979,50 +847,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   <Text style={[styles.label, { color: colors.text }]}>
                     Start date
                   </Text>
-                  <Button
-                    title={startDate}
-                    color={colors.primary}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setShowDatePicker(true);
-                    }}
-                  />
-                  {Platform.OS === 'android' ? (
-                    showDatePicker && (
-                      <DateTimePicker
-                        value={new Date(startDate)}
-                        mode="date"
-                        display="default"
-                        onChange={handleDateChange}
-                      />
-                    )
-                  ) : (
-                    <Modal
-                      visible={showDatePicker}
-                      transparent
-                      animationType="slide"
-                      onRequestClose={() => setShowDatePicker(false)}>
-                      <Pressable
-                        style={styles.modalBackdrop}
-                        onPress={() => setShowDatePicker(false)}>
-                        <Pressable
-                          style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                          onPress={() => {}}>
-                          <DateTimePicker
-                            value={new Date(startDate)}
-                            mode="date"
-                            display="spinner"
-                            onChange={handleDateChange}
-                          />
-                          <Button
-                            title="Done"
-                            color={colors.primary}
-                            onPress={() => setShowDatePicker(false)}
-                          />
-                        </Pressable>
-                      </Pressable>
-                    </Modal>
-                  )}
+                  <DateField value={startDate} onChange={setStartDate} />
 
                   {/* Live preview — the whole point of showing this is
                       letting the user see the real numbers before they
@@ -1085,9 +910,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   Pay from
                 </Text>
                 {activeAccounts.length === 0 ? (
-                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                    No active accounts available.
-                  </Text>
+                  <EmptyState message="No active accounts available." />
                 ) : (
                   <CollapsiblePicker
                     displayLabel={
@@ -1106,50 +929,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                 <Text style={[styles.label, { color: colors.text }]}>
                   Date
                 </Text>
-                <Button
-                  title={payDate}
-                  color={colors.primary}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setShowPayDatePicker(true);
-                  }}
-                />
-                {Platform.OS === 'android' ? (
-                  showPayDatePicker && (
-                    <DateTimePicker
-                      value={new Date(payDate)}
-                      mode="date"
-                      display="default"
-                      onChange={handlePayDateChange}
-                    />
-                  )
-                ) : (
-                  <Modal
-                    visible={showPayDatePicker}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowPayDatePicker(false)}>
-                    <Pressable
-                      style={styles.modalBackdrop}
-                      onPress={() => setShowPayDatePicker(false)}>
-                      <Pressable
-                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                        onPress={() => {}}>
-                        <DateTimePicker
-                          value={new Date(payDate)}
-                          mode="date"
-                          display="spinner"
-                          onChange={handlePayDateChange}
-                        />
-                        <Button
-                          title="Done"
-                          color={colors.primary}
-                          onPress={() => setShowPayDatePicker(false)}
-                        />
-                      </Pressable>
-                    </Pressable>
-                  </Modal>
-                )}
+                <DateField value={payDate} onChange={setPayDate} />
 
               </>
             )}
@@ -1167,10 +947,6 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 4,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   addButton: {
     flexDirection: 'row',
@@ -1211,14 +987,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
     marginTop: 12,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -1291,17 +1060,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
   },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-  },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -1318,20 +1076,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 16,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontWeight: '600',
   },
   previewBox: {
     marginTop: 16,

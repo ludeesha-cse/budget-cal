@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Button,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,9 +10,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import {
   CheckCircle2,
   ChevronRight,
@@ -34,6 +27,8 @@ import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
 import PremiumGate from '../components/PremiumGate';
+import EmptyState from '../components/common/EmptyState';
+import DateField from '../components/common/DateField';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addAccountWithBalance,
@@ -162,7 +157,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const [payOffAmount, setPayOffAmount] = useState('');
   const [payOffPayingAccountId, setPayOffPayingAccountId] = useState('');
   const [payOffDate, setPayOffDate] = useState(formatDateString(new Date()));
-  const [showPayOffDatePicker, setShowPayOffDatePicker] = useState(false);
 
   // Transfers are a free-tier feature (Stage 11) — no PremiumGate around
   // any of this, unlike the credit-card state above.
@@ -178,7 +172,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const [transferToAccountId, setTransferToAccountId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferDate, setTransferDate] = useState(formatDateString(new Date()));
-  const [showTransferDatePicker, setShowTransferDatePicker] = useState(false);
   // Set only for Withdraw (FAB's constrained variant of this same sheet)
   // — narrows the "to" picker to a single account type. The "from" side
   // doesn't need its own persisted filter past the initial fetch since
@@ -515,19 +508,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       eligiblePayingAccount ? String(eligiblePayingAccount.id) : '',
     );
     setPayOffDate(formatDateString(new Date()));
-    setShowPayOffDatePicker(false);
-  };
-
-  const handlePayOffDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setPayOffDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowPayOffDatePicker(false);
-    }
   };
 
   const handlePayOffSubmit = async () => {
@@ -578,7 +558,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     setTransferToAccountId('');
     setTransferAmount('');
     setTransferDate(formatDateString(new Date()));
-    setShowTransferDatePicker(false);
     setTransferToTypeFilter(options?.toType ?? null);
     setTransferTitle(options?.title ?? 'Transfer');
     const allOptions = await getTransferableAccounts();
@@ -611,18 +590,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.withdrawMode, route.params?.openTransfer]);
-
-  const handleTransferDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setTransferDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowTransferDatePicker(false);
-    }
-  };
 
   const performTransfer = async (amount: number) => {
     try {
@@ -829,9 +796,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
           {addCurrencyAccountId === item.id && (
             <View style={styles.addCurrencyForm}>
               {availableCurrencies.length === 0 ? (
-                <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                  This account already has a balance in every currency.
-                </Text>
+                <EmptyState message="This account already has a balance in every currency." />
               ) : (
                 <>
                   <CollapsiblePicker
@@ -922,9 +887,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
 
       <View style={styles.list}>
         {activeAccounts.length === 0 ? (
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No accounts yet.
-          </Text>
+          <EmptyState message="No accounts yet." />
         ) : (
           ACCOUNT_SECTIONS.filter(section =>
             activeAccounts.some(a => section.types.includes(a.type)),
@@ -1121,10 +1084,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                   Pay from
                 </Text>
                 {payOffPayingAccountOptions.length === 0 ? (
-                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                    No eligible Bank, Cash, or Crypto Wallet account with a
-                    balance in {payOffTarget.currencyCode} was found.
-                  </Text>
+                  <EmptyState message={`No eligible Bank, Cash, or Crypto Wallet account with a balance in ${payOffTarget.currencyCode} was found.`} />
                 ) : (
                   <CollapsiblePicker
                     displayLabel={
@@ -1163,52 +1123,9 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                 </Text>
                 <View style={styles.payOffDateRow}>
                   <View style={styles.dueDateButton}>
-                    <Button
-                      title={payOffDate}
-                      color={colors.primary}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        setShowPayOffDatePicker(true);
-                      }}
-                    />
+                    <DateField value={payOffDate} onChange={setPayOffDate} />
                   </View>
                 </View>
-                {Platform.OS === 'android' ? (
-                  showPayOffDatePicker && (
-                    <DateTimePicker
-                      value={new Date(payOffDate)}
-                      mode="date"
-                      display="default"
-                      onChange={handlePayOffDateChange}
-                    />
-                  )
-                ) : (
-                  <Modal
-                    visible={showPayOffDatePicker}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowPayOffDatePicker(false)}>
-                    <Pressable
-                      style={styles.modalBackdrop}
-                      onPress={() => setShowPayOffDatePicker(false)}>
-                      <Pressable
-                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                        onPress={() => {}}>
-                        <DateTimePicker
-                          value={new Date(payOffDate)}
-                          mode="date"
-                          display="spinner"
-                          onChange={handlePayOffDateChange}
-                        />
-                        <Button
-                          title="Done"
-                          color={colors.primary}
-                          onPress={() => setShowPayOffDatePicker(false)}
-                        />
-                      </Pressable>
-                    </Pressable>
-                  </Modal>
-                )}
 
                 <NumericInputAccessory />
               </>
@@ -1224,9 +1141,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
         saveLabel={transferTitle === 'Withdraw to Cash' ? 'Withdraw' : 'Transfer'}>
             <Text style={[styles.label, { color: colors.text }]}>From</Text>
             {transferFromOptions.length === 0 ? (
-              <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                No Bank, Cash, or Crypto Wallet accounts available.
-              </Text>
+              <EmptyState message="No Bank, Cash, or Crypto Wallet accounts available." />
             ) : (
               <CollapsiblePicker
                 displayLabel={
@@ -1254,9 +1169,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                   );
                   const fromCurrencyOptions = fromAccount?.balances ?? [];
                   return fromCurrencyOptions.length === 0 ? (
-                    <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                      This account has no currency balances yet.
-                    </Text>
+                    <EmptyState message="This account has no currency balances yet." />
                   ) : (
                     <CollapsiblePicker
                       displayLabel={
@@ -1280,9 +1193,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
               <>
                 <Text style={[styles.label, { color: colors.text }]}>To</Text>
                 {transferToOptions.length === 0 ? (
-                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                    No other account holds this currency yet.
-                  </Text>
+                  <EmptyState message="No other account holds this currency yet." />
                 ) : (
                   <CollapsiblePicker
                     displayLabel={
@@ -1348,52 +1259,9 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
             <Text style={[styles.label, { color: colors.text }]}>Date</Text>
             <View style={styles.payOffDateRow}>
               <View style={styles.dueDateButton}>
-                <Button
-                  title={transferDate}
-                  color={colors.primary}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setShowTransferDatePicker(true);
-                  }}
-                />
+                <DateField value={transferDate} onChange={setTransferDate} />
               </View>
             </View>
-            {Platform.OS === 'android' ? (
-              showTransferDatePicker && (
-                <DateTimePicker
-                  value={new Date(transferDate)}
-                  mode="date"
-                  display="default"
-                  onChange={handleTransferDateChange}
-                />
-              )
-            ) : (
-              <Modal
-                visible={showTransferDatePicker}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowTransferDatePicker(false)}>
-                <Pressable
-                  style={styles.modalBackdrop}
-                  onPress={() => setShowTransferDatePicker(false)}>
-                  <Pressable
-                    style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                    onPress={() => {}}>
-                    <DateTimePicker
-                      value={new Date(transferDate)}
-                      mode="date"
-                      display="spinner"
-                      onChange={handleTransferDateChange}
-                    />
-                    <Button
-                      title="Done"
-                      color={colors.primary}
-                      onPress={() => setShowTransferDatePicker(false)}
-                    />
-                  </Pressable>
-                </Pressable>
-              </Modal>
-            )}
 
             <NumericInputAccessory />
       </BottomSheetModal>
@@ -1492,10 +1360,6 @@ const styles = StyleSheet.create({
   list: {
     marginTop: 8,
   },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
-  },
   accountCard: {
     flexDirection: 'row',
     padding: 0,
@@ -1562,17 +1426,6 @@ const styles = StyleSheet.create({
   addCurrencyForm: {
     marginTop: 8,
     gap: 8,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
   },
   modalCurrent: {
     fontSize: 14,

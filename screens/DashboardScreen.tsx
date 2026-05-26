@@ -13,6 +13,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { X } from 'lucide-react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
+import ProgressBar from '../components/common/ProgressBar';
 import type { DashboardStackParamList, RootTabParamList } from '../navigation/types';
 import {
   generatePendingOccurrences,
@@ -39,8 +40,8 @@ import {
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
+import { budgetStatusFor } from '../utils/statusColor';
 import { useTheme } from '../contexts/ThemeContext';
-import type { ThemeColors } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
 const DUE_SOON_WINDOW_DAYS = 7;
@@ -169,21 +170,6 @@ type UpcomingInstallmentRow = {
   nextAmountDue: number;
   daysUntilDue: number; // negative once overdue, same convention as UpcomingLoanRow
 };
-
-function statusColorsFor(
-  spent: number,
-  budgetAmount: number,
-  colors: ThemeColors,
-): { text: string; soft: string } {
-  const percentUsed = budgetAmount > 0 ? spent / budgetAmount : 0;
-  if (percentUsed > 1) {
-    return { text: colors.danger, soft: colors.dangerSoft };
-  }
-  if (percentUsed >= 0.9) {
-    return { text: colors.warning, soft: colors.primarySoft };
-  }
-  return { text: colors.success, soft: colors.successSoft };
-}
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>;
 
@@ -466,12 +452,11 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
     budget && budget.limitAmount > 0
       ? Math.round((total / budget.limitAmount) * 100)
       : 0;
-  const budgetStatusColor =
-    percentUsed > 100
-      ? colors.danger
-      : percentUsed >= 90
-        ? colors.warning
-        : colors.success;
+  const budgetStatusColor = budgetStatusFor(
+    total,
+    budget?.limitAmount ?? 0,
+    colors,
+  ).text;
 
   const month = getCurrentMonthString();
 
@@ -582,18 +567,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                   of {formatAmountPlain(budget.limitAmount)}
                 </Text>
               </View>
-              <View
-                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${Math.min(100, Math.max(0, percentUsed))}%`,
-                      backgroundColor: budgetStatusColor,
-                    },
-                  ]}
-                />
-              </View>
+              <ProgressBar
+                percent={percentUsed}
+                color={budgetStatusColor}
+                height={8}
+                style={styles.progressTrack}
+              />
               <View style={styles.budgetFooterRow}>
                 <Text
                   style={[
@@ -659,7 +638,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                     budgetAmount > 0
                       ? Math.round((item.spent / budgetAmount) * 100)
                       : 0;
-                  const status = statusColorsFor(item.spent, budgetAmount, colors);
+                  const status = budgetStatusFor(item.spent, budgetAmount, colors);
                   return (
                     <Pressable
                       key={item.categoryId}
@@ -1058,14 +1037,7 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(15),
   },
   progressTrack: {
-    height: 8,
-    borderRadius: 4,
     marginTop: 14,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
   },
   budgetFooterRow: {
     flexDirection: 'row',

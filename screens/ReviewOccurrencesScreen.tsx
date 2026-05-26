@@ -3,23 +3,18 @@ import {
   Alert,
   Button,
   FlatList,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import CollapsiblePicker from '../components/CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
+import DateField from '../components/common/DateField';
 import {
   confirmOccurrence,
   getAccounts,
@@ -52,7 +47,6 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   const [editedAmount, setEditedAmount] = useState<Record<number, string>>({});
   const [editedAccountId, setEditedAccountId] = useState<Record<number, number>>({});
   const [editedDate, setEditedDate] = useState<Record<number, string>>({});
-  const [datePickerOpenFor, setDatePickerOpenFor] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,25 +99,6 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
       load();
     }, [load]),
   );
-
-  const handleDateChange = (
-    occurrenceId: number,
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      setEditedDate(current => ({
-        ...current,
-        [occurrenceId]: `${year}-${month}-${day}`,
-      }));
-    }
-    if (Platform.OS === 'android') {
-      setDatePickerOpenFor(null);
-    }
-  };
 
   const buildConfirmParams = (row: PendingRow) => {
     const amountText = editedAmount[row.id] ?? String(row.amount);
@@ -210,13 +185,9 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : rows.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Nothing to review — every recurring rule is up to date.
-        </Text>
+        <EmptyState message="Nothing to review — every recurring rule is up to date." />
       ) : (
         <>
           <View style={styles.confirmAllRow}>
@@ -277,54 +248,12 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
                 />
 
                 <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-                <Button
-                  title={editedDate[item.id] ?? item.dueDate}
-                  color={colors.primary}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setDatePickerOpenFor(item.id);
-                  }}
+                <DateField
+                  value={editedDate[item.id] ?? item.dueDate}
+                  onChange={date =>
+                    setEditedDate(current => ({ ...current, [item.id]: date }))
+                  }
                 />
-                {Platform.OS === 'android' ? (
-                  datePickerOpenFor === item.id && (
-                    <DateTimePicker
-                      value={new Date(editedDate[item.id] ?? item.dueDate)}
-                      mode="date"
-                      display="default"
-                      onChange={(event, date) =>
-                        handleDateChange(item.id, event, date)
-                      }
-                    />
-                  )
-                ) : (
-                  <Modal
-                    visible={datePickerOpenFor === item.id}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setDatePickerOpenFor(null)}>
-                    <Pressable
-                      style={styles.modalBackdrop}
-                      onPress={() => setDatePickerOpenFor(null)}>
-                      <Pressable
-                        style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                        onPress={() => {}}>
-                        <DateTimePicker
-                          value={new Date(editedDate[item.id] ?? item.dueDate)}
-                          mode="date"
-                          display="spinner"
-                          onChange={(event, date) =>
-                            handleDateChange(item.id, event, date)
-                          }
-                        />
-                        <Button
-                          title="Done"
-                          color={colors.primary}
-                          onPress={() => setDatePickerOpenFor(null)}
-                        />
-                      </Pressable>
-                    </Pressable>
-                  </Modal>
-                )}
 
                 <View style={styles.rowActions}>
                   <Button
@@ -352,10 +281,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   confirmAllRow: {
     marginBottom: 12,
@@ -391,17 +316,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     marginTop: 12,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
   },
 });
 

@@ -13,31 +13,15 @@ import {
 } from '../db/queries';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
-import type { ThemeColors } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
+import ProgressBar from '../components/common/ProgressBar';
+import { budgetStatusFor } from '../utils/statusColor';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
-
-// Same three-tier read as Dashboard's own budget card (statusColorsFor) —
-// duplicated locally rather than imported since Dashboard doesn't export
-// it and pulling in a whole extra screen module just for one small color
-// function isn't worth the coupling.
-function statusColorFor(spent: number, budgetAmount: number, colors: ThemeColors): string {
-  if (budgetAmount <= 0) {
-    return colors.textSecondary;
-  }
-  const used = spent / budgetAmount;
-  if (used > 1) {
-    return colors.danger;
-  }
-  if (used >= 0.9) {
-    return colors.warning;
-  }
-  return colors.success;
-}
 
 function CategoryBudgetsScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -153,7 +137,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
           const hasBudget = (amounts[item.id] ?? '').trim() !== '' && budgetAmount > 0;
           const percent = hasBudget ? Math.min(100, (spent / budgetAmount) * 100) : 0;
           const statusColor = hasBudget
-            ? statusColorFor(spent, budgetAmount, colors)
+            ? budgetStatusFor(spent, budgetAmount, colors).text
             : colors.border;
           return (
             <Card colors={colors} style={styles.row}>
@@ -175,15 +159,11 @@ function CategoryBudgetsScreen(): React.JSX.Element {
                   placeholderTextColor={colors.textSecondary}
                 />
               </View>
-              <View
-                style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${percent}%`, backgroundColor: statusColor },
-                  ]}
-                />
-              </View>
+              <ProgressBar
+                percent={percent}
+                color={statusColor}
+                style={styles.progressTrack}
+              />
               <Text style={[typography.amountMono, styles.rowSpent, { color: colors.textSecondary }]}>
                 {hasBudget
                   ? `Spent ${spent.toFixed(2)} of ${budgetAmount.toFixed(2)}`
@@ -193,9 +173,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
           );
         }}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No categories yet.
-          </Text>
+          <EmptyState message="No categories yet." />
         }
       />
 
@@ -265,22 +243,11 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
     marginTop: 10,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
   },
   rowSpent: {
     fontSize: scaleFont(12.5),
     marginTop: 6,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   saveButton: {
     borderRadius: 14,

@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
+import EmptyState from '../components/common/EmptyState';
 import {
   addCategory,
   deleteCategory,
@@ -14,21 +15,11 @@ import {
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { canAddCategory } from '../utils/entitlementChecks';
+import { avatarColorsFor } from '../utils/avatarColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
-
-// Cycles the palette's own `chart` colors (already tuned for telling
-// categories apart at a glance in Reports' pie chart) rather than
-// inventing a separate avatar color set — the "soft" background is that
-// same color with alpha appended (RN supports #RRGGBBAA), so this stays
-// correct across every palette, including gradient ones, without needing
-// its own soft-color entries in ThemeColors.
-function avatarColorsFor(index: number, chart: string[]): { bg: string; fg: string } {
-  const base = chart[index % chart.length];
-  return { bg: `${base}26`, fg: base };
-}
 
 function CategoriesScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -196,9 +187,7 @@ function CategoriesScreen(): React.JSX.Element {
           );
         }}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No categories yet.
-          </Text>
+          <EmptyState message="No categories yet." />
         }
         ListFooterComponent={
           hasReserved ? (
@@ -270,10 +259,6 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 16,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   row: {
     flexDirection: 'row',

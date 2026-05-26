@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Button,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,14 +8,12 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { formatDateString } from '../utils/date';
 import { getAccountBalances, getAccounts, getTags } from '../db/queries';
 import Card from './Card';
 import CollapsiblePicker from './CollapsiblePicker';
+import DateField from './common/DateField';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from './NumericInputAccessory';
@@ -55,7 +49,6 @@ function IncomeForm({
 }: IncomeFormProps): React.JSX.Element {
   const { colors } = useTheme();
   const [date, setDate] = useState(formatDateString(new Date()));
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [accounts, setAccounts] = useState<Awaited<ReturnType<typeof getAccounts>>>(
@@ -116,18 +109,6 @@ function IncomeForm({
       cancelled = true;
     };
   }, [accountId]);
-
-  const handleDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
-  };
 
   const handleSubmit = () => {
     const parsedAmount = Number(amount);
@@ -205,50 +186,7 @@ function IncomeForm({
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
         DATE
       </Text>
-      <Button
-        title={date}
-        color={colors.primary}
-        onPress={() => {
-          Keyboard.dismiss();
-          setShowDatePicker(true);
-        }}
-      />
-      {Platform.OS === 'android' ? (
-        showDatePicker && (
-          <DateTimePicker
-            value={new Date(date)}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )
-      ) : (
-        <Modal
-          visible={showDatePicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowDatePicker(false)}>
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setShowDatePicker(false)}>
-            <Pressable
-              style={[styles.modalCard, { backgroundColor: colors.surface }]}
-              onPress={() => {}}>
-              <DateTimePicker
-                value={new Date(date)}
-                mode="date"
-                display="spinner"
-                onChange={handleDateChange}
-              />
-              <Button
-                title="Done"
-                color={colors.primary}
-                onPress={() => setShowDatePicker(false)}
-              />
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
+      <DateField value={date} onChange={setDate} />
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
@@ -453,17 +391,6 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
   },
 });
 

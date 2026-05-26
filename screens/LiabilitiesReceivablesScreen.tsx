@@ -2,9 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,9 +10,6 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Plus } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import Card from '../components/Card';
@@ -24,7 +18,13 @@ import CollapsiblePicker from '../components/CollapsiblePicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
-import { formatDateString, getCurrentDateString } from '../utils/date';
+import EmptyState from '../components/common/EmptyState';
+import SegmentedToggle, {
+  type SegmentedToggleOption,
+} from '../components/common/SegmentedToggle';
+import DateField from '../components/common/DateField';
+import { getCurrentDateString } from '../utils/date';
+import { avatarColorsFor } from '../utils/avatarColor';
 import {
   createLoanAccount,
   getAccounts,
@@ -62,13 +62,10 @@ const TYPE_LABELS: Record<LoanAccountType, { heading: string; add: string }> = {
   Receivable: { heading: 'Receivables (lended)', add: 'Add Lend' },
 };
 
-// Same "cycle the chart palette + alpha background" avatar convention as
-// CategoriesScreen/TagsScreen — keeps every initial-avatar in the app
-// visually consistent without a dedicated soft-color set per accent.
-function avatarColorsFor(seed: number, chart: string[]): { bg: string; fg: string } {
-  const base = chart[seed % chart.length];
-  return { bg: `${base}26`, fg: base };
-}
+const LOAN_TYPE_OPTIONS: SegmentedToggleOption<LoanAccountType>[] = [
+  { key: 'Liability', label: 'Liabilities' },
+  { key: 'Receivable', label: 'Receivables' },
+];
 
 // Outstanding totals keyed by currency code. Deliberately a map rather
 // than one number — currency amounts are never summed together anywhere
@@ -144,7 +141,6 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const [currencyId, setCurrencyId] = useState('');
   const [counterpartAccountId, setCounterpartAccountId] = useState('');
   const [dueDate, setDueDate] = useState<string | null>(null);
-  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [interestRate, setInterestRate] = useState('');
   const [interestPeriod, setInterestPeriod] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -250,18 +246,6 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const handleCancel = () => {
     setStep(null);
     resetForm();
-  };
-
-  const handleDueDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setDueDate(formatDateString(selectedDate));
-    }
-    if (Platform.OS === 'android') {
-      setShowDueDatePicker(false);
-    }
   };
 
   const handleSubmit = async () => {
@@ -461,30 +445,14 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         </View>
       </Card>
 
-      <View style={styles.toggleRow}>
-        {(['Liability', 'Receivable'] as const).map(option => (
-          <Pressable
-            key={option}
-            style={[
-              styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-              type === option && { backgroundColor: colors.primary, borderColor: colors.primary },
-            ]}
-            onPress={() => {
-              setType(option);
-              setStep(null);
-            }}>
-            <Text
-              style={[
-                styles.toggleButtonText,
-                { color: colors.text },
-                type === option && { color: colors.primaryText },
-              ]}>
-              {option === 'Liability' ? 'Liabilities' : 'Receivables'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedToggle
+        options={LOAN_TYPE_OPTIONS}
+        value={type}
+        onChange={option => {
+          setType(option);
+          setStep(null);
+        }}
+      />
 
       <Text style={[typography.cardTitle, styles.heading, { color: colors.text }]}>
         {TYPE_LABELS[type].heading}
@@ -500,15 +468,9 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
       </Pressable>
 
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : loans.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          {type === 'Liability'
-            ? 'Nothing borrowed right now.'
-            : 'Nothing lended out right now.'}
-        </Text>
+        <EmptyState message={type === 'Liability' ? 'Nothing borrowed right now.' : 'Nothing lended out right now.'} />
       ) : (
         loans.map((loan, index) => {
           const { bg, fg } = avatarColorsFor(index, colors.chart);
@@ -684,14 +646,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         </Text>
         <View style={styles.dueDateRow}>
           <View style={styles.dueDateButton}>
-            <Button
-              title={dueDate ?? 'Not set'}
-              color={colors.primary}
-              onPress={() => {
-                Keyboard.dismiss();
-                setShowDueDatePicker(true);
-              }}
-            />
+            <DateField value={dueDate} onChange={setDueDate} placeholder="Not set" />
           </View>
           {dueDate && (
             <Button
@@ -701,42 +656,6 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             />
           )}
         </View>
-        {Platform.OS === 'android' ? (
-          showDueDatePicker && (
-            <DateTimePicker
-              value={dueDate ? new Date(dueDate) : new Date()}
-              mode="date"
-              display="default"
-              onChange={handleDueDateChange}
-            />
-          )
-        ) : (
-          <Modal
-            visible={showDueDatePicker}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setShowDueDatePicker(false)}>
-            <Pressable
-              style={styles.modalBackdrop}
-              onPress={() => setShowDueDatePicker(false)}>
-              <Pressable
-                style={[styles.modalCard, { backgroundColor: colors.surface }]}
-                onPress={() => {}}>
-                <DateTimePicker
-                  value={dueDate ? new Date(dueDate) : new Date()}
-                  mode="date"
-                  display="spinner"
-                  onChange={handleDueDateChange}
-                />
-                <Button
-                  title="Done"
-                  color={colors.primary}
-                  onPress={() => setShowDueDatePicker(false)}
-                />
-              </Pressable>
-            </Pressable>
-          </Modal>
-        )}
 
         <Text style={[styles.label, { color: colors.text }]}>
           Interest rate % (optional)
@@ -874,21 +793,6 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: scaleFont(15),
   },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontSize: scaleFont(14),
-    fontWeight: '700',
-  },
   heading: {
     marginTop: 20,
     marginBottom: 10,
@@ -907,10 +811,6 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   loanCard: {
     padding: 14,
@@ -1021,17 +921,6 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: 12,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
   },
   modalCurrent: {
     fontSize: 14,

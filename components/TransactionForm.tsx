@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Button,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,9 +8,6 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { formatDateString } from '../utils/date';
 import {
@@ -25,6 +18,10 @@ import {
 } from '../db/queries';
 import Card from './Card';
 import CollapsiblePicker from './CollapsiblePicker';
+import SegmentedToggle, {
+  type SegmentedToggleOption,
+} from './common/SegmentedToggle';
+import DateField from './common/DateField';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from './NumericInputAccessory';
@@ -37,6 +34,11 @@ import { scaleFont, typography } from '../theme/typography';
 // going through that bookkeeping (no loan_payments row, no interest
 // accrual reset), so they're never offered as a transaction account here.
 const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+
+const ENTRY_TYPE_OPTIONS: SegmentedToggleOption<'Expense' | 'Income'>[] = [
+  { key: 'Expense', label: 'Expense' },
+  { key: 'Income', label: 'Income' },
+];
 
 export type TransactionFormSubmitValues = {
   date: string; // 'YYYY-MM-DD'
@@ -84,7 +86,6 @@ function TransactionForm({
   const [date, setDate] = useState(
     initialValues?.date ?? formatDateString(new Date()),
   );
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [amount, setAmount] = useState(
     initialValues?.amount != null ? String(initialValues.amount) : '',
   );
@@ -205,20 +206,6 @@ function TransactionForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
-  const handleDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate) {
-      setDate(formatDateString(selectedDate));
-    }
-    // Android's native dialog dismisses itself on pick/cancel; the iOS
-    // popup modal (below) is closed explicitly via its Done button instead.
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
-  };
-
   const handleSubmit = () => {
     const parsedAmount = Number(amount);
     if (!amount || Number.isNaN(parsedAmount)) {
@@ -274,40 +261,11 @@ function TransactionForm({
             style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
             TYPE
           </Text>
-          <View style={styles.toggleRow}>
-            <Pressable
-              style={[
-                styles.toggleButton,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                entryType === 'Expense' && { backgroundColor: colors.primary, borderColor: colors.primary },
-              ]}
-              onPress={() => setEntryType('Expense')}>
-              <Text
-                style={[
-                  styles.toggleButtonText,
-                  { color: colors.text },
-                  entryType === 'Expense' && { color: colors.primaryText },
-                ]}>
-                Expense
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.toggleButton,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                entryType === 'Income' && { backgroundColor: colors.primary, borderColor: colors.primary },
-              ]}
-              onPress={() => setEntryType('Income')}>
-              <Text
-                style={[
-                  styles.toggleButtonText,
-                  { color: colors.text },
-                  entryType === 'Income' && { color: colors.primaryText },
-                ]}>
-                Income
-              </Text>
-            </Pressable>
-          </View>
+          <SegmentedToggle
+            options={ENTRY_TYPE_OPTIONS}
+            value={entryType}
+            onChange={setEntryType}
+          />
         </>
       )}
 
@@ -347,50 +305,7 @@ function TransactionForm({
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
         DATE
       </Text>
-      <Button
-        title={date}
-        color={colors.primary}
-        onPress={() => {
-          Keyboard.dismiss();
-          setShowDatePicker(true);
-        }}
-      />
-      {Platform.OS === 'android' ? (
-        showDatePicker && (
-          <DateTimePicker
-            value={new Date(date)}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )
-      ) : (
-        <Modal
-          visible={showDatePicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowDatePicker(false)}>
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setShowDatePicker(false)}>
-            <Pressable
-              style={[styles.modalCard, { backgroundColor: colors.surface }]}
-              onPress={() => {}}>
-              <DateTimePicker
-                value={new Date(date)}
-                mode="date"
-                display="spinner"
-                onChange={handleDateChange}
-              />
-              <Button
-                title="Done"
-                color={colors.primary}
-                onPress={() => setShowDatePicker(false)}
-              />
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
+      <DateField value={date} onChange={setDate} />
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
@@ -555,21 +470,6 @@ const styles = StyleSheet.create({
   error: {
     marginTop: 12,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontSize: scaleFont(15),
-    fontWeight: '700',
-  },
   hint: {
     fontSize: scaleFont(12.5),
     lineHeight: scaleFont(17),
@@ -627,17 +527,6 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
   },
 });
 

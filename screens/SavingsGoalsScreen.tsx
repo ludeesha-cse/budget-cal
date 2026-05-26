@@ -1,11 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
-  Button,
   FlatList,
-  Keyboard,
-  Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -13,9 +9,6 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { Info, PiggyBank, Plus } from 'lucide-react-native';
 import Card from '../components/Card';
 import CollapsiblePicker from '../components/CollapsiblePicker';
@@ -23,6 +16,12 @@ import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
+import SegmentedToggle, {
+  type SegmentedToggleOption,
+} from '../components/common/SegmentedToggle';
+import DateField from '../components/common/DateField';
+import ProgressBar from '../components/common/ProgressBar';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -41,18 +40,14 @@ import { getProgress, getRequiredPerMonth } from '../utils/savingsMath';
 import { getCurrentDateString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
 
+const FILTER_OPTIONS: SegmentedToggleOption<'active' | 'history'>[] = [
+  { key: 'active', label: 'Active' },
+  { key: 'history', label: 'Achieved / Abandoned' },
+];
+
 type GoalRow = Awaited<ReturnType<typeof getSavingsGoals>>[number];
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type ContributionRow = Awaited<ReturnType<typeof getContributions>>[number];
-
-// Which "date field" a picker modal is currently open for — either the
-// goal form's optional target date, or one specific contribution's date
-// (add or edit), keyed by a string so both cases fit in one piece of
-// state without a second Modal.
-type DatePickerTarget =
-  | { kind: 'goalForm' }
-  | { kind: 'newContribution'; goalId: number }
-  | { kind: 'editContribution'; contributionId: number };
 
 function SavingsGoalsScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -96,9 +91,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
   const [editAmount, setEditAmount] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editNote, setEditNote] = useState('');
-
-  const [datePickerTarget, setDatePickerTarget] =
-    useState<DatePickerTarget | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -369,41 +361,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
     );
   };
 
-  const handleDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (selectedDate && datePickerTarget) {
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      if (datePickerTarget.kind === 'goalForm') {
-        setGoalTargetDate(dateStr);
-      } else if (datePickerTarget.kind === 'newContribution') {
-        setContributionDate(dateStr);
-      } else {
-        setEditDate(dateStr);
-      }
-    }
-    if (Platform.OS === 'android') {
-      setDatePickerTarget(null);
-    }
-  };
-
-  const datePickerValue = (): Date => {
-    if (!datePickerTarget) {
-      return new Date();
-    }
-    if (datePickerTarget.kind === 'goalForm') {
-      return new Date(goalTargetDate ?? getCurrentDateString());
-    }
-    if (datePickerTarget.kind === 'newContribution') {
-      return new Date(contributionDate);
-    }
-    return new Date(editDate || getCurrentDateString());
-  };
-
   const visibleGoals = goals.filter(g =>
     filter === 'active' ? g.status === 'active' : g.status !== 'active',
   );
@@ -430,32 +387,11 @@ function SavingsGoalsScreen(): React.JSX.Element {
         </Text>
       </View>
 
-      <View style={styles.toggleRow}>
-        {(
-          [
-            { key: 'active', label: 'Active' },
-            { key: 'history', label: 'Achieved / Abandoned' },
-          ] as const
-        ).map(option => (
-          <Pressable
-            key={option.key}
-            style={[
-              styles.toggleButton,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-              filter === option.key && { backgroundColor: colors.primary, borderColor: colors.primary },
-            ]}
-            onPress={() => setFilter(option.key)}>
-            <Text
-              style={[
-                styles.toggleButtonText,
-                { color: colors.text },
-                filter === option.key && { color: colors.primaryText },
-              ]}>
-              {option.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedToggle
+        options={FILTER_OPTIONS}
+        value={filter}
+        onChange={setFilter}
+      />
 
       <Pressable
         style={[styles.addGoalButton, { borderColor: colors.primary }]}
@@ -467,9 +403,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       </Pressable>
 
       {loading ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          Loading...
-        </Text>
+        <EmptyState message="Loading..." />
       ) : (
         <FlatList
           data={visibleGoals}
@@ -525,21 +459,12 @@ function SavingsGoalsScreen(): React.JSX.Element {
                   </View>
                 </View>
 
-                <View
-                  style={[
-                    styles.progressBarBg,
-                    { backgroundColor: colors.border },
-                  ]}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        width: `${Math.min(Math.max(progressPct, 0), 100)}%`,
-                        backgroundColor: funded ? colors.success : colors.primary,
-                      },
-                    ]}
-                  />
-                </View>
+                <ProgressBar
+                  percent={progressPct}
+                  color={funded ? colors.success : colors.primary}
+                  height={8}
+                  style={styles.progressBarBg}
+                />
 
                 {goal.targetDate ? (
                   requiredPerMonth === null ? (
@@ -603,19 +528,19 @@ function SavingsGoalsScreen(): React.JSX.Element {
                               placeholder="Amount"
                               placeholderTextColor={colors.textSecondary}
                             />
-                            <Pressable
-                              style={[styles.smallPillButton, { borderColor: colors.border }]}
-                              onPress={() => {
-                                Keyboard.dismiss();
-                                setDatePickerTarget({
-                                  kind: 'editContribution',
-                                  contributionId: contribution.id,
-                                });
-                              }}>
-                              <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
-                                {editDate}
-                              </Text>
-                            </Pressable>
+                            <DateField
+                              value={editDate}
+                              onChange={setEditDate}
+                              renderTrigger={(label, onPress) => (
+                                <Pressable
+                                  style={[styles.smallPillButton, { borderColor: colors.border }]}
+                                  onPress={onPress}>
+                                  <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                    {label}
+                                  </Text>
+                                </Pressable>
+                              )}
+                            />
                             <TextInput
                               style={[
                                 styles.input,
@@ -707,19 +632,19 @@ function SavingsGoalsScreen(): React.JSX.Element {
                           <Text style={[styles.label, { color: colors.text }]}>
                             Date
                           </Text>
-                          <Pressable
-                            style={[styles.smallPillButton, { borderColor: colors.border }]}
-                            onPress={() => {
-                              Keyboard.dismiss();
-                              setDatePickerTarget({
-                                kind: 'newContribution',
-                                goalId: goal.id,
-                              });
-                            }}>
-                            <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
-                              {contributionDate}
-                            </Text>
-                          </Pressable>
+                          <DateField
+                            value={contributionDate}
+                            onChange={setContributionDate}
+                            renderTrigger={(label, onPress) => (
+                              <Pressable
+                                style={[styles.smallPillButton, { borderColor: colors.border }]}
+                                onPress={onPress}>
+                                <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                                  {label}
+                                </Text>
+                              </Pressable>
+                            )}
+                          />
                           <Text style={[styles.label, { color: colors.text }]}>
                             Note (optional)
                           </Text>
@@ -816,11 +741,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
             );
           }}
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: colors.textSecondary }]}>
-              {filter === 'active'
-                ? 'No active savings goals yet.'
-                : 'No achieved or abandoned goals yet.'}
-            </Text>
+            <EmptyState message={filter === 'active' ? 'No active savings goals yet.' : 'No achieved or abandoned goals yet.'} />
           }
         />
       )}
@@ -873,9 +794,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     Currency
                   </Text>
                   {currencies.length === 0 ? (
-                    <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                      No currencies available.
-                    </Text>
+                    <EmptyState message="No currencies available." />
                   ) : (
                     <CollapsiblePicker
                       displayLabel={
@@ -897,16 +816,20 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     Target date (optional)
                   </Text>
                   <View style={styles.rowActions}>
-                    <Pressable
-                      style={[styles.smallPillButton, { borderColor: colors.border }]}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        setDatePickerTarget({ kind: 'goalForm' });
-                      }}>
-                      <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
-                        {goalTargetDate ?? 'No target date'}
-                      </Text>
-                    </Pressable>
+                    <DateField
+                      value={goalTargetDate}
+                      onChange={setGoalTargetDate}
+                      placeholder="No target date"
+                      renderTrigger={(label, onPress) => (
+                        <Pressable
+                          style={[styles.smallPillButton, { borderColor: colors.border }]}
+                          onPress={onPress}>
+                          <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+                            {label}
+                          </Text>
+                        </Pressable>
+                      )}
+                    />
                     {goalTargetDate && (
                       <Pressable
                         style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]}
@@ -926,43 +849,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
 
                   <NumericInputAccessory />
       </BottomSheetModal>
-
-      {Platform.OS === 'android' ? (
-        datePickerTarget && (
-          <DateTimePicker
-            value={datePickerValue()}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )
-      ) : (
-        <Modal
-          visible={datePickerTarget != null}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setDatePickerTarget(null)}>
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setDatePickerTarget(null)}>
-            <Pressable
-              style={[styles.modalCard, { backgroundColor: colors.surface }]}
-              onPress={() => {}}>
-              <DateTimePicker
-                value={datePickerValue()}
-                mode="date"
-                display="spinner"
-                onChange={handleDateChange}
-              />
-              <Button
-                title="Done"
-                color={colors.primary}
-                onPress={() => setDatePickerTarget(null)}
-              />
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
     </View>
   );
 }
@@ -985,21 +871,6 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(12.5),
     lineHeight: scaleFont(18),
   },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleButtonText: {
-    fontSize: scaleFont(14),
-    fontWeight: '700',
-  },
   addGoalButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1017,10 +888,6 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 12,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
   },
   card: {
     padding: 14,
@@ -1070,14 +937,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   progressBarBg: {
-    height: 8,
-    borderRadius: 4,
     marginTop: 10,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: 8,
-    borderRadius: 4,
   },
   detailsLink: {
     marginTop: 10,
@@ -1161,18 +1021,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 8,
     marginTop: 4,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalCard: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-    maxHeight: '90%',
   },
   label: {
     fontSize: 14,

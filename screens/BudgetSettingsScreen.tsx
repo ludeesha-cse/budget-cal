@@ -27,6 +27,7 @@ import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
+import EmptyState from '../components/common/EmptyState';
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
@@ -191,9 +192,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
           </Card>
         )}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No budgets set yet.
-          </Text>
+          <EmptyState message="No budgets set yet." />
         }
       />
 
@@ -232,9 +231,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
           </Card>
         )}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No credit cards yet.
-          </Text>
+          <EmptyState message="No credit cards yet." />
         }
       />
 
@@ -314,9 +311,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFont(12.5),
     lineHeight: scaleFont(18),
-  },
-  empty: {
-    fontSize: 14,
   },
   cardRow: {
     flexDirection: 'row',
