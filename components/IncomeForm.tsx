@@ -14,6 +14,7 @@ import { getAccountBalances, getAccounts, getTags } from '../db/queries';
 import Card from './Card';
 import CollapsiblePicker from './CollapsiblePicker';
 import DateField from './common/DateField';
+import TagPicker from './common/TagPicker';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from './NumericInputAccessory';
@@ -227,37 +228,7 @@ function IncomeForm({
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
         TAGS
       </Text>
-      {tags.length === 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>
-          No tags yet — add some from Settings.
-        </Text>
-      ) : (
-        <View style={styles.tagRow}>
-          {tags.map(tag => {
-            const selected = selectedTagIds.includes(tag.id);
-            return (
-              <Pressable
-                key={tag.id}
-                style={[
-                  styles.tagChip,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                  selected && { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-                onPress={() => toggleTag(tag.id)}>
-                {selected && <Check size={12} color={colors.primaryText} strokeWidth={3} />}
-                <Text
-                  style={[
-                    styles.tagChipText,
-                    { color: colors.text },
-                    selected && { color: colors.primaryText },
-                  ]}>
-                  {tag.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
+      <TagPicker tags={tags} selectedIds={selectedTagIds} onToggle={toggleTag} />
 
       <Card colors={colors} style={styles.checkboxCard}>
         <Pressable
@@ -337,24 +308,6 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: scaleFont(12.5),
     lineHeight: scaleFont(17),
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tagChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  tagChipText: {
-    fontSize: scaleFont(13),
-    fontWeight: '600',
   },
   checkboxCard: {
     padding: 14,

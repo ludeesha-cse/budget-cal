@@ -6,6 +6,7 @@ import {
   YEARLY_DISCOUNT_MULTIPLIER,
 } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatAmount } from '../utils/formatAmount';
 
 const PREMIUM_FEATURES = [
   'Credit cards',
@@ -89,7 +90,7 @@ function PaywallModal(): React.JSX.Element {
                 Monthly
               </Text>
               <Text style={[styles.planPrice, { color: colors.text }]}>
-                {PLACEHOLDER_PRICING.currencyCode} {monthly.toFixed(2)}
+                {formatAmount(monthly, PLACEHOLDER_PRICING.currencyCode)}
               </Text>
               <Button
                 title="Choose Monthly"
@@ -102,12 +103,10 @@ function PaywallModal(): React.JSX.Element {
                 Yearly
               </Text>
               <Text style={[styles.planPrice, { color: colors.text }]}>
-                {PLACEHOLDER_PRICING.currencyCode}{' '}
-                {discountedYearly.toFixed(2)}
+                {formatAmount(discountedYearly, PLACEHOLDER_PRICING.currencyCode)}
               </Text>
               <Text style={[styles.planStrike, { color: colors.textSecondary }]}>
-                {PLACEHOLDER_PRICING.currencyCode}{' '}
-                {undiscountedYearly.toFixed(2)}
+                {formatAmount(undiscountedYearly, PLACEHOLDER_PRICING.currencyCode)}
               </Text>
               <Text style={[styles.planSavings, { color: colors.success }]}>
                 Save {savingsPercent}%

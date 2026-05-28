@@ -41,6 +41,7 @@ import {
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
 import { budgetStatusFor } from '../utils/statusColor';
+import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -141,7 +142,7 @@ function formatCurrencyTotals(totals: Record<string, number>): string {
     return 'None';
   }
   return entries
-    .map(([code, amount]) => `${code} ${amount.toFixed(2)}`)
+    .map(([code, amount]) => formatAmount(amount, code))
     .join(' · ');
 }
 
@@ -785,8 +786,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                         ? 'Due today'
                         : `Due in ${loan.daysUntilDue}d`}
                     {' — '}
-                    {loan.counterpartyName} ({loan.type}): {loan.currencyCode}{' '}
-                    {loan.totalOwed.toFixed(2)}
+                    {loan.counterpartyName} ({loan.type}): {formatAmount(loan.totalOwed, loan.currencyCode)}
                   </Text>
                 ))}
               </Card>
@@ -827,8 +827,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                           ? 'Due today'
                           : `Due in ${reminder.daysUntilDue}d`}
                       {' — '}
-                      {reminder.currencyCode}{' '}
-                      {reminder.nextAmountDue.toFixed(0)} · #
+                      {formatAmount(reminder.nextAmountDue, reminder.currencyCode)} · #
                       {reminder.nextInstallmentNumber} of{' '}
                       {reminder.numberOfMonths}
                     </Text>
@@ -871,7 +870,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
               {Object.keys(cashInHandByCurrency).length > 0
                 ? Object.entries(cashInHandByCurrency)
                     .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([code, amount]) => `${code} ${amount.toFixed(2)}`)
+                    .map(([code, amount]) => formatAmount(amount, code))
                     .join(' · ')
                 : 'None'}
             </Text>

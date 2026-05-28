@@ -24,6 +24,9 @@ import SegmentedToggle, {
 import DateField from '../components/common/DateField';
 import ProgressRing from '../components/common/ProgressRing';
 import ProgressBar from '../components/common/ProgressBar';
+import ActionButtons, {
+  type ActionButtonItem,
+} from '../components/common/ActionButtons';
 import { scaleFont, typography } from '../theme/typography';
 import {
   createInstallmentPlan,
@@ -47,6 +50,7 @@ import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
+import { formatAmount } from '../utils/formatAmount';
 import type { SettingsStackParamList } from '../navigation/types';
 
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
@@ -592,7 +596,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   ) : (
                     <Text style={[typography.amountMono, styles.rowLine, { color: colors.text }]}>
                       Paid {paidCount} of {item.numberOfMonths} · Next{' '}
-                      {item.currencyCode} {nextAmountDue?.toFixed(0)}
+                      {formatAmount(nextAmountDue ?? 0, item.currencyCode)}
                     </Text>
                   )}
                 </View>
@@ -600,40 +604,33 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
 
               <ProgressBar percent={percent} color={ringColor} style={styles.progressTrack} />
               <Text style={[styles.rowMeta, { color: colors.textSecondary }]}>
-                Remaining: {item.currencyCode} {remaining.toFixed(0)} of{' '}
+                Remaining: {formatAmount(remaining, item.currencyCode)} of{' '}
                 {item.totalRepayable.toFixed(0)}
               </Text>
 
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-              <View style={styles.planActionsRow}>
-                {!isFullyPaid && (
-                  <Pressable
-                    style={[styles.payNextButton, { backgroundColor: colors.primary }]}
-                    onPress={() => openPayModal(item)}>
-                    <CircleDollarSign size={14} color={colors.primaryText} />
-                    <Text style={[styles.payNextButtonText, { color: colors.primaryText }]}>
-                      Pay Next
-                    </Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  style={[styles.iconPillButton, { borderColor: colors.border }]}
-                  onPress={() => handleEditPress(item)}>
-                  <Pencil size={14} color={colors.text} />
-                  <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
-                    Edit
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
-                  onPress={() => handleDelete(item.id)}>
-                  <Trash2 size={14} color={colors.danger} />
-                  <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
-                    Delete
-                  </Text>
-                </Pressable>
-              </View>
+              <ActionButtons
+                style={styles.planActionsRow}
+                items={(() => {
+                  const buttons: ActionButtonItem[] = [];
+                  if (!isFullyPaid) {
+                    buttons.push({
+                      key: 'pay',
+                      icon: CircleDollarSign,
+                      label: 'Pay Next',
+                      solid: true,
+                      grow: true,
+                      onPress: () => openPayModal(item),
+                    });
+                  }
+                  buttons.push(
+                    { key: 'edit', icon: Pencil, label: 'Edit', onPress: () => handleEditPress(item) },
+                    { key: 'delete', icon: Trash2, label: 'Delete', tone: 'danger', onPress: () => handleDelete(item.id) },
+                  );
+                  return buttons;
+                })()}
+              />
 
               <Pressable
                 onPress={() => setExpandedPlanId(isExpanded ? null : item.id)}>
@@ -660,7 +657,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                           ]}>
                           <Text style={[styles.historyRowText, { color: colors.text }]}>
                             #{payment.installmentNumber} — {payment.paidDate}{' '}
-                            — {item.currencyCode} {payment.amount.toFixed(0)}{' '}
+                            — {formatAmount(payment.amount, item.currencyCode)}{' '}
                             ({payment.accountName})
                           </Text>
                           {isLatest && (
@@ -902,8 +899,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
             {payTarget && (
               <>
                 <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
-                  Amount: {payTarget.currencyCode}{' '}
-                  {nextAmountDueFor(payTarget)?.toFixed(0)}
+                  Amount: {formatAmount(nextAmountDueFor(payTarget) ?? 0, payTarget.currencyCode)}
                 </Text>
 
                 <Text style={[styles.label, { color: colors.text }]}>
@@ -994,35 +990,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   planActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
     marginBottom: 10,
-  },
-  payNextButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    borderRadius: 10,
-    paddingVertical: 8,
-  },
-  payNextButtonText: {
-    fontSize: scaleFont(12.5),
-    fontWeight: '700',
-  },
-  iconPillButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  iconPillButtonText: {
-    fontSize: scaleFont(12.5),
-    fontWeight: '600',
   },
   historyLink: {
     fontWeight: '600',

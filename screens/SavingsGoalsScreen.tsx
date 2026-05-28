@@ -22,6 +22,7 @@ import SegmentedToggle, {
 } from '../components/common/SegmentedToggle';
 import DateField from '../components/common/DateField';
 import ProgressBar from '../components/common/ProgressBar';
+import { formatAmount } from '../utils/formatAmount';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -437,7 +438,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
                       )}
                     </Text>
                     <Text style={[typography.amountMono, styles.goalAmount, { color: colors.text }]}>
-                      {goal.currencyCode} {goal.totalContributed.toFixed(2)}{' '}
+                      {formatAmount(goal.totalContributed, goal.currencyCode)}{' '}
                       <Text style={[styles.goalAmountOf, { color: colors.textSecondary }]}>
                         of {goal.targetAmount.toFixed(2)}
                       </Text>
@@ -473,8 +474,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     </Text>
                   ) : (
                     <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
-                      Target {goal.targetDate} — {goal.currencyCode}{' '}
-                      {(requiredPerMonth ?? 0).toFixed(2)}/month needed
+                      Target {goal.targetDate} — {formatAmount(requiredPerMonth ?? 0, goal.currencyCode)}/month needed
                     </Text>
                   )
                 ) : (
@@ -581,8 +581,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
                               { borderTopColor: colors.border },
                             ]}>
                             <Text style={{ color: colors.text }}>
-                              {contribution.date} — {goal.currencyCode}{' '}
-                              {contribution.amount.toFixed(2)}
+                              {contribution.date} — {formatAmount(contribution.amount, goal.currencyCode)}
                               {contribution.note ? ` — ${contribution.note}` : ''}
                             </Text>
                             <View style={styles.rowActions}>

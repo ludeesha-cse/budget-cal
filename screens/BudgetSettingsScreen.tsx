@@ -22,6 +22,7 @@ import {
   upsertBudget,
 } from '../db/queries';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
+import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
@@ -146,7 +147,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
         />
         {perDayRate !== null && (
           <Text style={[typography.amountMono, styles.perDayText, { color: colors.textSecondary }]}>
-            ≈ {perDayRate.toFixed(2)} / day across {daysInMonth} days
+            ≈ {formatAmount(perDayRate, currencyCode)} / day across {daysInMonth} days
           </Text>
         )}
       </Card>
@@ -187,7 +188,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
           <Card colors={colors} style={styles.pastRow}>
             <Text style={{ color: colors.text }}>{item.month ?? '—'}</Text>
             <Text style={[typography.amountMono, { color: colors.text }]}>
-              {item.limitAmount.toFixed(2)}
+              {formatAmount(item.limitAmount, currencyCode)}
             </Text>
           </Card>
         )}
@@ -218,7 +219,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
                 {item.name}
               </Text>
               <Text style={[typography.amountMono, styles.rowDebt, { color: colors.danger }]}>
-                Owed: {item.debt.toFixed(2)}
+                Owed: {formatAmount(item.debt, currencyCode)}
               </Text>
             </View>
             <Pressable

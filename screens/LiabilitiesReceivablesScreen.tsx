@@ -25,6 +25,7 @@ import SegmentedToggle, {
 import DateField from '../components/common/DateField';
 import { getCurrentDateString } from '../utils/date';
 import { avatarColorsFor } from '../utils/avatarColor';
+import { formatAmount } from '../utils/formatAmount';
 import {
   createLoanAccount,
   getAccounts,
@@ -84,7 +85,7 @@ function formatTotals(totals: Record<string, number>): string {
     return 'None';
   }
   return entries
-    .map(([code, amount]) => `${code} ${amount.toFixed(2)}`)
+    .map(([code, amount]) => formatAmount(amount, code))
     .join(' · ');
 }
 
@@ -490,7 +491,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                     {loan.counterpartyName}
                   </Text>
                   <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                    Principal: {loan.currencyCode} {loan.principal.toFixed(2)}
+                    Principal: {formatAmount(loan.principal, loan.currencyCode)}
                   </Text>
                 </View>
               </View>
@@ -504,8 +505,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   styles.loanTotalOwed,
                   { color: type === 'Liability' ? colors.danger : colors.success },
                 ]}>
-                {loan.currencyCode}{' '}
-                {(totalOwedByAccountId[loan.accountId] ?? loan.principal).toFixed(2)}
+                {formatAmount(totalOwedByAccountId[loan.accountId] ?? loan.principal, loan.currencyCode)}
               </Text>
               <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
                 Started {loan.dateCreated}
@@ -569,8 +569,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
                   {loan.counterpartyName}
                 </Text>
                 <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                  Already open · {loan.currencyCode}{' '}
-                  {loan.currentBalance.toFixed(2)} outstanding
+                  Already open · {formatAmount(loan.currentBalance, loan.currencyCode)} outstanding
                 </Text>
               </View>
             ))}
@@ -707,11 +706,11 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         {settleTarget && (
           <>
             <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
-              Total owed today: {settleTarget.currencyCode}{' '}
-              {(
+              Total owed today: {formatAmount(
                 totalOwedByAccountId[settleTarget.accountId] ??
-                settleTarget.principal
-              ).toFixed(2)}
+                  settleTarget.principal,
+                settleTarget.currencyCode,
+              )}
             </Text>
 
             <Text style={[styles.label, { color: colors.text }]}>

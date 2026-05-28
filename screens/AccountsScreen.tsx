@@ -29,6 +29,7 @@ import NumericInputAccessory, {
 import PremiumGate from '../components/PremiumGate';
 import EmptyState from '../components/common/EmptyState';
 import DateField from '../components/common/DateField';
+import ActionButtons from '../components/common/ActionButtons';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addAccountWithBalance,
@@ -53,6 +54,7 @@ import { FREE_ACCOUNT_TYPES } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
+import { formatAmount } from '../utils/formatAmount';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -732,7 +734,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                     ]}>
                     {isCreditCard
                       ? `${b.currencyCode} owes ${(-b.currentBalance).toFixed(2)}`
-                      : `${b.currencyCode} ${b.currentBalance.toFixed(2)}`}
+                      : formatAmount(b.currentBalance, b.currencyCode)}
                   </Text>
                 </Pressable>
               ))}
@@ -760,32 +762,13 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <View style={styles.accountActionsRow}>
-            <Pressable
-              style={[styles.iconPillButton, { borderColor: colors.border }]}
-              onPress={() => handleEditPress(item)}>
-              <Pencil size={14} color={colors.text} />
-              <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
-                Edit
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.iconPillButton, { borderColor: colors.border }]}
-              onPress={() => handleClose(item)}>
-              <CheckCircle2 size={14} color={colors.text} />
-              <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
-                Close
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
-              onPress={() => handleDelete(item.id)}>
-              <Trash2 size={14} color={colors.danger} />
-              <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
-                Delete
-              </Text>
-            </Pressable>
-          </View>
+          <ActionButtons
+            items={[
+              { key: 'edit', icon: Pencil, label: 'Edit', onPress: () => handleEditPress(item) },
+              { key: 'close', icon: CheckCircle2, label: 'Close', onPress: () => handleClose(item) },
+              { key: 'delete', icon: Trash2, label: 'Delete', tone: 'danger', onPress: () => handleDelete(item.id) },
+            ]}
+          />
 
           <Pressable onPress={() => toggleAddCurrency(item.id)}>
             <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
@@ -1023,7 +1006,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
         {updateBalanceTarget && (
           <>
             <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
-              Current: {updateBalanceTarget.currentBalance.toFixed(2)}
+              Current: {formatAmount(updateBalanceTarget.currentBalance, updateBalanceTarget.currencyCode)}
             </Text>
 
             <Text style={[styles.label, { color: colors.text }]}>
@@ -1076,8 +1059,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
             {payOffTarget && (
               <>
                 <Text style={[styles.modalCurrent, { color: colors.danger }]}>
-                  Current debt: {payOffTarget.currentDebt.toFixed(2)}{' '}
-                  {payOffTarget.currencyCode}
+                  Current debt: {formatAmount(payOffTarget.currentDebt, payOffTarget.currencyCode)}
                 </Text>
 
                 <Text style={[styles.label, { color: colors.text }]}>
@@ -1401,23 +1383,6 @@ const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: 10,
-  },
-  accountActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  iconPillButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  iconPillButtonText: {
-    fontSize: scaleFont(12.5),
-    fontWeight: '600',
   },
   addCurrencyLink: {
     marginTop: 8,

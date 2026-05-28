@@ -20,6 +20,7 @@ import EmptyState from '../components/common/EmptyState';
 import SegmentedToggle, {
   type SegmentedToggleOption,
 } from '../components/common/SegmentedToggle';
+import ActionButtons from '../components/common/ActionButtons';
 import {
   createRecurringRule,
   deleteRecurringRule,
@@ -33,6 +34,7 @@ import {
   type NewRecurringRuleParams,
 } from '../db/queries';
 import { avatarColorsFor } from '../utils/avatarColor';
+import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
@@ -377,7 +379,7 @@ function RecurringRulesScreen(): React.JSX.Element {
                       )}
                     </Text>
                     <Text style={[typography.amountMono, styles.rowMeta, { color: colors.text }]}>
-                      {item.currencyCode} {item.amount.toFixed(2)}
+                      {formatAmount(item.amount, item.currencyCode)}
                     </Text>
                     <Text style={[styles.rowSubMeta, { color: colors.textSecondary }]}>
                       Day {item.dayOfMonth} · {item.accountName}
@@ -390,36 +392,20 @@ function RecurringRulesScreen(): React.JSX.Element {
 
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-                <View style={styles.ruleActionsRow}>
-                  <Pressable
-                    style={[styles.iconPillButton, { borderColor: colors.border }]}
-                    onPress={() => handleEditPress(item)}>
-                    <Pencil size={14} color={colors.text} />
-                    <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
-                      Edit
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.iconPillButton, { borderColor: colors.border }]}
-                    onPress={() => handleToggleActive(item)}>
-                    {item.active ? (
-                      <Ban size={14} color={colors.text} />
-                    ) : (
-                      <CheckCircle2 size={14} color={colors.text} />
-                    )}
-                    <Text style={[styles.iconPillButtonText, { color: colors.text }]}>
-                      {item.active ? 'Deactivate' : 'Activate'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.iconPillButton, { borderColor: colors.dangerSoft }]}
-                    onPress={() => handleDelete(item)}>
-                    <Trash2 size={14} color={colors.danger} />
-                    <Text style={[styles.iconPillButtonText, { color: colors.danger }]}>
-                      Delete
-                    </Text>
-                  </Pressable>
-                </View>
+                <ActionButtons
+                  equalWidth
+                  style={styles.ruleActionsRow}
+                  items={[
+                    { key: 'edit', icon: Pencil, label: 'Edit', onPress: () => handleEditPress(item) },
+                    {
+                      key: 'toggle',
+                      icon: item.active ? Ban : CheckCircle2,
+                      label: item.active ? 'Deactivate' : 'Activate',
+                      onPress: () => handleToggleActive(item),
+                    },
+                    { key: 'delete', icon: Trash2, label: 'Delete', tone: 'danger', onPress: () => handleDelete(item) },
+                  ]}
+                />
 
                 <Pressable onPress={() => handleToggleHistory(item)}>
                   <Text style={[styles.historyLink, { color: colors.primary }]}>
@@ -448,9 +434,7 @@ function RecurringRulesScreen(): React.JSX.Element {
                           <Text style={{ color: colors.text }}>
                             {occurrence.dueDate} —{' '}
                             {occurrence.status === 'confirmed'
-                              ? `Confirmed ${item.currencyCode} ${(
-                                  occurrence.confirmedAmount ?? 0
-                                ).toFixed(2)}${
+                              ? `Confirmed ${formatAmount(occurrence.confirmedAmount ?? 0, item.currencyCode)}${
                                   occurrence.accountName
                                     ? ` (${occurrence.accountName})`
                                     : ''
@@ -683,24 +667,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   ruleActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
     marginBottom: 10,
-  },
-  iconPillButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-  },
-  iconPillButtonText: {
-    fontSize: scaleFont(12),
-    fontWeight: '600',
   },
   historyLink: {
     fontWeight: '600',

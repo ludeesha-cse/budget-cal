@@ -5,6 +5,7 @@ import { Pencil, Plus, Tag as TagIcon, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
 import EmptyState from '../components/common/EmptyState';
+import ActionButtons from '../components/common/ActionButtons';
 import { addTag, deleteTag, getTags, updateTag } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
@@ -122,20 +123,13 @@ function TagsScreen(): React.JSX.Element {
             <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
               {item.name}
             </Text>
-            <View style={styles.rowActions}>
-              <Pressable
-                hitSlop={8}
-                style={styles.iconButton}
-                onPress={() => handleEditPress(item)}>
-                <Pencil size={16} color={colors.primary} />
-              </Pressable>
-              <Pressable
-                hitSlop={8}
-                style={styles.iconButton}
-                onPress={() => handleDelete(item)}>
-                <Trash2 size={16} color={colors.danger} />
-              </Pressable>
-            </View>
+            <ActionButtons
+              variant="icon"
+              items={[
+                { key: 'edit', icon: Pencil, tone: 'primary', onPress: () => handleEditPress(item) },
+                { key: 'delete', icon: Trash2, tone: 'danger', onPress: () => handleDelete(item) },
+              ]}
+            />
           </Card>
         )}
         ListEmptyComponent={
@@ -226,13 +220,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFont(15),
     fontWeight: '600',
-  },
-  rowActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  iconButton: {
-    padding: 6,
   },
 });
 

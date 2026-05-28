@@ -37,6 +37,7 @@ import {
   getCurrentMonthString,
   getCurrentYearString,
 } from '../utils/date';
+import { formatAmount } from '../utils/formatAmount';
 import MonthYearPicker, { MONTH_OPTIONS } from '../components/MonthYearPicker';
 import EmptyState from '../components/common/EmptyState';
 import DateField from '../components/common/DateField';
@@ -485,7 +486,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                       styles.amount,
                       { color: colors.primary },
                     ]}>
-                    {loan.currencyCode} {loan.amount.toFixed(2)}
+                    {formatAmount(loan.amount, loan.currencyCode)}
                   </Text>
                 </View>
               );
@@ -536,7 +537,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                         styles.amount,
                         { color: colors.text },
                       ]}>
-                      {transfer.currencyCode} {transfer.amount.toFixed(2)}
+                      {formatAmount(transfer.amount, transfer.currencyCode)}
                     </Text>
                     <Pressable
                       hitSlop={8}
