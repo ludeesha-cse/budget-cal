@@ -40,6 +40,7 @@ import {
   getCategoryAverageLeftPerDay,
 } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
+import { formatEyebrowDate, formatMonthTitle } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
@@ -54,46 +55,6 @@ const INSTALLMENT_REMINDER_WINDOW_DAYS = 4;
 // exist specifically so this card never has to grow to fit everything.
 const CATEGORY_PREVIEW_COUNT = 3;
 const SHORTCUT_ACCOUNT_COUNT = 2;
-
-const DAY_NAMES = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-// Hardcoded name tables rather than Intl/toLocaleString — same reasoning
-// as ReportsScreen's formatMonthLabel: this only ever needs a fixed
-// English label, never real locale-awareness, so there's nothing to gain
-// from depending on Hermes' locale-data being complete on every device.
-function formatEyebrowDate(dateString: string): string {
-  const date = new Date(`${dateString}T00:00:00`);
-  const day = DAY_NAMES[date.getDay()].toUpperCase();
-  const month = MONTH_NAMES[date.getMonth()].slice(0, 3).toUpperCase();
-  return `${day}, ${date.getDate()} ${month}`;
-}
-
-function formatMonthTitle(month: string): string {
-  const [, monthNumber] = month.split('-').map(Number);
-  return MONTH_NAMES[monthNumber - 1];
-}
 
 function formatAmountPlain(amount: number): string {
   return amount.toLocaleString('en-US', {

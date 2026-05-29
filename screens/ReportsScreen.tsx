@@ -22,7 +22,13 @@ import {
   getSpendingByAccountType,
   getSpendingByCategory,
 } from '../db/queries';
-import { getReportRange, ReportRangePreset } from '../utils/dateUtils';
+import {
+  getReportRange,
+  ReportRangePreset,
+  formatMonthLabel,
+  formatMonthAxisLabel,
+  formatRangeHeader,
+} from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import {
@@ -46,52 +52,6 @@ const PRESET_OPTIONS: { key: ReportRangePreset; label: string }[] = [
   { key: 'last3Months', label: '3 Months' },
   { key: 'lastYear', label: 'Year' },
 ];
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-// Hardcoded month names rather than Intl/toLocaleString — same reasoning
-// as utils/formatAmount.ts: this only ever needs a fixed English label,
-// never actual locale-aware formatting, so there's nothing to gain from
-// depending on Hermes' locale-data being complete on every device.
-function formatMonthLabel(month: string): string {
-  const [year, monthNumber] = month.split('-').map(Number);
-  return `${MONTH_NAMES[monthNumber - 1]} ${year}`;
-}
-
-// "1 – 31 August 2026" for a single-month range, or falls back to
-// "August 2026 – October 2026" for a multi-month one — day-level
-// granularity only reads as meaningful within one calendar month.
-function formatRangeHeader(range: { startDate: string; endDate: string; months: string[] }): string {
-  if (range.months.length === 1) {
-    const [, monthNumber, endDay] = range.endDate.split('-').map(Number);
-    const startDay = Number(range.startDate.split('-')[2]);
-    const year = Number(range.startDate.split('-')[0]);
-    return `${startDay} – ${endDay} ${MONTH_NAMES[monthNumber - 1]} ${year}`;
-  }
-  return `${formatMonthLabel(range.months[0])} – ${formatMonthLabel(range.months[range.months.length - 1])}`;
-}
-
-// Short 3-letter form of the same month names used above, for chart axis
-// labels where formatMonthLabel's "August 2026" would be far too wide —
-// sliced from the same MONTH_NAMES array rather than a second hardcoded
-// list, so the two labelings can never drift out of sync.
-function formatMonthAxisLabel(month: string): string {
-  const [, monthNumber] = month.split('-').map(Number);
-  return MONTH_NAMES[monthNumber - 1].slice(0, 3);
-}
 
 // "45.0K" / "1.2M" — the summary card's big figures follow the mockup's
 // compact style rather than a full formatAmount() figure, since three of

@@ -1,5 +1,93 @@
 export { getCurrentMonthString } from './date';
 
+// Hardcoded name tables rather than Intl/toLocaleString — same reasoning
+// as utils/formatAmount.ts: these only ever need a fixed English label,
+// never actual locale-aware formatting, so there's nothing to gain from
+// depending on Hermes' locale-data being complete on every device. Single
+// source for both Dashboard and Reports, which previously each hardcoded
+// their own byte-for-byte-identical copy of MONTH_NAMES.
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+// "1st" / "2nd" / "3rd" / "4th" — only ever fed a day-of-month (1-31), so
+// no need to handle negative numbers or anything outside that range.
+export function ordinalSuffix(day: number): string {
+  if (day % 10 === 1 && day !== 11) return 'st';
+  if (day % 10 === 2 && day !== 12) return 'nd';
+  if (day % 10 === 3 && day !== 13) return 'rd';
+  return 'th';
+}
+
+// "August 2026"
+export function formatMonthLabel(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return `${MONTH_NAMES[monthNumber - 1]} ${year}`;
+}
+
+// "August" — same data as formatMonthLabel but without the year, for
+// contexts (e.g. a section title already scoped to "this year") where
+// repeating the year would be redundant.
+export function formatMonthTitle(month: string): string {
+  const [, monthNumber] = month.split('-').map(Number);
+  return MONTH_NAMES[monthNumber - 1];
+}
+
+// Short 3-letter form of the same month names, for chart axis labels
+// where formatMonthLabel's "August 2026" would be far too wide — sliced
+// from the same MONTH_NAMES array rather than a second hardcoded list,
+// so the two labelings can never drift out of sync.
+export function formatMonthAxisLabel(month: string): string {
+  const [, monthNumber] = month.split('-').map(Number);
+  return MONTH_NAMES[monthNumber - 1].slice(0, 3);
+}
+
+// "1 – 31 August 2026" for a single-month range, or falls back to
+// "August 2026 – October 2026" for a multi-month one — day-level
+// granularity only reads as meaningful within one calendar month.
+export function formatRangeHeader(range: {
+  startDate: string;
+  endDate: string;
+  months: string[];
+}): string {
+  if (range.months.length === 1) {
+    const [, monthNumber, endDay] = range.endDate.split('-').map(Number);
+    const startDay = Number(range.startDate.split('-')[2]);
+    const year = Number(range.startDate.split('-')[0]);
+    return `${startDay} – ${endDay} ${MONTH_NAMES[monthNumber - 1]} ${year}`;
+  }
+  return `${formatMonthLabel(range.months[0])} – ${formatMonthLabel(range.months[range.months.length - 1])}`;
+}
+
+// "SAT, 10 AUG"
+export function formatEyebrowDate(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00`);
+  const day = DAY_NAMES[date.getDay()].toUpperCase();
+  const month = MONTH_NAMES[date.getMonth()].slice(0, 3).toUpperCase();
+  return `${day}, ${date.getDate()} ${month}`;
+}
+
 export function getDaysInMonth(month: string): number {
   const [year, monthNumber] = month.split('-').map(Number);
   return new Date(year, monthNumber, 0).getDate();

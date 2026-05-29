@@ -50,6 +50,7 @@ import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
+import { ordinalSuffix } from '../utils/dateUtils';
 import { formatAmount } from '../utils/formatAmount';
 import type { SettingsStackParamList } from '../navigation/types';
 
@@ -65,16 +66,6 @@ const MODE_OPTIONS: SegmentedToggleOption<Mode>[] = [
   { key: 'principal', label: 'Principal + Rate' },
   { key: 'monthly', label: 'Fixed Monthly' },
 ];
-
-// "1st" / "2nd" / "3rd" / "4th" — only ever fed a day-of-month (1-31) from
-// this screen, so no need to handle negative numbers or anything outside
-// that range.
-function ordinalSuffix(day: number): string {
-  if (day % 10 === 1 && day !== 11) return 'st';
-  if (day % 10 === 2 && day !== 12) return 'nd';
-  if (day % 10 === 3 && day !== 13) return 'rd';
-  return 'th';
-}
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
