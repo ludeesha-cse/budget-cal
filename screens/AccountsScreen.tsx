@@ -634,15 +634,15 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     const fromAccount = accounts.find(
       a => String(a.id) === transferFromAccountId,
     );
-    const fromBalance =
-      fromAccount?.balances.find(
-        b => String(b.currencyId) === transferCurrencyId,
-      )?.currentBalance ?? 0;
+    const fromBalanceRow = fromAccount?.balances.find(
+      b => String(b.currencyId) === transferCurrencyId,
+    );
+    const fromBalance = fromBalanceRow?.currentBalance ?? 0;
     const resultingBalance = fromBalance - parsedAmount;
     if (resultingBalance < 0) {
       Alert.alert(
         'This will leave the account negative',
-        `This will leave ${fromAccount?.name ?? 'the account'} at ${resultingBalance.toFixed(2)}. Continue?`,
+        `This will leave ${fromAccount?.name ?? 'the account'} at ${formatAmount(resultingBalance, fromBalanceRow?.currencyCode ?? '')}. Continue?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Continue', onPress: () => performTransfer(parsedAmount) },
@@ -733,7 +733,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                       { borderColor: colors.border, color: colors.text },
                     ]}>
                     {isCreditCard
-                      ? `${b.currencyCode} owes ${(-b.currentBalance).toFixed(2)}`
+                      ? `${b.currencyCode} owes ${formatAmount(-b.currentBalance, b.currencyCode, { hideCode: true })}`
                       : formatAmount(b.currentBalance, b.currencyCode)}
                   </Text>
                 </Pressable>
@@ -1211,11 +1211,19 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                   );
                   const currencyCode = fromBalanceRow?.currencyCode ?? '';
                   const fromLine = `${fromAccount?.name ?? 'From'}: ${
-                    fromBalanceRow?.currentBalance?.toFixed(2) ?? '—'
+                    fromBalanceRow?.currentBalance != null
+                      ? formatAmount(fromBalanceRow.currentBalance, currencyCode, {
+                          hideCode: true,
+                        })
+                      : '—'
                   } ${currencyCode}`;
                   const toLine = toAccount
                     ? `  ·  ${toAccount.name}: ${
-                        toBalanceRow?.currentBalance?.toFixed(2) ?? '—'
+                        toBalanceRow?.currentBalance != null
+                          ? formatAmount(toBalanceRow.currentBalance, currencyCode, {
+                              hideCode: true,
+                            })
+                          : '—'
                       } ${currencyCode}`
                     : '';
                   return `${fromLine}${toLine}`;

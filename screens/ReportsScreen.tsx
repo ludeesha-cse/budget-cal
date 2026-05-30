@@ -30,7 +30,7 @@ import {
   formatRangeHeader,
 } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
-import { formatAmount } from '../utils/formatAmount';
+import { formatAmount, formatPercent, formatAbbreviated } from '../utils/formatAmount';
 import {
   buildCategoryPieSlices,
   buildTrendChartData,
@@ -52,21 +52,6 @@ const PRESET_OPTIONS: { key: ReportRangePreset; label: string }[] = [
   { key: 'last3Months', label: '3 Months' },
   { key: 'lastYear', label: 'Year' },
 ];
-
-// "45.0K" / "1.2M" — the summary card's big figures follow the mockup's
-// compact style rather than a full formatAmount() figure, since three of
-// these need to sit side by side without wrapping.
-function formatAbbreviated(amount: number): string {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '';
-  if (abs >= 1_000_000) {
-    return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
-  }
-  if (abs >= 1000) {
-    return `${sign}${(abs / 1000).toFixed(1)}K`;
-  }
-  return `${sign}${abs.toFixed(0)}`;
-}
 
 // Defined at module scope (not inline in ReportsScreen's JSX) so it isn't
 // recreated as a new component type on every render — react-hooks/eslint
@@ -427,15 +412,14 @@ function ReportsScreen(): React.JSX.Element {
                           styles.legendPercent,
                           { color: colors.textSecondary },
                         ]}>
-                        {(
+                        {formatPercent(
                           (slice.value /
                             Math.max(
                               1,
                               pieSlices.reduce((sum, s) => sum + s.value, 0),
                             )) *
-                          100
-                        ).toFixed(0)}
-                        %
+                            100,
+                        )}
                       </Text>
                     </View>
                   ))}
@@ -453,7 +437,7 @@ function ReportsScreen(): React.JSX.Element {
                       {formatAmount(row.total, selectedCurrencyCode)}
                     </Text>
                     <Text style={{ color: colors.textSecondary }}>
-                      {row.percentage.toFixed(1)}%
+                      {formatPercent(row.percentage, 1)}
                     </Text>
                   </View>
                 </View>

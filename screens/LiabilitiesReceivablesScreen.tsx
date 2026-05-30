@@ -25,7 +25,7 @@ import SegmentedToggle, {
 import DateField from '../components/common/DateField';
 import { getCurrentDateString } from '../utils/date';
 import { avatarColorsFor } from '../utils/avatarColor';
-import { formatAmount } from '../utils/formatAmount';
+import { formatAmount, formatPercent } from '../utils/formatAmount';
 import {
   createLoanAccount,
   getAccounts,
@@ -513,7 +513,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               </Text>
               {loan.interestRate != null && (
                 <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                  Interest: {(loan.interestRate / 100).toFixed(2)}%{' '}
+                  Interest: {formatPercent(loan.interestRate / 100, 2)}{' '}
                   {loan.interestPeriod ?? ''}
                 </Text>
               )}

@@ -638,8 +638,10 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                       styles.amount,
                       { color: isIncome ? colors.success : colors.danger },
                     ]}>
-                    {isIncome ? '+' : '-'}
-                    {item_.amount.toFixed(2)}
+                    {isIncome ? '+' : ''}
+                    {formatAmount(isIncome ? item_.amount : -item_.amount, '', {
+                      hideCode: true,
+                    })}
                   </Text>
                   <Pressable
                     hitSlop={8}

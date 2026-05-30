@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
 import { getNetWorthByCurrency, NetWorthByCurrency } from '../utils/netWorth';
+import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -66,23 +67,34 @@ function NetWorthScreen(): React.JSX.Element {
                   {row.currencyCode}
                 </Text>
                 <Text style={[styles.row, { color: colors.success }]}>
-                  Assets: {row.assets.toFixed(2)}
+                  Assets:{' '}
+                  {formatAmount(row.assets, row.currencyCode, { hideCode: true })}
                 </Text>
                 <Text style={[styles.row, { color: colors.danger }]}>
-                  Liabilities: {row.liabilities.toFixed(2)}
+                  Liabilities:{' '}
+                  {formatAmount(row.liabilities, row.currencyCode, {
+                    hideCode: true,
+                  })}
                 </Text>
                 <Text style={[styles.row, { color: colors.danger }]}>
-                  Credit card debt: {row.creditCardDebt.toFixed(2)}
+                  Credit card debt:{' '}
+                  {formatAmount(row.creditCardDebt, row.currencyCode, {
+                    hideCode: true,
+                  })}
                 </Text>
                 <Text style={[styles.row, { color: colors.danger }]}>
-                  Remaining installments: {row.remainingInstallments.toFixed(2)}
+                  Remaining installments:{' '}
+                  {formatAmount(row.remainingInstallments, row.currencyCode, {
+                    hideCode: true,
+                  })}
                 </Text>
                 <Text
                   style={[
                     styles.totalRow,
                     { color: row.netWorth >= 0 ? colors.success : colors.danger },
                   ]}>
-                  Net worth: {row.netWorth.toFixed(2)}
+                  Net worth:{' '}
+                  {formatAmount(row.netWorth, row.currencyCode, { hideCode: true })}
                 </Text>
               </Card>
             ))

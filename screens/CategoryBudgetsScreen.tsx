@@ -20,6 +20,7 @@ import NumericInputAccessory, {
 import EmptyState from '../components/common/EmptyState';
 import ProgressBar from '../components/common/ProgressBar';
 import { budgetStatusFor } from '../utils/statusColor';
+import { formatAmount } from '../utils/formatAmount';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
@@ -166,8 +167,14 @@ function CategoryBudgetsScreen(): React.JSX.Element {
               />
               <Text style={[typography.amountMono, styles.rowSpent, { color: colors.textSecondary }]}>
                 {hasBudget
-                  ? `Spent ${spent.toFixed(2)} of ${budgetAmount.toFixed(2)}`
-                  : `Spent ${spent.toFixed(2)} · no budget set`}
+                  ? `Spent ${formatAmount(spent, currencyCode, {
+                      hideCode: true,
+                    })} of ${formatAmount(budgetAmount, currencyCode, {
+                      hideCode: true,
+                    })}`
+                  : `Spent ${formatAmount(spent, currencyCode, {
+                      hideCode: true,
+                    })} · no budget set`}
               </Text>
             </Card>
           );

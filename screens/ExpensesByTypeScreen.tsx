@@ -6,6 +6,7 @@ import EmptyState from '../components/common/EmptyState';
 import ProgressBar from '../components/common/ProgressBar';
 import { getExpensesByType } from '../db/queries';
 import { getCurrentMonthString } from '../utils/date';
+import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
@@ -64,7 +65,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
                     {item.type}
                   </Text>
                   <Text style={[typography.amountMono, styles.rowAmount, { color: colors.text }]}>
-                    {item.total.toFixed(2)}
+                    {formatAmount(item.total, '', { hideCode: true })}
                   </Text>
                 </View>
                 <ProgressBar percent={percent} color={dotColor} style={styles.progressTrack} />

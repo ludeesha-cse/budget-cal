@@ -150,6 +150,8 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     const currency = currencies.find(c => String(c.id) === id);
     return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
   };
+  const currencyCodeFor = (id: string) =>
+    currencies.find(c => String(c.id) === id)?.code ?? '';
 
   const resetForm = () => {
     setEditingId(null);
@@ -596,7 +598,9 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
               <ProgressBar percent={percent} color={ringColor} style={styles.progressTrack} />
               <Text style={[styles.rowMeta, { color: colors.textSecondary }]}>
                 Remaining: {formatAmount(remaining, item.currencyCode)} of{' '}
-                {item.totalRepayable.toFixed(0)}
+                {formatAmount(item.totalRepayable, item.currencyCode, {
+                  hideCode: true,
+                })}
               </Text>
 
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -852,16 +856,27 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                         Preview
                       </Text>
                       <Text style={{ color: colors.text }}>
-                        Total repayable: {preview.totalRepayable.toFixed(0)}
+                        Total repayable:{' '}
+                        {formatAmount(
+                          preview.totalRepayable,
+                          currencyCodeFor(currencyId),
+                        )}
                       </Text>
                       <Text style={{ color: colors.text }}>
-                        Monthly amount: {preview.monthlyAmount.toFixed(0)}
+                        Monthly amount:{' '}
+                        {formatAmount(
+                          preview.monthlyAmount,
+                          currencyCodeFor(currencyId),
+                        )}
                       </Text>
                       {preview.finalInstallmentAmount !==
                         preview.monthlyAmount && (
                         <Text style={{ color: colors.text }}>
                           Final installment:{' '}
-                          {preview.finalInstallmentAmount.toFixed(0)}
+                          {formatAmount(
+                            preview.finalInstallmentAmount,
+                            currencyCodeFor(currencyId),
+                          )}
                         </Text>
                       )}
                     </View>

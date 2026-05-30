@@ -22,7 +22,7 @@ import SegmentedToggle, {
 } from '../components/common/SegmentedToggle';
 import DateField from '../components/common/DateField';
 import ProgressBar from '../components/common/ProgressBar';
-import { formatAmount } from '../utils/formatAmount';
+import { formatAmount, formatPercent } from '../utils/formatAmount';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -440,7 +440,10 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     <Text style={[typography.amountMono, styles.goalAmount, { color: colors.text }]}>
                       {formatAmount(goal.totalContributed, goal.currencyCode)}{' '}
                       <Text style={[styles.goalAmountOf, { color: colors.textSecondary }]}>
-                        of {goal.targetAmount.toFixed(2)}
+                        of{' '}
+                        {formatAmount(goal.targetAmount, goal.currencyCode, {
+                          hideCode: true,
+                        })}
                       </Text>
                     </Text>
                   </View>
@@ -455,7 +458,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
                         styles.fundedPillText,
                         { color: funded ? colors.success : colors.text },
                       ]}>
-                      {progressPct.toFixed(0)}%
+                      {formatPercent(progressPct)}
                     </Text>
                   </View>
                 </View>

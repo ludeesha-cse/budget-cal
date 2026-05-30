@@ -56,13 +56,6 @@ const INSTALLMENT_REMINDER_WINDOW_DAYS = 4;
 const CATEGORY_PREVIEW_COUNT = 3;
 const SHORTCUT_ACCOUNT_COUNT = 2;
 
-function formatAmountPlain(amount: number): string {
-  return amount.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-}
-
 type UpcomingLoanRow = {
   accountId: number;
   counterpartyName: string;
@@ -517,7 +510,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.7}>
-                  Rs. {formatAmountPlain(total)}
+                  Rs. {formatAmount(total, '', { decimals: 0, hideCode: true })}
                 </Text>
                 <Text
                   style={[
@@ -526,7 +519,11 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                     { color: colors.textSecondary },
                   ]}>
                   {' '}
-                  of {formatAmountPlain(budget.limitAmount)}
+                  of{' '}
+                  {formatAmount(budget.limitAmount, '', {
+                    decimals: 0,
+                    hideCode: true,
+                  })}
                 </Text>
               </View>
               <ProgressBar
@@ -541,7 +538,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                     typography.amountMono,
                     { color: colors.textSecondary },
                   ]}>
-                  Rs. {formatAmountPlain(Math.max(0, amountLeft))} left
+                  Rs.{' '}
+                  {formatAmount(Math.max(0, amountLeft), '', {
+                    decimals: 0,
+                    hideCode: true,
+                  })}{' '}
+                  left
                 </Text>
                 {averageLeftPerDay !== null && (
                   <Text
@@ -549,8 +551,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                       typography.amountMono,
                       { color: colors.textSecondary },
                     ]}>
-                    Rs. {formatAmountPlain(Math.round(averageLeftPerDay))} / day
-                    remaining
+                    Rs.{' '}
+                    {formatAmount(Math.round(averageLeftPerDay), '', {
+                      decimals: 0,
+                      hideCode: true,
+                    })}{' '}
+                    / day remaining
                   </Text>
                 )}
               </View>
@@ -635,8 +641,16 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                             styles.listRowSubtitle,
                             { color: colors.textSecondary },
                           ]}>
-                          Rs. {formatAmountPlain(item.spent)} of{' '}
-                          {formatAmountPlain(budgetAmount)}
+                          Rs.{' '}
+                          {formatAmount(item.spent, '', {
+                            decimals: 0,
+                            hideCode: true,
+                          })}{' '}
+                          of{' '}
+                          {formatAmount(budgetAmount, '', {
+                            decimals: 0,
+                            hideCode: true,
+                          })}
                         </Text>
                       </View>
                       <Text
@@ -720,7 +734,10 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                   ]}>
                   {balancesHidden
                     ? '••••••'
-                    : `Rs. ${formatAmountPlain(account.balance)}`}
+                    : `Rs. ${formatAmount(account.balance, account.currencyCode, {
+                        decimals: 0,
+                        hideCode: true,
+                      })}`}
                 </Text>
               </Card>
             ))
@@ -836,10 +853,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                 : 'None'}
             </Text>
             <Text style={[styles.row, { color: colors.danger }]}>
-              Credit card debt: {creditCardDebt.toFixed(2)}
+              Credit card debt:{' '}
+              {formatAmount(creditCardDebt, '', { hideCode: true })}
             </Text>
             <Text style={[styles.row, { color: colors.success }]}>
-              Total income this month: {totalIncome.toFixed(2)}
+              Total income this month:{' '}
+              {formatAmount(totalIncome, '', { hideCode: true })}
             </Text>
           </Card>
 
