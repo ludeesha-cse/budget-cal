@@ -31,6 +31,7 @@ import {
 } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount, formatPercent, formatAbbreviated } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import {
   buildCategoryPieSlices,
   buildTrendChartData,
@@ -191,8 +192,12 @@ function ReportsScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const selectedCurrencyCode =
-    currencies.find(c => c.id === currencyId)?.code ?? 'Select currency';
+  const selectedCurrencyCode = labelForId(
+    currencies,
+    currencyId,
+    'code',
+    'Select currency',
+  );
   const availableCurrencies = currencies.filter(c =>
     availableCurrencyIds.includes(c.id),
   );

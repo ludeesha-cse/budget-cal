@@ -43,6 +43,7 @@ import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
 import { formatEyebrowDate, formatMonthTitle } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -257,9 +258,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           ]);
           const breakdown = await Promise.all(
             Array.from(categoryIdsToShow).map(async categoryId => {
-              const categoryName =
-                categories.find(c => c.id === categoryId)?.name ??
-                'Unknown category';
+              const categoryName = labelForId(
+                categories,
+                categoryId,
+                'name',
+                'Unknown category',
+              );
               const spent = spentByCategory.get(categoryId) ?? 0;
               const budgetAmount = budgetByCategory.get(categoryId) ?? null;
               const hasBudget = budgetAmount !== null;

@@ -22,6 +22,7 @@ import {
   skipOccurrence,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import { labelForId } from '../utils/pickerLabels';
 
 // Same exclusion as every other posting flow (TransactionForm, IncomeForm,
 // InstallmentPlansScreen's pay modal) — a Liability/Receivable account
@@ -179,7 +180,7 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
 
   const accountLabel = (row: PendingRow) => {
     const id = editedAccountId[row.id] ?? row.accountId;
-    return accounts.find(a => a.id === id)?.name ?? 'Select account';
+    return labelForId(accounts, id, 'name', 'Select account');
   };
 
   return (

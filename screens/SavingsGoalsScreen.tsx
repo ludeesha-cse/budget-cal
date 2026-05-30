@@ -23,6 +23,7 @@ import SegmentedToggle, {
 import DateField from '../components/common/DateField';
 import ProgressBar from '../components/common/ProgressBar';
 import { formatAmount, formatPercent } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -799,10 +800,12 @@ function SavingsGoalsScreen(): React.JSX.Element {
                     <EmptyState message="No currencies available." />
                   ) : (
                     <CollapsiblePicker
-                      displayLabel={
-                        currencies.find(c => c.id === goalCurrencyId)?.code ??
-                        'Select currency'
-                      }
+                      displayLabel={labelForId(
+                        currencies,
+                        goalCurrencyId,
+                        'code',
+                        'Select currency',
+                      )}
                       selectedValue={
                         goalCurrencyId != null ? String(goalCurrencyId) : ''
                       }

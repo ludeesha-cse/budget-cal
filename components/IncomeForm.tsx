@@ -10,6 +10,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Check } from 'lucide-react-native';
 import { formatDateString } from '../utils/date';
+import { labelForId } from '../utils/pickerLabels';
 import { getAccountBalances, getAccounts, getTags } from '../db/queries';
 import Card from './Card';
 import CollapsiblePicker from './CollapsiblePicker';
@@ -137,8 +138,12 @@ function IncomeForm({
     });
   };
 
-  const selectedAccountName =
-    accounts.find(a => a.id === accountId)?.name ?? 'Select account';
+  const selectedAccountName = labelForId(
+    accounts,
+    accountId,
+    'name',
+    'Select account',
+  );
 
   const canSave =
     amount.trim() !== '' &&
@@ -169,10 +174,12 @@ function IncomeForm({
             CURRENCY
           </Text>
           <CollapsiblePicker
-            displayLabel={
-              accountBalances.find(b => b.currencyId === currencyId)
-                ?.currencyCode ?? 'Select currency'
-            }
+            displayLabel={labelForId(
+              accountBalances.map(b => ({ ...b, id: b.currencyId })),
+              currencyId,
+              'currencyCode',
+              'Select currency',
+            )}
             selectedValue={currencyId != null ? String(currencyId) : ''}
             onValueChange={value => setCurrencyId(Number(value))}
             items={accountBalances.map(b => ({

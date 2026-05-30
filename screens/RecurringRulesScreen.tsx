@@ -35,6 +35,7 @@ import {
 } from '../db/queries';
 import { avatarColorsFor } from '../utils/avatarColor';
 import { formatAmount } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
@@ -529,10 +530,12 @@ function RecurringRulesScreen(): React.JSX.Element {
                     <EmptyState message="No eligible accounts available." />
                   ) : (
                     <CollapsiblePicker
-                      displayLabel={
-                        accounts.find(a => a.id === accountId)?.name ??
-                        'Select account'
-                      }
+                      displayLabel={labelForId(
+                        accounts,
+                        accountId,
+                        'name',
+                        'Select account',
+                      )}
                       selectedValue={accountId != null ? String(accountId) : ''}
                       onValueChange={value => setAccountId(Number(value))}
                       items={accounts.map(a => ({
@@ -548,10 +551,12 @@ function RecurringRulesScreen(): React.JSX.Element {
                         Currency
                       </Text>
                       <CollapsiblePicker
-                        displayLabel={
-                          accountBalances.find(b => b.currencyId === currencyId)
-                            ?.currencyCode ?? 'Select currency'
-                        }
+                        displayLabel={labelForId(
+                          accountBalances.map(b => ({ ...b, id: b.currencyId })),
+                          currencyId,
+                          'currencyCode',
+                          'Select currency',
+                        )}
                         selectedValue={currencyId != null ? String(currencyId) : ''}
                         onValueChange={value => setCurrencyId(Number(value))}
                         items={accountBalances.map(b => ({
@@ -571,10 +576,12 @@ function RecurringRulesScreen(): React.JSX.Element {
                         <EmptyState message="No categories available." />
                       ) : (
                         <CollapsiblePicker
-                          displayLabel={
-                            categories.find(c => c.id === categoryId)?.name ??
-                            'Select category'
-                          }
+                          displayLabel={labelForId(
+                            categories,
+                            categoryId,
+                            'name',
+                            'Select category',
+                          )}
                           selectedValue={categoryId != null ? String(categoryId) : ''}
                           onValueChange={value => setCategoryId(Number(value))}
                           items={categories.map(c => ({

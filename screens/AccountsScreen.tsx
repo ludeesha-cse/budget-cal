@@ -55,6 +55,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -1069,11 +1070,12 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                   <EmptyState message={`No eligible Bank, Cash, or Crypto Wallet account with a balance in ${payOffTarget.currencyCode} was found.`} />
                 ) : (
                   <CollapsiblePicker
-                    displayLabel={
-                      payOffPayingAccountOptions.find(
-                        a => String(a.id) === payOffPayingAccountId,
-                      )?.name ?? 'Select account'
-                    }
+                    displayLabel={labelForId(
+                      payOffPayingAccountOptions,
+                      payOffPayingAccountId,
+                      'name',
+                      'Select account',
+                    )}
                     selectedValue={payOffPayingAccountId}
                     onValueChange={setPayOffPayingAccountId}
                     items={payOffPayingAccountOptions.map(a => ({
@@ -1126,11 +1128,12 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
               <EmptyState message="No Bank, Cash, or Crypto Wallet accounts available." />
             ) : (
               <CollapsiblePicker
-                displayLabel={
-                  transferFromOptions.find(
-                    a => String(a.id) === transferFromAccountId,
-                  )?.name ?? 'Select account'
-                }
+                displayLabel={labelForId(
+                  transferFromOptions,
+                  transferFromAccountId,
+                  'name',
+                  'Select account',
+                )}
                 selectedValue={transferFromAccountId}
                 onValueChange={setTransferFromAccountId}
                 items={transferFromOptions.map(a => ({
@@ -1154,11 +1157,12 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                     <EmptyState message="This account has no currency balances yet." />
                   ) : (
                     <CollapsiblePicker
-                      displayLabel={
-                        fromCurrencyOptions.find(
-                          b => String(b.currencyId) === transferCurrencyId,
-                        )?.currencyCode ?? 'Select currency'
-                      }
+                      displayLabel={labelForId(
+                        fromCurrencyOptions.map(b => ({ ...b, id: b.currencyId })),
+                        transferCurrencyId,
+                        'currencyCode',
+                        'Select currency',
+                      )}
                       selectedValue={transferCurrencyId}
                       onValueChange={setTransferCurrencyId}
                       items={fromCurrencyOptions.map(b => ({
@@ -1178,11 +1182,12 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                   <EmptyState message="No other account holds this currency yet." />
                 ) : (
                   <CollapsiblePicker
-                    displayLabel={
-                      transferToOptions.find(
-                        a => String(a.id) === transferToAccountId,
-                      )?.name ?? 'Select account'
-                    }
+                    displayLabel={labelForId(
+                      transferToOptions,
+                      transferToAccountId,
+                      'name',
+                      'Select account',
+                    )}
                     selectedValue={transferToAccountId}
                     onValueChange={setTransferToAccountId}
                     items={transferToOptions.map(a => ({

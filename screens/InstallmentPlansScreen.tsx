@@ -52,6 +52,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
 import { ordinalSuffix } from '../utils/dateUtils';
 import { formatAmount } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import type { SettingsStackParamList } from '../navigation/types';
 
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
@@ -145,13 +146,16 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   };
 
   const categoryLabel = (id: string) =>
-    categories.find(c => String(c.id) === id)?.name ?? 'Select category';
-  const currencyLabel = (id: string) => {
-    const currency = currencies.find(c => String(c.id) === id);
-    return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
-  };
+    labelForId(categories, id, 'name', 'Select category');
+  const currencyLabel = (id: string) =>
+    labelForId(
+      currencies.map(c => ({ ...c, displayLabel: `${c.code} — ${c.name}` })),
+      id,
+      'displayLabel',
+      'Select currency',
+    );
   const currencyCodeFor = (id: string) =>
-    currencies.find(c => String(c.id) === id)?.code ?? '';
+    labelForId(currencies, id, 'code', '');
 
   const resetForm = () => {
     setEditingId(null);
@@ -915,10 +919,12 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
                   <EmptyState message="No active accounts available." />
                 ) : (
                   <CollapsiblePicker
-                    displayLabel={
-                      activeAccounts.find(a => String(a.id) === payAccountId)
-                        ?.name ?? 'Select account'
-                    }
+                    displayLabel={labelForId(
+                      activeAccounts,
+                      payAccountId,
+                      'name',
+                      'Select account',
+                    )}
                     selectedValue={payAccountId}
                     onValueChange={setPayAccountId}
                     items={activeAccounts.map(a => ({

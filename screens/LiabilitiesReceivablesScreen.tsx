@@ -26,6 +26,7 @@ import DateField from '../components/common/DateField';
 import { getCurrentDateString } from '../utils/date';
 import { avatarColorsFor } from '../utils/avatarColor';
 import { formatAmount, formatPercent } from '../utils/formatAmount';
+import { labelForId } from '../utils/pickerLabels';
 import {
   createLoanAccount,
   getAccounts,
@@ -388,14 +389,16 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     }
   };
 
-  const currencyLabel = (id: string) => {
-    const currency = currencies.find(c => String(c.id) === id);
-    return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
-  };
+  const currencyLabel = (id: string) =>
+    labelForId(
+      currencies.map(c => ({ ...c, displayLabel: `${c.code} — ${c.name}` })),
+      id,
+      'displayLabel',
+      'Select currency',
+    );
 
   const counterpartLabel = (id: string) =>
-    counterpartAccounts.find(a => String(a.id) === id)?.name ??
-    'Select account';
+    labelForId(counterpartAccounts, id, 'name', 'Select account');
 
   // Mirrors handleSubmit's own validation, minus the paywall check (that
   // can only be resolved after tapping Save — it needs a DB round trip —
