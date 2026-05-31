@@ -54,6 +54,7 @@ import { ordinalSuffix } from '../utils/dateUtils';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import type { SettingsStackParamList } from '../navigation/types';
 
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
@@ -74,6 +75,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
 
@@ -332,17 +334,12 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       // AccountsScreen/CategoriesScreen/LiabilitiesReceivablesScreen:
       // entitlement only ever governs creating new items, not continuing
       // to use ones that already exist.
-      try {
+      await runAction(async () => {
         await updateInstallmentPlan(editingId, params);
         setFormVisible(false);
         resetForm();
-        load();
-      } catch (err) {
-        Alert.alert(
-          'Cannot update plan',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+        await load();
+      }, 'Cannot update plan');
       return;
     }
 
@@ -350,17 +347,12 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     // thing standing between the user and Create, not the first thing
     // they see, per the Stage 12a end-of-flow gating rule.
     const performCreate = async () => {
-      try {
+      await runAction(async () => {
         await createInstallmentPlan(params);
         setFormVisible(false);
         resetForm();
-        load();
-      } catch (err) {
-        Alert.alert(
-          'Cannot create plan',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+        await load();
+      }, 'Cannot create plan');
     };
 
     if (tier === 'free') {
@@ -388,17 +380,11 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       'Delete plan',
       'Delete this installment plan? This cannot be undone.',
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteInstallmentPlan(id);
-          load();
-        } catch (err) {
-          Alert.alert(
-            'Cannot delete plan',
-            err instanceof Error ? err.message : String(err),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete plan'),
     );
   };
 
@@ -466,20 +452,15 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       );
       return;
     }
-    try {
+    await runAction(async () => {
       await payInstallment({
         planId: payTarget.id,
         accountId: Number(payAccountId),
         date: payDate,
       });
       setPayTarget(null);
-      load();
-    } catch (err) {
-      Alert.alert(
-        'Cannot pay installment',
-        err instanceof Error ? err.message : String(err),
-      );
-    }
+      await load();
+    }, 'Cannot pay installment');
   };
 
   const handleUndo = (payment: PaymentRow) => {
@@ -487,17 +468,11 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       'Undo payment',
       `Undo installment ${payment.installmentNumber}? This deletes its transaction and restores the account balance.`,
       'Undo',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await unpayInstallment(payment.id);
-          load();
-        } catch (err) {
-          Alert.alert(
-            'Cannot undo payment',
-            err instanceof Error ? err.message : String(err),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot undo payment'),
     );
   };
 

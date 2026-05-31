@@ -57,6 +57,7 @@ import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -118,6 +119,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;
 function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
@@ -347,17 +349,11 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       'Delete account',
       'Are you sure you want to delete this account?',
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteAccount(id);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Cannot delete account',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete account'),
     );
   };
     // Mirror closeAccount's own zero-balance gate here so the blocked
@@ -376,17 +372,11 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       'Close account',
       `Close ${account.name}? You can reopen it later from Stage 9's reuse flow.`,
       'Close',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await closeAccount(account.id);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Cannot close account',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot close account'),
     );
   };
 
@@ -409,7 +399,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     ) {
       return;
     }
-    try {
+    await runAction(async () => {
       await addCurrencyToAccount(
         accountId,
         Number(addCurrencyCurrencyId),
@@ -418,13 +408,8 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       setAddCurrencyAccountId(null);
       setAddCurrencyCurrencyId('');
       setAddCurrencyBalance('');
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot add currency',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Cannot add currency');
   };
 
   const openUpdateBalance = (
@@ -457,7 +442,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       );
       return;
     }
-    try {
+    await runAction(async () => {
       await updateAccountBalanceWithAudit(
         updateBalanceTarget.accountId,
         updateBalanceTarget.currencyId,
@@ -465,13 +450,8 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
         updateBalanceDescription.trim(),
       );
       setUpdateBalanceTarget(null);
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot update balance',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Cannot update balance');
   };
 
   const openPayOffCard = (
@@ -519,7 +499,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       );
       return;
     }
-    try {
+    await runAction(async () => {
       await payOffCreditCard({
         creditCardAccountId: payOffTarget.accountId,
         payingAccountId: Number(payOffPayingAccountId),
@@ -528,13 +508,8 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
         date: payOffDate,
       });
       setPayOffTarget(null);
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot pay off card',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Cannot pay off card');
   };
 
   // fromType/toType are only ever passed by the Withdraw entry point
@@ -585,7 +560,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   }, [route.params?.withdrawMode, route.params?.openTransfer]);
 
   const performTransfer = async (amount: number) => {
-    try {
+    await runAction(async () => {
       await createTransfer({
         fromAccountId: Number(transferFromAccountId),
         toAccountId: Number(transferToAccountId),
@@ -594,13 +569,8 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
         date: transferDate,
       });
       setTransferModalVisible(false);
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot transfer',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Cannot transfer');
   };
 
   const handleTransferSubmit = () => {

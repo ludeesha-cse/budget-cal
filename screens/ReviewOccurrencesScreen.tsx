@@ -24,6 +24,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 // Same exclusion as every other posting flow (TransactionForm, IncomeForm,
 // InstallmentPlansScreen's pay modal) — a Liability/Receivable account
@@ -39,6 +40,7 @@ type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 function ReviewOccurrencesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,16 +117,11 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   };
 
   const handleConfirm = async (row: PendingRow) => {
-    try {
+    await runAction(async () => {
       const params = buildConfirmParams(row);
       await confirmOccurrence(params);
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Could not confirm',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Could not confirm');
   };
 
   const handleSkip = (row: PendingRow) => {
@@ -132,17 +129,11 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
       'Skip this occurrence?',
       `No transaction will be created for "${row.ruleName}" (due ${row.dueDate}). This cannot be undone.`,
       'Skip',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await skipOccurrence(row.id);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Could not skip',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Could not skip'),
     );
   };
 

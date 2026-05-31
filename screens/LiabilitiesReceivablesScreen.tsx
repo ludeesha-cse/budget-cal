@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   Button,
   Pressable,
   ScrollView,
@@ -26,6 +25,7 @@ import DateField from '../components/common/DateField';
 import { getCurrentDateString } from '../utils/date';
 import { avatarColorsFor } from '../utils/avatarColor';
 import { formatAmount, formatPercent } from '../utils/formatAmount';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { labelForId } from '../utils/pickerLabels';
 import {
   createLoanAccount,
@@ -92,6 +92,7 @@ function formatTotals(totals: Record<string, number>): string {
 
 function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const route =
@@ -304,7 +305,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     // it's gated the same way rather than treated as "editing existing
     // data" (which stays ungated everywhere else in this app).
     const performSubmit = async () => {
-      try {
+      await runAction(async () => {
         if (reuseAccountId != null) {
           await reactivateLoanAccount({ accountId: reuseAccountId, ...terms });
         } else {
@@ -316,15 +317,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         }
         setStep(null);
         resetForm();
-        load();
-      } catch (submitError) {
-        Alert.alert(
-          'Could not save',
-          submitError instanceof Error
-            ? submitError.message
-            : String(submitError),
-        );
-      }
+        await load();
+      }, 'Could not save');
     };
 
     const activeCountForType = await getActiveAccountCountByType(type);
@@ -369,7 +363,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
       return;
     }
     setSettleError(null);
-    try {
+    await runAction(async () => {
       await settleLoan({
         loanAccountId: settleTarget.accountId,
         counterpartAccountId: Number(settleCounterpartAccountId),
@@ -378,15 +372,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         date: getCurrentDateString(),
       });
       closeSettle();
-      load();
-    } catch (submitError) {
-      Alert.alert(
-        'Could not settle',
-        submitError instanceof Error
-          ? submitError.message
-          : String(submitError),
-      );
-    }
+      await load();
+    }, 'Could not settle');
   };
 
   const currencyLabel = (id: string) =>

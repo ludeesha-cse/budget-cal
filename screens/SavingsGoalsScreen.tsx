@@ -25,6 +25,7 @@ import ProgressBar from '../components/common/ProgressBar';
 import { formatAmount, formatPercent } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -55,6 +56,7 @@ type ContributionRow = Awaited<ReturnType<typeof getContributions>>[number];
 function SavingsGoalsScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
 
   const [filter, setFilter] = useState<'active' | 'history'>('active');
   const [goals, setGoals] = useState<GoalRow[]>([]);
@@ -187,7 +189,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       targetDate: goalTargetDate ?? undefined,
     };
 
-    try {
+    await runAction(async () => {
       if (editingGoalId != null) {
         await updateSavingsGoal(editingGoalId, params);
       } else {
@@ -195,15 +197,8 @@ function SavingsGoalsScreen(): React.JSX.Element {
       }
       setFormVisible(false);
       resetGoalForm();
-      load();
-    } catch (submitError) {
-      Alert.alert(
-        'Could not save',
-        submitError instanceof Error
-          ? submitError.message
-          : String(submitError),
-      );
-    }
+      await load();
+    }, 'Could not save');
   };
 
   const handleSetStatus = (
@@ -223,19 +218,11 @@ function SavingsGoalsScreen(): React.JSX.Element {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Confirm',
-          onPress: async () => {
-            try {
+          onPress: () =>
+            runAction(async () => {
               await setSavingsGoalStatus(goal.id, status);
-              load();
-            } catch (statusError) {
-              Alert.alert(
-                'Could not update goal',
-                statusError instanceof Error
-                  ? statusError.message
-                  : String(statusError),
-              );
-            }
-          },
+              await load();
+            }, 'Could not update goal'),
         },
       ],
     );
@@ -248,19 +235,11 @@ function SavingsGoalsScreen(): React.JSX.Element {
       'Delete goal',
       `Delete "${goal.name}"? This permanently removes it and its entire contribution history. If you just want to stop tracking it, abandon it instead. This cannot be undone.`,
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteSavingsGoal(goal.id);
-          load();
-        } catch (deleteError) {
-          Alert.alert(
-            'Could not delete goal',
-            deleteError instanceof Error
-              ? deleteError.message
-              : String(deleteError),
-          );
-        }
-      },
+          await load();
+        }, 'Could not delete goal'),
     );
   };
 
@@ -281,7 +260,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       Alert.alert('Invalid amount', 'Enter a contribution amount greater than zero.');
       return;
     }
-    try {
+    await runAction(async () => {
       await addContribution({
         savingsGoalId: goal.id,
         amount: parsedAmount,
@@ -290,14 +269,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       });
       setAddingContributionFor(null);
       await Promise.all([load(), reloadContributionsFor(goal.id)]);
-    } catch (contributionError) {
-      Alert.alert(
-        'Could not add contribution',
-        contributionError instanceof Error
-          ? contributionError.message
-          : String(contributionError),
-      );
-    }
+    }, 'Could not add contribution');
   };
 
   const handleStartEditContribution = (contribution: ContributionRow) => {
@@ -316,7 +288,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       Alert.alert('Invalid amount', 'Enter a contribution amount greater than zero.');
       return;
     }
-    try {
+    await runAction(async () => {
       await updateContribution(editingContributionId, {
         amount: parsedAmount,
         date: editDate,
@@ -324,12 +296,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
       });
       setEditingContributionId(null);
       await Promise.all([load(), reloadContributionsFor(goalId)]);
-    } catch (editError) {
-      Alert.alert(
-        'Could not update contribution',
-        editError instanceof Error ? editError.message : String(editError),
-      );
-    }
+    }, 'Could not update contribution');
   };
 
   const handleDeleteContribution = (goalId: number, contribution: ContributionRow) => {
@@ -337,19 +304,11 @@ function SavingsGoalsScreen(): React.JSX.Element {
       'Delete contribution',
       `Delete this ${contribution.date} contribution? This cannot be undone.`,
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteContribution(contribution.id);
           await Promise.all([load(), reloadContributionsFor(goalId)]);
-        } catch (deleteError) {
-          Alert.alert(
-            'Could not delete contribution',
-            deleteError instanceof Error
-              ? deleteError.message
-              : String(deleteError),
-          );
-        }
-      },
+        }, 'Could not delete contribution'),
     );
   };
 

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -37,6 +36,7 @@ import { avatarColorsFor } from '../utils/avatarColor';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
@@ -71,6 +71,7 @@ type HistoryRow = Awaited<ReturnType<typeof getOccurrenceHistory>>[number];
 function RecurringRulesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
 
   // Which section of the list is showing — independent of the form's own
   // type toggle below, so switching tabs never disturbs an open form.
@@ -244,7 +245,7 @@ function RecurringRulesScreen(): React.JSX.Element {
       currencyId,
     };
 
-    try {
+    await runAction(async () => {
       if (editingId != null) {
         await updateRecurringRule(editingId, params);
       } else {
@@ -252,29 +253,15 @@ function RecurringRulesScreen(): React.JSX.Element {
       }
       setFormVisible(false);
       resetForm();
-      load();
-    } catch (submitError) {
-      Alert.alert(
-        'Could not save',
-        submitError instanceof Error
-          ? submitError.message
-          : String(submitError),
-      );
-    }
+      await load();
+    }, 'Could not save');
   };
 
   const handleToggleActive = async (rule: RuleRow) => {
-    try {
+    await runAction(async () => {
       await setRecurringRuleActive(rule.id, !rule.active);
-      load();
-    } catch (toggleError) {
-      Alert.alert(
-        'Could not update rule',
-        toggleError instanceof Error
-          ? toggleError.message
-          : String(toggleError),
-      );
-    }
+      await load();
+    }, 'Could not update rule');
   };
 
   const handleDelete = (rule: RuleRow) => {
@@ -285,19 +272,11 @@ function RecurringRulesScreen(): React.JSX.Element {
       'Delete rule',
       `Delete "${rule.name}"? If you just want to stop it, deactivate it instead so its history is kept. This cannot be undone.`,
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteRecurringRule(rule.id);
-          load();
-        } catch (deleteError) {
-          Alert.alert(
-            'Cannot delete rule',
-            deleteError instanceof Error
-              ? deleteError.message
-              : String(deleteError),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete rule'),
     );
   };
 
