@@ -53,6 +53,7 @@ import { formatDateString } from '../utils/date';
 import { ordinalSuffix } from '../utils/dateUtils';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import type { SettingsStackParamList } from '../navigation/types';
 
 type PlanRow = Awaited<ReturnType<typeof getInstallmentPlans>>[number];
@@ -72,6 +73,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
 function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
 
@@ -382,27 +384,21 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert(
+    confirmDelete(
       'Delete plan',
       'Delete this installment plan? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteInstallmentPlan(id);
-              load();
-            } catch (err) {
-              Alert.alert(
-                'Cannot delete plan',
-                err instanceof Error ? err.message : String(err),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteInstallmentPlan(id);
+          load();
+        } catch (err) {
+          Alert.alert(
+            'Cannot delete plan',
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      },
     );
   };
 
@@ -487,27 +483,21 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   };
 
   const handleUndo = (payment: PaymentRow) => {
-    Alert.alert(
+    confirmDelete(
       'Undo payment',
       `Undo installment ${payment.installmentNumber}? This deletes its transaction and restores the account balance.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Undo',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await unpayInstallment(payment.id);
-              load();
-            } catch (err) {
-              Alert.alert(
-                'Cannot undo payment',
-                err instanceof Error ? err.message : String(err),
-              );
-            }
-          },
-        },
-      ],
+      'Undo',
+      async () => {
+        try {
+          await unpayInstallment(payment.id);
+          load();
+        } catch (err) {
+          Alert.alert(
+            'Cannot undo payment',
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      },
     );
   };
 

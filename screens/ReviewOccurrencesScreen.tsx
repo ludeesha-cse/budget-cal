@@ -23,6 +23,7 @@ import {
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { labelForId } from '../utils/pickerLabels';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 // Same exclusion as every other posting flow (TransactionForm, IncomeForm,
 // InstallmentPlansScreen's pay modal) — a Liability/Receivable account
@@ -37,6 +38,7 @@ type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 function ReviewOccurrencesScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,27 +128,21 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   };
 
   const handleSkip = (row: PendingRow) => {
-    Alert.alert(
+    confirmDelete(
       'Skip this occurrence?',
       `No transaction will be created for "${row.ruleName}" (due ${row.dueDate}). This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Skip',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await skipOccurrence(row.id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Could not skip',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Skip',
+      async () => {
+        try {
+          await skipOccurrence(row.id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Could not skip',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

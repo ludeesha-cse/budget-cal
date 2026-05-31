@@ -19,11 +19,13 @@ import { canAddCategory } from '../utils/entitlementChecks';
 import { avatarColorsFor } from '../utils/avatarColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoriesScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -106,27 +108,21 @@ function CategoriesScreen(): React.JSX.Element {
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert(
+    confirmDelete(
       'Delete category',
       'Are you sure you want to delete this category?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteCategory(id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot delete category',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteCategory(id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot delete category',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

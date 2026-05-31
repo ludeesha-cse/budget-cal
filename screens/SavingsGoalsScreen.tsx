@@ -24,6 +24,7 @@ import DateField from '../components/common/DateField';
 import ProgressBar from '../components/common/ProgressBar';
 import { formatAmount, formatPercent } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { scaleFont, typography } from '../theme/typography';
 import {
   addContribution,
@@ -53,6 +54,7 @@ type ContributionRow = Awaited<ReturnType<typeof getContributions>>[number];
 
 function SavingsGoalsScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
 
   const [filter, setFilter] = useState<'active' | 'history'>('active');
   const [goals, setGoals] = useState<GoalRow[]>([]);
@@ -240,31 +242,25 @@ function SavingsGoalsScreen(): React.JSX.Element {
   };
 
   const handleDeleteGoal = (goal: GoalRow) => {
-    Alert.alert(
+    // Steers toward Abandon first — deletion also removes every
+    // contribution ever logged against this goal, with no undo.
+    confirmDelete(
       'Delete goal',
-      // Steers toward Abandon first — deletion also removes every
-      // contribution ever logged against this goal, with no undo.
       `Delete "${goal.name}"? This permanently removes it and its entire contribution history. If you just want to stop tracking it, abandon it instead. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteSavingsGoal(goal.id);
-              load();
-            } catch (deleteError) {
-              Alert.alert(
-                'Could not delete goal',
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : String(deleteError),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteSavingsGoal(goal.id);
+          load();
+        } catch (deleteError) {
+          Alert.alert(
+            'Could not delete goal',
+            deleteError instanceof Error
+              ? deleteError.message
+              : String(deleteError),
+          );
+        }
+      },
     );
   };
 
@@ -337,29 +333,23 @@ function SavingsGoalsScreen(): React.JSX.Element {
   };
 
   const handleDeleteContribution = (goalId: number, contribution: ContributionRow) => {
-    Alert.alert(
+    confirmDelete(
       'Delete contribution',
       `Delete this ${contribution.date} contribution? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteContribution(contribution.id);
-              await Promise.all([load(), reloadContributionsFor(goalId)]);
-            } catch (deleteError) {
-              Alert.alert(
-                'Could not delete contribution',
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : String(deleteError),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteContribution(contribution.id);
+          await Promise.all([load(), reloadContributionsFor(goalId)]);
+        } catch (deleteError) {
+          Alert.alert(
+            'Could not delete contribution',
+            deleteError instanceof Error
+              ? deleteError.message
+              : String(deleteError),
+          );
+        }
+      },
     );
   };
 

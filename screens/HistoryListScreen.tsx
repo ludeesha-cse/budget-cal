@@ -38,6 +38,7 @@ import {
   getCurrentYearString,
 } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import MonthYearPicker, { MONTH_OPTIONS } from '../components/MonthYearPicker';
 import EmptyState from '../components/common/EmptyState';
 import DateField from '../components/common/DateField';
@@ -101,6 +102,7 @@ type Props = NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>;
 
 function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [rows, setRows] = useState<HistoryRow[]>([]);
@@ -233,45 +235,33 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert(
+    confirmDelete(
       'Delete transaction',
       'Are you sure you want to delete this transaction?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteTransaction(id);
-            load();
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        await deleteTransaction(id);
+        load();
+      },
     );
   };
 
   const handleDeleteTransfer = (id: number) => {
-    Alert.alert(
+    confirmDelete(
       'Delete transfer',
       'Delete this transfer? Both account balances will be reversed.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTransfer(id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot delete transfer',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteTransfer(id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot delete transfer',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

@@ -9,6 +9,7 @@ import ActionButtons from '../components/common/ActionButtons';
 import { addTag, deleteTag, getTags, updateTag } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 
@@ -17,6 +18,7 @@ type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 // free-tier feature (Stage 15 spec) unlike categories.
 function TagsScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const [tags, setTags] = useState<TagRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -71,30 +73,24 @@ function TagsScreen(): React.JSX.Element {
   };
 
   const handleDelete = (tag: TagRow) => {
-    Alert.alert(
+    // Explicit about what survives — a tag can be applied to many
+    // transactions, and deleting it must never be mistaken for
+    // deleting the transactions it's attached to.
+    confirmDelete(
       'Delete tag',
-      // Explicit about what survives — a tag can be applied to many
-      // transactions, and deleting it must never be mistaken for
-      // deleting the transactions it's attached to.
       `Delete "${tag.name}"? Any transactions tagged with it will keep their other tags and are never deleted. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTag(tag.id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot delete tag',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteTag(tag.id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot delete tag',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

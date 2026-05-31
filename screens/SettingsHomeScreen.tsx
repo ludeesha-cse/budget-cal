@@ -36,6 +36,7 @@ import {
 } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDevEntitlementToggle } from '../hooks/useEntitlement';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import ScreenBackground from '../components/ScreenBackground';
@@ -86,6 +87,7 @@ type SettingsSection = {
 
 function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   // null outside __DEV__ (or if the provider is somehow missing), so
   // this row simply doesn't render in anything but a debug build —
   // there is no separate flag to remember to flip before shipping.
@@ -264,17 +266,11 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       {
         text: 'Continue',
         onPress: () => {
-          Alert.alert(
+          confirmDelete(
             'Delete everything and restore?',
             'This will PERMANENTLY DELETE every account, transaction, budget, and record currently in the app, then replace them with the contents of this file. This cannot be undone.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete Everything and Restore',
-                style: 'destructive',
-                onPress: () => runImport(parsedData, 'replace'),
-              },
-            ],
+            'Delete Everything and Restore',
+            () => runImport(parsedData, 'replace'),
           );
         },
       },

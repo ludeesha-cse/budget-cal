@@ -56,6 +56,7 @@ import type { ThemeColors } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 const ACCOUNT_TYPES = [
   'Cash',
@@ -116,6 +117,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;
 
 function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const [accounts, setAccounts] = useState<AccountWithBalances[]>([]);
@@ -341,27 +343,21 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert(
+    confirmDelete(
       'Delete account',
       'Are you sure you want to delete this account?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteAccount(id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot delete account',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteAccount(id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot delete account',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
     // Mirror closeAccount's own zero-balance gate here so the blocked
@@ -376,27 +372,21 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       );
       return;
     }
-    Alert.alert(
+    confirmDelete(
       'Close account',
       `Close ${account.name}? You can reopen it later from Stage 9's reuse flow.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Close',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await closeAccount(account.id);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot close account',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Close',
+      async () => {
+        try {
+          await closeAccount(account.id);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot close account',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

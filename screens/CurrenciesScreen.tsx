@@ -13,6 +13,7 @@ import {
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 // Lists existing currencies and lets the user add new ones; the seeded
 // default currency is flagged with a badge and can't be added again.
@@ -20,6 +21,7 @@ type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
 function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
   const [formVisible, setFormVisible] = useState(false);
   const [code, setCode] = useState('');
@@ -78,27 +80,21 @@ function CurrenciesScreen(): React.JSX.Element {
   };
 
   const handleDelete = (currencyId: number, currencyCode: string) => {
-    Alert.alert(
+    confirmDelete(
       'Delete currency',
       `Are you sure you want to delete ${currencyCode}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteCurrency(currencyId);
-              load();
-            } catch (error) {
-              Alert.alert(
-                'Cannot delete currency',
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteCurrency(currencyId);
+          load();
+        } catch (error) {
+          Alert.alert(
+            'Cannot delete currency',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
     );
   };
 

@@ -36,6 +36,7 @@ import {
 import { avatarColorsFor } from '../utils/avatarColor';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
@@ -69,6 +70,7 @@ type HistoryRow = Awaited<ReturnType<typeof getOccurrenceHistory>>[number];
 
 function RecurringRulesScreen(): React.JSX.Element {
   const { colors } = useTheme();
+  const confirmDelete = useConfirmDelete();
 
   // Which section of the list is showing — independent of the form's own
   // type toggle below, so switching tabs never disturbs an open form.
@@ -276,32 +278,26 @@ function RecurringRulesScreen(): React.JSX.Element {
   };
 
   const handleDelete = (rule: RuleRow) => {
-    Alert.alert(
+    // Steers toward deactivation first, matching
+    // deleteRecurringRule's own doc comment — deletion is meant for
+    // rules created by mistake, not the normal way to stop one.
+    confirmDelete(
       'Delete rule',
-      // Steers toward deactivation first, matching
-      // deleteRecurringRule's own doc comment — deletion is meant for
-      // rules created by mistake, not the normal way to stop one.
       `Delete "${rule.name}"? If you just want to stop it, deactivate it instead so its history is kept. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteRecurringRule(rule.id);
-              load();
-            } catch (deleteError) {
-              Alert.alert(
-                'Cannot delete rule',
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : String(deleteError),
-              );
-            }
-          },
-        },
-      ],
+      'Delete',
+      async () => {
+        try {
+          await deleteRecurringRule(rule.id);
+          load();
+        } catch (deleteError) {
+          Alert.alert(
+            'Cannot delete rule',
+            deleteError instanceof Error
+              ? deleteError.message
+              : String(deleteError),
+          );
+        }
+      },
     );
   };
 
