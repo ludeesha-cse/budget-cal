@@ -28,6 +28,22 @@ export async function getAverageLeftPerDay(
   return amountLeft / getDaysRemainingInMonth(month);
 }
 
+// Distinct from getAverageLeftPerDay on purpose: that one spreads what's
+// still *unspent* over the days *remaining* in the current month (and only
+// ever makes sense for the current month). This one spreads the *entire*
+// budget amount over the *full* length of whatever month it's set for —
+// a flat "roughly how much per day is this budget" figure, meaningful even
+// while editing a future or past month's budget where "days remaining"
+// wouldn't apply. Pure math over caller-supplied numbers rather than a DB
+// query itself, since the budget amount here may be a not-yet-saved value
+// still being typed into a form.
+export function getFullBudgetPerDay(
+  budgetAmount: number,
+  daysInMonth: number,
+): number {
+  return budgetAmount / daysInMonth;
+}
+
 // Pure composition over existing queries (getCategoryBudget,
 // getTransactionsByMonth) — not a DB read/write itself, so no NETWORK-READY
 // comment needed here; the underlying queries already carry one.

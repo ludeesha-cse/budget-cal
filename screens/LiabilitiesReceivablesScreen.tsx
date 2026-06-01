@@ -24,7 +24,10 @@ import SegmentedToggle, {
 import DateField from '../components/common/DateField';
 import { getCurrentDateString } from '../utils/date';
 import { avatarColorsFor } from '../utils/avatarColor';
-import { formatAmount, formatPercent } from '../utils/formatAmount';
+import { formatAmount } from '../utils/formatAmount';
+import { defaultCurrencyId } from '../utils/currencyHelpers';
+import { totalsByCurrency, formatCurrencyTotals } from '../utils/currencyTotals';
+import { formatInterestRatePercent } from '../utils/interestCalculations';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { labelForId } from '../utils/pickerLabels';
 import {
@@ -68,27 +71,6 @@ const LOAN_TYPE_OPTIONS: SegmentedToggleOption<LoanAccountType>[] = [
   { key: 'Liability', label: 'Liabilities' },
   { key: 'Receivable', label: 'Receivables' },
 ];
-
-// Outstanding totals keyed by currency code. Deliberately a map rather
-// than one number — currency amounts are never summed together anywhere
-// in this app, so there's no such thing as a single "total liabilities".
-function totalsByCurrency(rows: ActiveLoan[]): Record<string, number> {
-  const totals: Record<string, number> = {};
-  for (const row of rows) {
-    totals[row.currencyCode] = (totals[row.currencyCode] ?? 0) + row.currentBalance;
-  }
-  return totals;
-}
-
-function formatTotals(totals: Record<string, number>): string {
-  const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
-    return 'None';
-  }
-  return entries
-    .map(([code, amount]) => formatAmount(amount, code))
-    .join(' · ');
-}
 
 function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -209,16 +191,11 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const hasNameMatches =
     activeNameMatches.length > 0 || inactiveNameMatches.length > 0;
 
-  const defaultCurrencyId = () => {
-    const fallback = currencies.find(c => c.isDefault) ?? currencies[0];
-    return String(fallback?.id ?? '');
-  };
-
   const resetForm = () => {
     setReuseAccountId(null);
     setCounterpartyName('');
     setPrincipal('');
-    setCurrencyId(defaultCurrencyId());
+    setCurrencyId(defaultCurrencyId(currencies));
     setCounterpartAccountId(String(counterpartAccounts[0]?.id ?? ''));
     setDueDate(null);
     setInterestRate('');
@@ -421,7 +398,9 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             TOTAL LIABILITIES
           </Text>
           <Text style={[typography.amountMono, styles.summaryValue, { color: colors.danger }]}>
-            {formatTotals(totalsByCurrency(activeLiabilities))}
+            {formatCurrencyTotals(
+              totalsByCurrency(activeLiabilities, row => row.currentBalance),
+            )}
           </Text>
         </View>
         <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
@@ -431,7 +410,9 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             TOTAL RECEIVABLES
           </Text>
           <Text style={[typography.amountMono, styles.summaryValue, { color: colors.success }]}>
-            {formatTotals(totalsByCurrency(activeReceivables))}
+            {formatCurrencyTotals(
+              totalsByCurrency(activeReceivables, row => row.currentBalance),
+            )}
           </Text>
         </View>
       </Card>
@@ -503,7 +484,7 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
               </Text>
               {loan.interestRate != null && (
                 <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-                  Interest: {formatPercent(loan.interestRate / 100, 2)}{' '}
+                  Interest: {formatInterestRatePercent(loan.interestRate, 2)}{' '}
                   {loan.interestPeriod ?? ''}
                 </Text>
               )}

@@ -53,6 +53,7 @@ import { formatDateString } from '../utils/date';
 import { ordinalSuffix } from '../utils/dateUtils';
 import { formatAmount } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
+import { defaultCurrencyId } from '../utils/currencyHelpers';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import type { SettingsStackParamList } from '../navigation/types';
@@ -144,11 +145,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     }, [load]),
   );
 
-  const defaultCurrencyId = () => {
-    const defaultCurrency = currencies.find(c => c.isDefault);
-    return String((defaultCurrency ?? currencies[0])?.id ?? '');
-  };
-
   const categoryLabel = (id: string) =>
     labelForId(categories, id, 'name', 'Select category');
   const currencyLabel = (id: string) =>
@@ -171,7 +167,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     setNumberOfMonths('');
     setDueDayOfMonth('');
     setCategoryId(categories[0] ? String(categories[0].id) : '');
-    setCurrencyId(defaultCurrencyId());
+    setCurrencyId(defaultCurrencyId(currencies));
     setStartDate(formatDateString(new Date()));
     setError(null);
   };

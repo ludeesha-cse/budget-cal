@@ -23,6 +23,7 @@ import {
 } from '../db/queries';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { getFullBudgetPerDay } from '../utils/budgetCalculations';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import NumericInputAccessory, {
@@ -89,7 +90,9 @@ function BudgetSettingsScreen(): React.JSX.Element {
   const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
   const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
   const daysInMonth = clampDayToMonth(yearNum, monthNum, 31);
-  const perDayRate = amountValid ? parsedAmount / daysInMonth : null;
+  const perDayRate = amountValid
+    ? getFullBudgetPerDay(parsedAmount, daysInMonth)
+    : null;
 
   const handleSave = async () => {
     if (!amountValid) {

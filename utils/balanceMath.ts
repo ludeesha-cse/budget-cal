@@ -55,3 +55,14 @@ export function getBalanceDelta(
   // Bank, Cash, CryptoWallet — ordinary asset accounts.
   return entryType === 'Expense' ? -amount : amount;
 }
+
+// Credit card balances are stored per the debt inversion documented
+// above (a positive stored balance means money owed to you, so a card's
+// balance is the negative of what's actually owed) — see
+// db/queries/creditCards.ts's getCreditCardDebt for the DB-side version
+// of this same convention. This is the client-side mirror for UI code
+// that already has a balance in hand and just needs to flip its sign for
+// display, without a DB round trip.
+export function creditCardDebt(balance: number): number {
+  return -balance;
+}

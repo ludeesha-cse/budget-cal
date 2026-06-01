@@ -43,6 +43,7 @@ import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
 import { formatEyebrowDate, formatMonthTitle } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
+import { totalsByCurrency, formatCurrencyTotals } from '../utils/currencyTotals';
 import { labelForId } from '../utils/pickerLabels';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
@@ -77,28 +78,6 @@ function daysUntil(dueDate: string, today: string): number {
   const due = new Date(`${dueDate}T00:00:00Z`).getTime();
   const now = new Date(`${today}T00:00:00Z`).getTime();
   return Math.round((due - now) / msPerDay);
-}
-
-// Outstanding totals grouped by currency, never summed across
-// currencies — same rule as everywhere else this app shows money.
-function totalsByCurrency(
-  rows: { currencyCode: string; totalOwed: number }[],
-): Record<string, number> {
-  const totals: Record<string, number> = {};
-  for (const row of rows) {
-    totals[row.currencyCode] = (totals[row.currencyCode] ?? 0) + row.totalOwed;
-  }
-  return totals;
-}
-
-function formatCurrencyTotals(totals: Record<string, number>): string {
-  const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
-    return 'None';
-  }
-  return entries
-    .map(([code, amount]) => formatAmount(amount, code))
-    .join(' · ');
 }
 
 type CategoryBreakdownRow = {
@@ -392,8 +371,12 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             setCreditCardDebt(cardDebt);
             setCategoryBreakdown(breakdown);
             setShortcutAccounts(shortcuts);
-            setLiabilityTotals(totalsByCurrency(liabilitiesWithTotals));
-            setReceivableTotals(totalsByCurrency(receivablesWithTotals));
+            setLiabilityTotals(
+              totalsByCurrency(liabilitiesWithTotals, row => row.totalOwed),
+            );
+            setReceivableTotals(
+              totalsByCurrency(receivablesWithTotals, row => row.totalOwed),
+            );
             setUpcomingLoans(upcoming);
             setUpcomingInstallments(upcomingInstallmentsList);
             setPendingOccurrenceCount(pendingOccurrences.length);

@@ -55,6 +55,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { creditCardDebt } from '../utils/balanceMath';
 import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -458,11 +459,11 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     account: AccountWithBalances,
     balance: AccountBalanceRow,
   ) => {
-    // The card's stored balance is the negative of what's owed (see
-    // db/queries.ts's getCreditCardDebt) — currentBalance is already
-    // computed via getAccountBalance in load(), so no extra DB round trip
-    // is needed just to show the debt here.
-    const currentDebt = -balance.currentBalance;
+    // The card's stored balance is the negative of what's owed — see
+    // utils/balanceMath.ts's creditCardDebt for the shared sign-flip.
+    // currentBalance is already computed via getAccountBalance in load(),
+    // so no extra DB round trip is needed just to show the debt here.
+    const currentDebt = creditCardDebt(balance.currentBalance);
     const eligiblePayingAccounts = activeAccounts.filter(
       a => a.id !== account.id && PAYOFF_SOURCE_ACCOUNT_TYPES.includes(a.type),
     );
@@ -694,7 +695,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
                       { borderColor: colors.border, color: colors.text },
                     ]}>
                     {isCreditCard
-                      ? `${b.currencyCode} owes ${formatAmount(-b.currentBalance, b.currencyCode, { hideCode: true })}`
+                      ? `${b.currencyCode} owes ${formatAmount(creditCardDebt(b.currentBalance), b.currencyCode, { hideCode: true })}`
                       : formatAmount(b.currentBalance, b.currencyCode)}
                   </Text>
                 </Pressable>

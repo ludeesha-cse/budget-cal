@@ -1,3 +1,5 @@
+import { formatPercent } from './formatAmount';
+
 // Pure math only — no DB access here, so no NETWORK-READY comments apply.
 // Every loan figure in the app (LiabilitiesReceivablesScreen, Dashboard,
 // settleLoan) is computed live by calling these against the stored
@@ -57,6 +59,20 @@ export function calculateAccruedInterest(
  * lastAccrualAnchorDate comment for why that anchor, not dateCreated, is
  * the starting point.
  */
+/**
+ * Formats a stored interest rate (rate × 100, e.g. 550 for 5.5%) back into
+ * a display string like "5.50%" — the read side of the same ×100 storage
+ * convention documented above. Not meant for populating an *editable*
+ * numeric field (the "%" suffix would break re-parsing an untouched
+ * value); this is for read-only display only.
+ */
+export function formatInterestRatePercent(
+  storedRate: number,
+  decimals = 2,
+): string {
+  return formatPercent(storedRate / 100, decimals);
+}
+
 export function getTotalOwed(
   principal: number,
   interestRate: number | null,
