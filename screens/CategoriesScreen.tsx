@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
@@ -20,18 +20,18 @@ import { avatarColorsFor } from '../utils/avatarColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import { useEntityFormModal } from '../hooks/useEntityFormModal';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoriesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
   const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [name, setName] = useState('');
 
   const load = useCallback(async () => {
     const rows = await getCategories();
@@ -44,90 +44,71 @@ function CategoriesScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const resetForm = () => {
-    setEditingId(null);
-    setName('');
-  };
-
-  const handleAddPress = () => {
-    resetForm();
-    setFormVisible(true);
-  };
-
-  const handleEditPress = (category: CategoryRow) => {
-    setEditingId(category.id);
-    setName(category.name);
-    setFormVisible(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim()) {
-      return;
-    }
-    try {
-      if (editingId) {
-        // Editing an existing category is never gated — see the same
-        // rule applied in AccountsScreen.
-        await updateCategory(editingId, name.trim());
-        setFormVisible(false);
-        resetForm();
-        load();
-        return;
-      }
-
-      const performCreate = async () => {
-        await addCategory(name.trim());
-        setFormVisible(false);
-        resetForm();
-        load();
-      };
-
+  const {
+    visible: formVisible,
+    editingId,
+    values: name,
+    setValues: setName,
+    canSave: formCanSave,
+    openAdd: handleAddPress,
+    openEdit: handleEditPress,
+    close: closeForm,
+    submit: handleSubmit,
+    setVisible,
+  } = useEntityFormModal<CategoryRow, string, string>({
+    initialValues: '',
+    populateFromRow: category => category.name,
+    validate: value => (value.trim() === '' ? 'Enter a name.' : null),
+    toParams: value => value.trim(),
+    // Editing an existing category is never gated — see the same rule
+    // applied in AccountsScreen. Only the create path below checks the
+    // entitlement.
+    onUpdate: (id, trimmedName) => updateCategory(id, trimmedName),
+    onCreate: async trimmedName => {
       const userCategoryCount = await getUserCategoryCount();
       const check = canAddCategory(userCategoryCount, tier);
-      if (!check.allowed) {
-        // Hide this screen's own form popup first — showing PaywallModal's
-        // <Modal> while this one is still visible=true is what freezes
-        // iOS solid (two native Modals open at once never finishes
-        // presenting there; Android tolerates it). onDismiss restores the
-        // form, still filled in, if the user backs out without buying.
-        setFormVisible(false);
-        openPaywall({
-          reason: check.reason ?? 'Additional categories require Premium.',
-          onPurchaseSuccess: performCreate,
-          onDismiss: () => setFormVisible(true),
-        });
+      if (check.allowed) {
+        await addCategory(trimmedName);
         return;
       }
-      await performCreate();
-    } catch (error) {
-      Alert.alert(
-        'Cannot save category',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  };
+      // Hide this screen's own form popup first — showing PaywallModal's
+      // <Modal> while this one is still visible=true is what freezes
+      // iOS solid (two native Modals open at once never finishes
+      // presenting there; Android tolerates it). onDismiss restores the
+      // form, still filled in, if the user backs out without buying.
+      // This promise deliberately never resolves in the dismiss case —
+      // the hook's submit() only closes the sheet and reloads once
+      // onCreate resolves, so a decline must leave both untouched.
+      setVisible(false);
+      await new Promise<void>(resolve => {
+        openPaywall({
+          reason: check.reason ?? 'Additional categories require Premium.',
+          onPurchaseSuccess: async () => {
+            await addCategory(trimmedName);
+            resolve();
+          },
+          onDismiss: () => setVisible(true),
+        });
+      });
+    },
+    onSaved: load,
+    errorTitle: 'Cannot save category',
+  });
 
   const handleDelete = (id: number) => {
     confirmDelete(
       'Delete category',
       'Are you sure you want to delete this category?',
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteCategory(id);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Cannot delete category',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete category'),
     );
   };
 
   const hasReserved = categories.some(c => c.isSystemReserved);
-  const formCanSave = name.trim() !== '';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -191,10 +172,7 @@ function CategoriesScreen(): React.JSX.Element {
 
       <BottomSheetModal
         visible={formVisible}
-        onClose={() => {
-          setFormVisible(false);
-          resetForm();
-        }}
+        onClose={closeForm}
         onSave={handleSubmit}
         canSave={formCanSave}
         title={editingId ? 'Edit Category' : 'Add Category'}

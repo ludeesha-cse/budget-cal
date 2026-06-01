@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Pencil, Plus, Tag as TagIcon, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
@@ -10,6 +10,8 @@ import { addTag, deleteTag, getTags, updateTag } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import { useEntityFormModal } from '../hooks/useEntityFormModal';
 
 type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 
@@ -19,10 +21,8 @@ type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 function TagsScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const [tags, setTags] = useState<TagRow[]>([]);
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [name, setName] = useState('');
 
   const load = useCallback(async () => {
     const rows = await getTags();
@@ -35,42 +35,26 @@ function TagsScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const resetForm = () => {
-    setEditingId(null);
-    setName('');
-  };
-
-  const handleAddPress = () => {
-    resetForm();
-    setFormVisible(true);
-  };
-
-  const handleEditPress = (tag: TagRow) => {
-    setEditingId(tag.id);
-    setName(tag.name);
-    setFormVisible(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim()) {
-      return;
-    }
-    try {
-      if (editingId) {
-        await updateTag(editingId, name.trim());
-      } else {
-        await addTag(name.trim());
-      }
-      setFormVisible(false);
-      resetForm();
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot save tag',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  };
+  const {
+    visible: formVisible,
+    editingId,
+    values: name,
+    setValues: setName,
+    canSave: formCanSave,
+    openAdd: handleAddPress,
+    openEdit: handleEditPress,
+    close: closeForm,
+    submit: handleSubmit,
+  } = useEntityFormModal<TagRow, string, string>({
+    initialValues: '',
+    populateFromRow: tag => tag.name,
+    validate: value => (value.trim() === '' ? 'Enter a name.' : null),
+    toParams: value => value.trim(),
+    onCreate: trimmedName => addTag(trimmedName),
+    onUpdate: (id, trimmedName) => updateTag(id, trimmedName),
+    onSaved: load,
+    errorTitle: 'Cannot save tag',
+  });
 
   const handleDelete = (tag: TagRow) => {
     // Explicit about what survives — a tag can be applied to many
@@ -80,21 +64,13 @@ function TagsScreen(): React.JSX.Element {
       'Delete tag',
       `Delete "${tag.name}"? Any transactions tagged with it will keep their other tags and are never deleted. This cannot be undone.`,
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteTag(tag.id);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Cannot delete tag',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete tag'),
     );
   };
-
-  const formCanSave = name.trim() !== '';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -135,10 +111,7 @@ function TagsScreen(): React.JSX.Element {
 
       <BottomSheetModal
         visible={formVisible}
-        onClose={() => {
-          setFormVisible(false);
-          resetForm();
-        }}
+        onClose={closeForm}
         onSave={handleSubmit}
         canSave={formCanSave}
         title={editingId ? 'Edit Tag' : 'Add Tag'}

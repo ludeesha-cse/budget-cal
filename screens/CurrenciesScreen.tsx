@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Crown, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
@@ -14,18 +14,20 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import { useEntityFormModal } from '../hooks/useEntityFormModal';
 
 // Lists existing currencies and lets the user add new ones; the seeded
 // default currency is flagged with a badge and can't be added again.
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
+type CurrencyFormValues = { code: string; name: string };
+
 function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
+  const runAction = useAsyncAction();
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
-  const [formVisible, setFormVisible] = useState(false);
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
 
   const load = useCallback(async () => {
     const rows = await getCurrencies();
@@ -38,45 +40,36 @@ function CurrenciesScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const resetForm = () => {
-    setCode('');
-    setName('');
-  };
-
-  const handleAddPress = () => {
-    resetForm();
-    setFormVisible(true);
-  };
-
-  const handleSubmit = async () => {
-    const trimmedCode = code.trim().toUpperCase();
-    const trimmedName = name.trim();
-    if (!trimmedCode || !trimmedName) {
-      return;
-    }
-    try {
-      await addCurrency(trimmedCode, trimmedName);
-      setFormVisible(false);
-      resetForm();
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot add currency',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  };
+  const {
+    visible: formVisible,
+    values,
+    setValues,
+    canSave: formCanSave,
+    openAdd: handleAddPress,
+    close: closeForm,
+    submit: handleSubmit,
+  } = useEntityFormModal<CurrencyRow, CurrencyFormValues, CurrencyFormValues>({
+    initialValues: { code: '', name: '' },
+    // Never actually invoked — this screen is add-only (no edit path,
+    // hence no onUpdate below), so openEdit is never called. Still
+    // required by the hook's type.
+    populateFromRow: currency => ({ code: currency.code, name: currency.name }),
+    validate: v =>
+      v.code.trim() === '' || v.name.trim() === ''
+        ? 'Enter a currency code and name.'
+        : null,
+    toParams: v => ({ code: v.code.trim().toUpperCase(), name: v.name.trim() }),
+    onCreate: params => addCurrency(params.code, params.name),
+    onUpdate: undefined,
+    onSaved: load,
+    errorTitle: 'Cannot add currency',
+  });
 
   const handleSetDefault = async (currencyId: number) => {
-    try {
+    await runAction(async () => {
       await setDefaultCurrency(currencyId);
-      load();
-    } catch (error) {
-      Alert.alert(
-        'Cannot set default currency',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      await load();
+    }, 'Cannot set default currency');
   };
 
   const handleDelete = (currencyId: number, currencyCode: string) => {
@@ -84,21 +77,13 @@ function CurrenciesScreen(): React.JSX.Element {
       'Delete currency',
       `Are you sure you want to delete ${currencyCode}?`,
       'Delete',
-      async () => {
-        try {
+      () =>
+        runAction(async () => {
           await deleteCurrency(currencyId);
-          load();
-        } catch (error) {
-          Alert.alert(
-            'Cannot delete currency',
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      },
+          await load();
+        }, 'Cannot delete currency'),
     );
   };
-
-  const formCanSave = code.trim() !== '' && name.trim() !== '';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -159,10 +144,7 @@ function CurrenciesScreen(): React.JSX.Element {
 
       <BottomSheetModal
         visible={formVisible}
-        onClose={() => {
-          setFormVisible(false);
-          resetForm();
-        }}
+        onClose={closeForm}
         onSave={handleSubmit}
         canSave={formCanSave}
         title="Add Currency"
@@ -173,8 +155,8 @@ function CurrenciesScreen(): React.JSX.Element {
             styles.input,
             { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
           ]}
-          value={code}
-          onChangeText={setCode}
+          value={values.code}
+          onChangeText={text => setValues(v => ({ ...v, code: text }))}
           placeholder="e.g. JPY"
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="characters"
@@ -186,8 +168,8 @@ function CurrenciesScreen(): React.JSX.Element {
             styles.input,
             { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
           ]}
-          value={name}
-          onChangeText={setName}
+          value={values.name}
+          onChangeText={text => setValues(v => ({ ...v, name: text }))}
           placeholder="e.g. Japanese Yen"
           placeholderTextColor={colors.textSecondary}
         />
