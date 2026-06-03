@@ -1,20 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  Button,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Button, FlatList, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import CollapsiblePicker from '../components/CollapsiblePicker';
-import NumericInputAccessory, {
-  NUMERIC_KEYBOARD_ACCESSORY_ID,
-} from '../components/NumericInputAccessory';
+import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
-import DateField from '../components/common/DateField';
+import PendingOccurrenceCard from '../components/reviewOccurrences/PendingOccurrenceCard';
 import {
   confirmOccurrence,
   getAccounts,
@@ -22,9 +11,9 @@ import {
   skipOccurrence,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
-import { labelForId } from '../utils/pickerLabels';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
+import { useRowEditState } from '../hooks/useRowEditState';
 
 // Same exclusion as every other posting flow (TransactionForm, IncomeForm,
 // InstallmentPlansScreen's pay modal) — a Liability/Receivable account
@@ -45,13 +34,15 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Keyed by occurrence id — every row is independently editable, so a
-  // single flat set of maps (rather than nesting edited values inside
-  // `rows` itself) keeps typing in one row from re-deriving anything
-  // about the others.
-  const [editedAmount, setEditedAmount] = useState<Record<number, string>>({});
-  const [editedAccountId, setEditedAccountId] = useState<Record<number, number>>({});
-  const [editedDate, setEditedDate] = useState<Record<number, string>>({});
+  const {
+    editedAmount,
+    editedAccountId,
+    editedDate,
+    setAmount,
+    setAccountId,
+    setDate,
+    buildParams,
+  } = useRowEditState(rows);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,37 +56,6 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
         a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
       ),
     );
-    // Seed the edit state with each rule's defaults, but only for
-    // occurrences not already being edited — a background reload (e.g.
-    // after confirming one row) must never clobber what's still being
-    // typed into another.
-    setEditedAmount(current => {
-      const next = { ...current };
-      for (const row of pending) {
-        if (!(row.id in next)) {
-          next[row.id] = String(row.amount);
-        }
-      }
-      return next;
-    });
-    setEditedAccountId(current => {
-      const next = { ...current };
-      for (const row of pending) {
-        if (!(row.id in next)) {
-          next[row.id] = row.accountId;
-        }
-      }
-      return next;
-    });
-    setEditedDate(current => {
-      const next = { ...current };
-      for (const row of pending) {
-        if (!(row.id in next)) {
-          next[row.id] = row.dueDate;
-        }
-      }
-      return next;
-    });
     setLoading(false);
   }, []);
 
@@ -105,20 +65,9 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const buildConfirmParams = (row: PendingRow) => {
-    const amountText = editedAmount[row.id] ?? String(row.amount);
-    const parsedAmount = Number(amountText);
-    if (!amountText || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-      throw new Error(`Enter a valid amount for "${row.ruleName}".`);
-    }
-    const accountId = editedAccountId[row.id] ?? row.accountId;
-    const date = editedDate[row.id] ?? row.dueDate;
-    return { occurrenceId: row.id, amount: parsedAmount, accountId, date };
-  };
-
   const handleConfirm = async (row: PendingRow) => {
     await runAction(async () => {
-      const params = buildConfirmParams(row);
+      const params = buildParams(row);
       await confirmOccurrence(params);
       await load();
     }, 'Could not confirm');
@@ -146,7 +95,7 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
     const failures: string[] = [];
     for (const row of rows) {
       try {
-        const params = buildConfirmParams(row);
+        const params = buildParams(row);
         await confirmOccurrence(params);
       } catch (error) {
         failures.push(
@@ -163,11 +112,6 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
         failures.join('\n'),
       );
     }
-  };
-
-  const accountLabel = (row: PendingRow) => {
-    const id = editedAccountId[row.id] ?? row.accountId;
-    return labelForId(accounts, id, 'name', 'Select account');
   };
 
   return (
@@ -190,72 +134,18 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
             keyExtractor={item => String(item.id)}
             style={styles.list}
             renderItem={({ item }) => (
-              <View
-                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.ruleName, { color: colors.text }]}>
-                  {item.ruleName}
-                </Text>
-                <Text style={{ color: colors.textSecondary }}>
-                  Due {item.dueDate} — {item.ruleType}
-                  {item.ruleType === 'Expense' && item.categoryName
-                    ? ` — ${item.categoryName}`
-                    : ''}
-                </Text>
-
-                <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.background },
-                  ]}
-                  value={editedAmount[item.id] ?? String(item.amount)}
-                  onChangeText={value =>
-                    setEditedAmount(current => ({ ...current, [item.id]: value }))
-                  }
-                  keyboardType="numeric"
-                  returnKeyType="done"
-                  inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textSecondary}
-                />
-
-                <Text style={[styles.label, { color: colors.text }]}>Account</Text>
-                <CollapsiblePicker
-                  displayLabel={`${accountLabel(item)} (${item.currencyCode})`}
-                  selectedValue={String(editedAccountId[item.id] ?? item.accountId)}
-                  onValueChange={value =>
-                    setEditedAccountId(current => ({
-                      ...current,
-                      [item.id]: Number(value),
-                    }))
-                  }
-                  items={accounts.map(a => ({
-                    label: `${a.name} (${a.type})`,
-                    value: String(a.id),
-                  }))}
-                />
-
-                <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-                <DateField
-                  value={editedDate[item.id] ?? item.dueDate}
-                  onChange={date =>
-                    setEditedDate(current => ({ ...current, [item.id]: date }))
-                  }
-                />
-
-                <View style={styles.rowActions}>
-                  <Button
-                    title="Skip"
-                    color={colors.danger}
-                    onPress={() => handleSkip(item)}
-                  />
-                  <Button
-                    title="Confirm"
-                    color={colors.primary}
-                    onPress={() => handleConfirm(item)}
-                  />
-                </View>
-              </View>
+              <PendingOccurrenceCard
+                row={item}
+                accounts={accounts}
+                amount={editedAmount[item.id] ?? String(item.amount)}
+                accountId={editedAccountId[item.id] ?? item.accountId}
+                date={editedDate[item.id] ?? item.dueDate}
+                onAmountChange={value => setAmount(item.id, value)}
+                onAccountIdChange={value => setAccountId(item.id, value)}
+                onDateChange={value => setDate(item.id, value)}
+                onSkip={() => handleSkip(item)}
+                onConfirm={() => handleConfirm(item)}
+              />
             )}
           />
         </>
@@ -275,35 +165,6 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  ruleName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  rowActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 12,
   },
 });
 

@@ -1,31 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { Check } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { formatDateString } from '../utils/date';
-import { labelForId } from '../utils/pickerLabels';
-import { getAccountBalances, getAccounts, getTags } from '../db/queries';
-import Card from './Card';
-import CollapsiblePicker from './CollapsiblePicker';
+import { useReferenceData } from '../hooks/useReferenceData';
+import { useAccountCurrency } from '../hooks/useAccountCurrency';
+import { useAmountInput } from '../hooks/useAmountInput';
 import DateField from './common/DateField';
-import TagPicker from './common/TagPicker';
-import NumericInputAccessory, {
-  NUMERIC_KEYBOARD_ACCESSORY_ID,
-} from './NumericInputAccessory';
+import AccountCurrencyPicker from './common/AccountCurrencyPicker';
+import AmountInput from './common/AmountInput';
+import TagSection from './common/TagSection';
+import ExcludeFromBudgetCheckbox from './common/ExcludeFromBudgetCheckbox';
+import FormSubmitButton from './common/FormSubmitButton';
 import { useTheme } from '../contexts/ThemeContext';
-import { scaleFont, typography } from '../theme/typography';
-
-// Same exclusion as TransactionForm — Liability/Receivable accounts only
-// ever move through the loan flows, and Income never gets posted to a
-// closed account.
-const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+import { typography } from '../theme/typography';
 
 export type IncomeFormSubmitValues = {
   date: string; // 'YYYY-MM-DD'
@@ -51,70 +37,30 @@ function IncomeForm({
 }: IncomeFormProps): React.JSX.Element {
   const { colors } = useTheme();
   const [date, setDate] = useState(formatDateString(new Date()));
-  const [amount, setAmount] = useState('');
+  const { amount, setAmount, parsedAmount, isValid: amountValid } =
+    useAmountInput();
   const [description, setDescription] = useState('');
-  const [accounts, setAccounts] = useState<Awaited<ReturnType<typeof getAccounts>>>(
-    [],
-  );
+  const { accounts, tags } = useReferenceData();
   const [accountId, setAccountId] = useState<number | null>(null);
-  const [accountBalances, setAccountBalances] = useState<
-    Awaited<ReturnType<typeof getAccountBalances>>
-  >([]);
-  const [currencyId, setCurrencyId] = useState<number | null>(null);
-  const [tags, setTags] = useState<Awaited<ReturnType<typeof getTags>>>([]);
+  const { accountBalances, currencyId, setCurrencyId } =
+    useAccountCurrency(accountId);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      getAccounts().then(rows => {
-        const selectable = rows.filter(
-          a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
-        );
-        setAccounts(selectable);
-        setAccountId(current =>
-          current != null && selectable.some(a => a.id === current)
-            ? current
-            : selectable[0]?.id ?? null,
-        );
-      });
-      getTags().then(setTags);
-    }, []),
-  );
-
-  const toggleTag = (tagId: number) => {
-    setSelectedTagIds(current =>
-      current.includes(tagId)
-        ? current.filter(id => id !== tagId)
-        : [...current, tagId],
+  // Keeps the current account selection valid (or falls back to the
+  // first) whenever the reference-data list itself changes, same
+  // responsibility useReferenceData deliberately leaves to callers.
+  React.useEffect(() => {
+    setAccountId(current =>
+      current != null && accounts.some(a => a.id === current)
+        ? current
+        : (accounts[0]?.id ?? null),
     );
-  };
-
-  // Same reset-on-switch behavior as TransactionForm: a new account
-  // always re-derives its currency choice rather than keeping a stale one.
-  useEffect(() => {
-    if (accountId == null) {
-      setAccountBalances([]);
-      setCurrencyId(null);
-      return;
-    }
-    let cancelled = false;
-    getAccountBalances(accountId).then(balances => {
-      if (cancelled) {
-        return;
-      }
-      setAccountBalances(balances);
-      setCurrencyId(balances.length === 1 ? balances[0].currencyId : null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId]);
+  }, [accounts]);
 
   const handleSubmit = () => {
-    const parsedAmount = Number(amount);
-    if (!amount || Number.isNaN(parsedAmount)) {
+    if (!amountValid) {
       setError('Enter a valid amount');
       return;
     }
@@ -138,57 +84,21 @@ function IncomeForm({
     });
   };
 
-  const selectedAccountName = labelForId(
-    accounts,
-    accountId,
-    'name',
-    'Select account',
-  );
-
-  const canSave =
-    amount.trim() !== '' &&
-    !Number.isNaN(Number(amount)) &&
-    accountId != null &&
-    currencyId != null;
+  const canSave = amountValid && accountId != null && currencyId != null;
 
   return (
     <ScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
-      <Text
-        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
-        ACCOUNT
-      </Text>
-      <CollapsiblePicker
-        displayLabel={selectedAccountName}
-        selectedValue={accountId != null ? String(accountId) : ''}
-        onValueChange={value => setAccountId(Number(value))}
-        items={accounts.map(a => ({ label: a.name, value: String(a.id) }))}
+      <AccountCurrencyPicker
+        accounts={accounts}
+        accountId={accountId}
+        onAccountIdChange={setAccountId}
+        accountBalances={accountBalances}
+        currencyId={currencyId}
+        onCurrencyIdChange={setCurrencyId}
       />
-
-      {accountBalances.length > 1 && (
-        <>
-          <Text
-            style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
-            CURRENCY
-          </Text>
-          <CollapsiblePicker
-            displayLabel={labelForId(
-              accountBalances.map(b => ({ ...b, id: b.currencyId })),
-              currencyId,
-              'currencyCode',
-              'Select currency',
-            )}
-            selectedValue={currencyId != null ? String(currencyId) : ''}
-            onValueChange={value => setCurrencyId(Number(value))}
-            items={accountBalances.map(b => ({
-              label: `${b.currencyCode} — ${b.currencyName}`,
-              value: String(b.currencyId),
-            }))}
-          />
-        </>
-      )}
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
@@ -196,25 +106,7 @@ function IncomeForm({
       </Text>
       <DateField value={date} onChange={setDate} />
 
-      <Text
-        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
-        AMOUNT
-      </Text>
-      <TextInput
-        style={[
-          typography.amountLarge,
-          styles.amountInput,
-          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-        ]}
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="numeric"
-        returnKeyType="done"
-        inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-        placeholder="0.00"
-        placeholderTextColor={colors.textSecondary}
-      />
-      <NumericInputAccessory />
+      <AmountInput value={amount} onChangeText={setAmount} />
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
@@ -231,56 +123,24 @@ function IncomeForm({
         placeholderTextColor={colors.textSecondary}
       />
 
-      <Text
-        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
-        TAGS
-      </Text>
-      <TagPicker tags={tags} selectedIds={selectedTagIds} onToggle={toggleTag} />
+      <TagSection
+        tags={tags}
+        selectedIds={selectedTagIds}
+        onChange={setSelectedTagIds}
+      />
 
-      <Card colors={colors} style={styles.checkboxCard}>
-        <Pressable
-          style={styles.checkboxRow}
-          onPress={() => setExcludeFromBudget(current => !current)}>
-          <View
-            style={[
-              styles.checkboxBox,
-              { borderColor: colors.primary },
-              excludeFromBudget && { backgroundColor: colors.primary },
-            ]}>
-            {excludeFromBudget && (
-              <Check size={13} color={colors.primaryText} strokeWidth={3} />
-            )}
-          </View>
-          <View style={styles.checkboxLabelArea}>
-            <Text style={[styles.checkboxLabel, { color: colors.text }]}>
-              Exclude from budget
-            </Text>
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>
-              Still real income, but won't count toward budgets or reports.
-            </Text>
-          </View>
-        </Pressable>
-      </Card>
+      <ExcludeFromBudgetCheckbox
+        checked={excludeFromBudget}
+        onToggle={() => setExcludeFromBudget(current => !current)}
+        hint="Still real income, but won't count toward budgets or reports."
+      />
 
-      {error && (
-        <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
-      )}
-
-      <Pressable
-        disabled={!canSave}
-        style={[
-          styles.submitButton,
-          { backgroundColor: !canSave ? colors.neutralSoft : colors.primary },
-        ]}
-        onPress={handleSubmit}>
-        <Text
-          style={[
-            styles.submitButtonText,
-            { color: !canSave ? colors.textSecondary : colors.primaryText },
-          ]}>
-          {submitLabel}
-        </Text>
-      </Pressable>
+      <FormSubmitButton
+        error={error}
+        canSave={canSave}
+        label={submitLabel}
+        onPress={handleSubmit}
+      />
     </ScrollView>
   );
 }
@@ -302,55 +162,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-  },
-  amountInput: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  error: {
-    marginTop: 12,
-  },
-  hint: {
-    fontSize: scaleFont(12.5),
-    lineHeight: scaleFont(17),
-  },
-  checkboxCard: {
-    padding: 14,
-    marginTop: 16,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  checkboxBox: {
-    width: 22,
-    height: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxLabelArea: {
-    flex: 1,
-  },
-  checkboxLabel: {
-    fontSize: scaleFont(15),
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  submitButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  submitButtonText: {
-    fontSize: scaleFont(15),
-    fontWeight: '700',
   },
 });
 
