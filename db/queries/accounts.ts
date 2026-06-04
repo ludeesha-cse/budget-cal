@@ -509,6 +509,77 @@ export async function getAccountBalances(accountId: number) {
     .where(eq(accountBalances.accountId, accountId));
 }
 
+export type AccountBalanceWithCurrent = Awaited<
+  ReturnType<typeof getAccountBalances>
+>[number] & { currentBalance: number };
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/balances, keeping the same return shape.
+//
+// AccountsScreen's list needs every account's every currency balance,
+// current-balance included, on every load. The obvious way to get that —
+// one getAccountBalances(accountId) call per account, then one
+// getAccountBalance(accountId, currencyId) call per balance row (itself a
+// full transactions-table query) — is an N+1 that used to run A + A×C
+// queries for A accounts averaging C currencies each. This does it in
+// three queries total: every account (for its type, which the sign flip
+// below needs), every balance row joined with its currency, and every
+// transaction — then reduces net-spent per (accountId, currencyId) in JS,
+// the same math getNetSpentForAccount does per-pair, just batched.
+export async function getAllAccountBalances(): Promise<
+  AccountBalanceWithCurrent[]
+> {
+  try {
+    const [accountRows, balanceRows, transactionRows] = await Promise.all([
+      db.select().from(accounts),
+      db
+        .select({
+          id: accountBalances.id,
+          accountId: accountBalances.accountId,
+          currencyId: accountBalances.currencyId,
+          currencyCode: currencies.code,
+          currencyName: currencies.name,
+          balance: accountBalances.balance,
+        })
+        .from(accountBalances)
+        .innerJoin(currencies, eq(accountBalances.currencyId, currencies.id)),
+      db
+        .select({
+          accountId: transactions.accountId,
+          currencyId: transactions.currencyId,
+          entryType: transactions.entryType,
+          amount: transactions.amount,
+        })
+        .from(transactions),
+    ]);
+
+    const accountTypeById = new Map(accountRows.map(a => [a.id, a.type]));
+
+    // Same quantity getNetSpentForAccount calls netBalanceEffect (the sum
+    // of getStoredBalanceDelta over every matching transaction) — kept
+    // under that name here too so the two stay obviously in sync if
+    // either is ever touched again. getAccountBalance's own formula,
+    // openingBalance - netSpent (netSpent = -netBalanceEffect), collapses
+    // to openingBalance + netBalanceEffect, which is what's applied below.
+    const netBalanceEffectByKey = new Map<string, number>();
+    for (const row of transactionRows) {
+      const accountType = accountTypeById.get(row.accountId) ?? 'Bank';
+      const key = `${row.accountId}:${row.currencyId}`;
+      const delta = getStoredBalanceDelta(accountType, row.entryType, row.amount);
+      netBalanceEffectByKey.set(key, (netBalanceEffectByKey.get(key) ?? 0) + delta);
+    }
+
+    return balanceRows.map(row => {
+      const key = `${row.accountId}:${row.currencyId}`;
+      const netBalanceEffect = netBalanceEffectByKey.get(key) ?? 0;
+      return { ...row, currentBalance: row.balance + netBalanceEffect };
+    });
+  } catch (error) {
+    console.error('getAllAccountBalances: failed to batch-compute account balances', error);
+    throw error;
+  }
+}
+
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
 // call to GET /api/accounts/:id/is-zero-balance, keeping the same return
 // type. Despite the name, this returns a boolean, not a number — currency

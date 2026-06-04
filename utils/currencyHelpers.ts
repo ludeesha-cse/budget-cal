@@ -10,3 +10,15 @@ export function defaultCurrencyId<
   const defaultCurrency = currencies.find(c => c.isDefault);
   return String((defaultCurrency ?? currencies[0])?.id ?? '');
 }
+
+// The "CODE — Name" label used by every currency-id picker in
+// AccountsScreen's forms (AccountFormModal's "Initial currency",
+// AddCurrencyForm's picker) — was previously a closure re-defined once per
+// screen; factored out since Step 13 gave it a second consumer.
+export function currencyLabel<T extends { id: number | string; code: string; name: string }>(
+  currencies: T[],
+  currencyId: string,
+): string {
+  const currency = currencies.find(c => String(c.id) === currencyId);
+  return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
+}
