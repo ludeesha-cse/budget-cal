@@ -36,8 +36,15 @@ function RecurringRulesScreen(): React.JSX.Element {
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
 
-  const { listType, setListType, accounts, categories, loading, visibleRules, load } =
-    useRecurringRulesData();
+  const {
+    listType,
+    setListType,
+    accounts,
+    categories,
+    loading,
+    visibleRules,
+    load,
+  } = useRecurringRulesData();
 
   // Occurrence history is fetched lazily on first expand — most rules
   // will never be expanded in a given session. Read-only, unlike
@@ -83,7 +90,8 @@ function RecurringRulesScreen(): React.JSX.Element {
 
       <Pressable
         style={[styles.addButton, { borderColor: colors.primary }]}
-        onPress={ruleForm.openAdd}>
+        onPress={ruleForm.openAdd}
+      >
         <Plus size={16} color={colors.primary} strokeWidth={2.5} />
         <Text style={[styles.addButtonText, { color: colors.primary }]}>
           Add Rule
@@ -112,7 +120,9 @@ function RecurringRulesScreen(): React.JSX.Element {
           ListEmptyComponent={
             <EmptyState
               message={
-                listType === 'Income' ? 'No income rules yet.' : 'No expense rules yet.'
+                listType === 'Income'
+                  ? 'No income rules yet.'
+                  : 'No expense rules yet.'
               }
             />
           }
@@ -125,8 +135,13 @@ function RecurringRulesScreen(): React.JSX.Element {
         onSave={ruleForm.submit}
         canSave={ruleForm.canSave}
         title={ruleForm.editingId ? 'Edit Rule' : 'New Recurring Rule'}
-        saveLabel={ruleForm.editingId ? 'Save' : 'Create'}>
-        <RuleFormFields form={ruleForm} accounts={accounts} categories={categories} />
+        saveLabel={ruleForm.editingId ? 'Save' : 'Create'}
+      >
+        <RuleFormFields
+          form={ruleForm}
+          accounts={accounts}
+          categories={categories}
+        />
         <NumericInputAccessory />
       </BottomSheetModal>
     </View>

@@ -17,6 +17,19 @@ export function getCurrentYearString(): string {
   return getCurrentDateString().slice(0, 4);
 }
 
+// Whole calendar days from today to dueDate — negative once the due date
+// has passed, same UTC-midnight-parse trick as
+// utils/interestCalculations.ts's daysBetween, kept separate since this
+// one only needs to compare against "today" rather than two arbitrary
+// dates. Used by Dashboard's due-soon/overdue reminders (loans and
+// installments).
+export function daysUntil(dueDate: string, today: string): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const due = new Date(`${dueDate}T00:00:00Z`).getTime();
+  const now = new Date(`${today}T00:00:00Z`).getTime();
+  return Math.round((due - now) / msPerDay);
+}
+
 // A recurring rule set for day 31 must still fire in a month that only
 // has 28, 29, or 30 days — this decides which real calendar date that
 // becomes (Stage 13b). `month` is 1-based (2 = February), matching every
