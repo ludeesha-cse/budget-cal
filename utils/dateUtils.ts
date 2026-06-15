@@ -88,6 +88,27 @@ export function formatEyebrowDate(dateString: string): string {
   return `${day}, ${date.getDate()} ${month}`;
 }
 
+// Short 3-letter, uppercase month abbreviations keyed by zero-padded
+// month number ('01'..'12') — used for History's per-row day/month date
+// block ("07" / "AUG"). Built from the same MONTH_NAMES table as every
+// other month label in this file, so it can never drift out of sync,
+// and doesn't depend on MonthYearPicker's own MONTH_OPTIONS (a
+// component shouldn't be something a util imports from).
+const MONTH_ABBR: Record<string, string> = Object.fromEntries(
+  MONTH_NAMES.map((name, index) => [
+    String(index + 1).padStart(2, '0'),
+    name.slice(0, 3).toUpperCase(),
+  ]),
+);
+
+// Splits a 'YYYY-MM-DD' date into the day/month block History's row
+// layout uses ("07" / "AUG") — pure string slicing, no Date parsing
+// needed since the stored format is already zero-padded.
+export function splitDateForRow(date: string): { day: string; month: string } {
+  const [, month, day] = date.split('-');
+  return { day, month: MONTH_ABBR[month] ?? month };
+}
+
 export function getDaysInMonth(month: string): number {
   const [year, monthNumber] = month.split('-').map(Number);
   return new Date(year, monthNumber, 0).getDate();

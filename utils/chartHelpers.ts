@@ -17,6 +17,11 @@ export type ChartPieSlice = {
   label: string;
   value: number;
   color: string;
+  // Share of the whole pie (top-N slices + the folded-in "Other" slice),
+  // 0-100 — precomputed here rather than recalculated in JSX every
+  // render, and against the same `Math.max(1, total)` floor so a
+  // same-as-before render can't divide by zero.
+  percent: number;
 };
 
 export type ChartBarDatum = {
@@ -67,7 +72,7 @@ export function buildCategoryPieSlices(
   const palette = categoryChartPalette(colors);
   const top = rows.slice(0, topN);
   const rest = rows.slice(topN);
-  const slices: ChartPieSlice[] = top.map((row, index) => ({
+  const slices: Omit<ChartPieSlice, 'percent'>[] = top.map((row, index) => ({
     label: truncateLabel(row.categoryName, 12),
     value: row.total,
     color: palette[index % palette.length],
@@ -79,7 +84,8 @@ export function buildCategoryPieSlices(
     // bucket rather than looking like just another category.
     slices.push({ label: 'Other', value: otherTotal, color: colors.border });
   }
-  return slices;
+  const total = Math.max(1, slices.reduce((sum, slice) => sum + slice.value, 0));
+  return slices.map(slice => ({ ...slice, percent: (slice.value / total) * 100 }));
 }
 
 // Horizontal bar chart data for the account-type breakdown — a single

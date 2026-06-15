@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -8,19 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Check, Info } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
-import {
-  getAccountBalance,
-  getAccounts,
-  getAllBudgets,
-  getBudgetForMonth,
-  getDefaultCurrency,
-  settleCreditCardAccount,
-  upsertBudget,
-} from '../db/queries';
+import { settleCreditCardAccount, upsertBudget } from '../db/queries';
+import { useBudgetSettingsData } from '../hooks/useBudgetSettingsData';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { getFullBudgetPerDay } from '../utils/budgetCalculations';
@@ -31,60 +23,16 @@ import NumericInputAccessory, {
 } from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
 
-const CREDIT_CARD_TYPE = 'CreditCard';
-
-type BudgetRow = Awaited<ReturnType<typeof getAllBudgets>>[number];
-type CreditCardRow = Awaited<ReturnType<typeof getAccounts>>[number] & {
-  debt: number;
-};
-
 function BudgetSettingsScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
-  const [amount, setAmount] = useState('');
-  const [currencyCode, setCurrencyCode] = useState('');
-  const [allBudgets, setAllBudgets] = useState<BudgetRow[]>([]);
-  const [creditCards, setCreditCards] = useState<CreditCardRow[]>([]);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const selectedMonth = `${year}-${month}`;
 
-  const load = useCallback(async () => {
-    const [existing, all, accounts, defaultCurrency] = await Promise.all([
-      getBudgetForMonth(selectedMonth),
-      getAllBudgets(),
-      getAccounts(),
-      getDefaultCurrency(),
-    ]);
-    setAmount(existing ? String(existing.limitAmount) : '');
-    setAllBudgets(all);
-    setCurrencyCode(defaultCurrency?.code ?? '');
-
-    const cardAccounts = accounts.filter(
-      account => account.type === CREDIT_CARD_TYPE,
-    );
-    // Card debt is computed in the default currency only for now.
-    const withDebt = await Promise.all(
-      cardAccounts.map(async account => ({
-        ...account,
-        debt: defaultCurrency
-          ? -(await getAccountBalance(account.id, defaultCurrency.id))
-          : 0,
-      })),
-    );
-    setCreditCards(withDebt);
-  }, [selectedMonth]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
-
-  useEffect(() => {
-    setSavedMessage(null);
-  }, [selectedMonth]);
+  const { amount, setAmount, currencyCode, allBudgets, creditCards, reload } =
+    useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
 
   const parsedAmount = Number(amount);
   const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
@@ -100,7 +48,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
     }
     await upsertBudget(selectedMonth, parsedAmount);
     setSavedMessage('Budget saved');
-    load();
+    reload();
   };
 
   const handleSettle = (id: number, name: string) => {
@@ -113,7 +61,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
           text: 'Settle',
           onPress: async () => {
             await settleCreditCardAccount(id);
-            load();
+            reload();
           },
         },
       ],
