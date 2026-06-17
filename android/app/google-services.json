@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "737589433916",
+    "project_id": "expenseease-75896",
+    "storage_bucket": "expenseease-75896.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737589433916:android:307536a0df2bdae51f5539",
+        "android_client_info": {
+          "package_name": "com.budgettrackermobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "737589433916-hiu8m46jj0cf8ap8gjmaoqes7jna3pdm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.budgettrackermobile",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "737589433916-2rmbv7uj91a64nce8tkj1o1u2j3isj3a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgjkebwyfTqdN5t6q9Rt4OY8WiuETKX38"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "737589433916-2rmbv7uj91a64nce8tkj1o1u2j3isj3a.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -23,10 +23,8 @@
 - [x] **Stage 14** — Savings goals (target + contribution log; purely informational, no link to real balances)
 - [x] **Stage 15** — Search + transaction tags (text search over descriptions; reimbursable/shared/pending-style tags; no photo attachments — deliberately skipped)
 - [x] **Stage 16** — Statistics reports (current month / last 3 months / last year presets; category, account-type, and currency breakdowns)
+- [x] **Stage 17** — Excel bulk import + export (same file format both directions — one file is a full from-zero restore; format now needs to cover currencies, account types, loans, credit cards, installments, recurring rules)
 
-## Not started yet 
-
-- [ ] **Stage 17** — Excel bulk import + export (same file format both directions — one file is a full from-zero restore; format now needs to cover currencies, account types, loans, credit cards, installments, recurring rules)
 ### Auth + monetization (the only stages that touch the network)
  
 - [ ] **Stage 18** — OAuth login: Sign in with Apple + Google Sign-In, local session storage, network boundary established

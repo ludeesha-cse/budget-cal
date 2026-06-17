@@ -46,6 +46,9 @@ export type SettingsStackParamList = {
   // SettingsHome directly — see NetWorthScreen's own header comment for
   // why it's kept a deliberate extra tap away.
   NetWorth: undefined;
+  // Stage 18 (Android only) — Google sign-in/out. Not gated behind
+  // anything and gates nothing else; see AccountScreen.tsx.
+  Account: undefined;
 };
 
 export type RootTabParamList = {

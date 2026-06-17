@@ -19,6 +19,7 @@ import {
 } from '@react-native-documents/picker';
 import {
   ChevronRight,
+  CircleUser,
   CreditCard,
   Download,
   FolderTree,
@@ -408,6 +409,12 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
     {
       title: 'App',
       rows: [
+        {
+          key: 'account',
+          label: 'Account',
+          icon: CircleUser,
+          onPress: () => navigation.navigate('Account'),
+        },
         {
           key: 'appSettings',
           label: 'App Settings',

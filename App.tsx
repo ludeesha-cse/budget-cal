@@ -48,11 +48,13 @@ import RecurringRulesScreen from './screens/RecurringRulesScreen';
 import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
 import TagsScreen from './screens/TagsScreen';
 import ReviewOccurrencesScreen from './screens/ReviewOccurrencesScreen';
+import AccountScreen from './screens/AccountScreen';
 import PaywallModal from './screens/PaywallModal';
 import AddEntrySheet, { AddEntryKind } from './components/AddEntrySheet';
 import { EntitlementProvider } from './hooks/useEntitlement';
 import { PaywallProvider } from './contexts/PaywallContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { AuthProvider } from './contexts/AuthContext';
 import { generatePendingOccurrences } from './db/queries';
 import type {
   DashboardStackParamList,
@@ -180,6 +182,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="Tags"
         component={TagsScreen}
         options={{ title: 'Tags' }}
+      />
+      <SettingsStack.Screen
+        name="Account"
+        component={AccountScreen}
+        options={{ title: 'Account' }}
       />
     </SettingsStack.Navigator>
   );
@@ -494,9 +501,11 @@ function App(): React.JSX.Element {
     // seeded, which only happens once runMigrations() above has resolved.
     <EntitlementProvider>
       <PaywallProvider>
-        <ThemeProvider>
-          <AppShell />
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <AppShell />
+          </ThemeProvider>
+        </AuthProvider>
       </PaywallProvider>
     </EntitlementProvider>
   );
