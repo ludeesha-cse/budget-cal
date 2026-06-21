@@ -12,7 +12,13 @@
 // format version it's reading, and reject or migrate a file it doesn't
 // recognize — added now, at v1, because retrofitting this later would
 // leave every file exported before that point unidentifiable.
-export const SCHEMA_VERSION = 1;
+// v2: Budgets and CategoryBudgets gained a CurrencyCode column, matching
+// the multi-currency budgets change (see schema.ts's budgets/
+// categoryBudgets currencyId columns) — a v1 file has no currency
+// information for these two sheets at all, so the importer treats a
+// missing CurrencyCode as the app's current default currency rather than
+// guessing.
+export const SCHEMA_VERSION = 2;
 
 export type SheetName =
   | 'Meta'
@@ -101,13 +107,14 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
   TransactionTags: ['Date', 'AccountName', 'Amount', 'Description', 'TagName'],
   Budgets: [
     'Month',
+    'CurrencyCode',
     'Category',
     'LimitAmount',
     'Period',
     'StartDate',
     'CreatedAt',
   ],
-  CategoryBudgets: ['Month', 'CategoryName', 'Amount'],
+  CategoryBudgets: ['Month', 'CategoryName', 'CurrencyCode', 'Amount'],
   Transfers: [
     'Date',
     'FromAccountName',

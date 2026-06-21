@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
-import CollapsiblePicker from '../components/CollapsiblePicker';
 import EmptyState from '../components/common/EmptyState';
 import SegmentedToggle from '../components/common/SegmentedToggle';
+import CurrencyTabs from '../components/common/CurrencyTabs';
 import ReportSummaryCard from '../components/reports/ReportSummaryCard';
 import CategoryPieCard from '../components/reports/CategoryPieCard';
 import AmountListRow from '../components/reports/AmountListRow';
@@ -77,18 +77,12 @@ function ReportsScreen(): React.JSX.Element {
         </Text>
 
         {availableCurrencies.length > 1 && (
-          <>
-            <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
-            <CollapsiblePicker
-              displayLabel={selectedCurrencyCode}
-              selectedValue={currencyId != null ? String(currencyId) : ''}
-              onValueChange={value => setCurrencyId(Number(value))}
-              items={availableCurrencies.map(c => ({
-                label: `${c.code} — ${c.name}`,
-                value: String(c.id),
-              }))}
-            />
-          </>
+          <CurrencyTabs
+            currencies={availableCurrencies}
+            value={currencyId}
+            onChange={setCurrencyId}
+            style={styles.currencyTabs}
+          />
         )}
 
         <View style={styles.switchRow}>
@@ -189,11 +183,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
   },
-  label: {
-    fontSize: scaleFont(14),
-    fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 4,
+  currencyTabs: {
+    marginTop: 10,
   },
   switchRow: {
     flexDirection: 'row',

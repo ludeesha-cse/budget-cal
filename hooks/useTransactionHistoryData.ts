@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  getDefaultCurrency,
   getLoanPaymentsByMonth,
   getLoanPaymentsByYear,
   getTagsForTransaction,
@@ -54,6 +55,11 @@ export interface UseTransactionHistoryDataResult {
   rows: HistoryRow[];
   loading: boolean;
   tagsByTransactionId: Record<number, TagRow[]>;
+  // Threaded down to TransactionRow so it can show a currency tag only on
+  // rows whose currency differs from this — see TransactionRow's own
+  // render logic. null until the first load resolves (or permanently, if
+  // no currency is flagged default, which shouldn't happen in practice).
+  defaultCurrencyId: number | null;
   reload: () => Promise<void>;
 }
 
@@ -70,6 +76,7 @@ export function useTransactionHistoryData(
   const [tagsByTransactionId, setTagsByTransactionId] = useState<
     Record<number, TagRow[]>
   >({});
+  const [defaultCurrencyId, setDefaultCurrencyId] = useState<number | null>(null);
 
   // Loads each currently-displayed transaction's own tags in one batch —
   // small dataset (a personal tracker's month or search-result page), so
@@ -92,6 +99,11 @@ export function useTransactionHistoryData(
 
   const reload = useCallback(async () => {
     setLoading(true);
+
+    // Fetched on every reload rather than once — cheap (a single-row
+    // lookup) and keeps this correct if the user changes their default
+    // currency (Currencies screen) while History is open.
+    getDefaultCurrency().then(currency => setDefaultCurrencyId(currency?.id ?? null));
 
     if (isSearchMode) {
       // Search ignores month/year entirely, on purpose — see the Stage 15
@@ -144,5 +156,5 @@ export function useTransactionHistoryData(
     }, [reload]),
   );
 
-  return { rows, loading, tagsByTransactionId, reload };
+  return { rows, loading, tagsByTransactionId, defaultCurrencyId, reload };
 }

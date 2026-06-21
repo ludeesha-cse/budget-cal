@@ -4,12 +4,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
+import CurrencyTabs from '../components/common/CurrencyTabs';
 import {
+  getBudgetCurrencyOptions,
   getCategories,
   getCategoryBudgetsForMonth,
-  getDefaultCurrency,
   getSpendingByCategory,
   upsertCategoryBudget,
+  type CurrencyOption,
 } from '../db/queries';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
@@ -31,44 +33,77 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [amounts, setAmounts] = useState<Record<number, string>>({});
   const [spentByCategory, setSpentByCategory] = useState<Record<number, number>>({});
-  const [currencyCode, setCurrencyCode] = useState('');
+  const [currencyOptions, setCurrencyOptions] = useState<CurrencyOption[]>([]);
+  // null until the first load resolves a starting tab — see the same
+  // pattern in useBudgetSettingsData/useReportData.
+  const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const selectedMonth = `${year}-${month}`;
+  const currencyCode =
+    currencyOptions.find(option => option.id === currencyId)?.code ?? '';
 
+  // All app currencies are offered as tabs here (not just ones with
+  // existing spending) — unlike ExpensesByTypeScreen/Reports, this screen
+  // is for setting budgets, and a user should be able to plan a budget in
+  // a currency before ever spending in it (e.g. budgeting ahead for a
+  // trip). getBudgetCurrencyOptions() already returns default-currency
+  // first, so the initial tab lands on the default currency.
   const load = useCallback(async () => {
     setSavedMessage(null);
-    const [allCategories, existingBudgets, defaultCurrency] = await Promise.all([
+    const [allCategories, options] = await Promise.all([
       getCategories(),
-      getCategoryBudgetsForMonth(selectedMonth),
-      getDefaultCurrency(),
+      getBudgetCurrencyOptions(),
     ]);
     setCategories(allCategories);
+    setCurrencyOptions(options);
+
+    const resolvedCurrencyId =
+      currencyId != null && options.some(c => c.id === currencyId)
+        ? currencyId
+        : (options[0]?.id ?? null);
+    if (resolvedCurrencyId !== currencyId) {
+      setCurrencyId(resolvedCurrencyId);
+    }
+
+    if (resolvedCurrencyId == null) {
+      setAmounts({});
+      setSpentByCategory({});
+      return;
+    }
+
+    const existingBudgets = await getCategoryBudgetsForMonth(
+      selectedMonth,
+      resolvedCurrencyId,
+    );
     const byCategory: Record<number, string> = {};
     for (const budget of existingBudgets) {
       byCategory[budget.categoryId] = String(budget.amount);
     }
     setAmounts(byCategory);
-    setCurrencyCode(defaultCurrency?.code ?? '');
 
-    if (defaultCurrency) {
-      const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
-      const lastDay = clampDayToMonth(yearNum, monthNum, 31);
-      const startDate = `${selectedMonth}-01`;
-      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
-      const spendingRows = await getSpendingByCategory(startDate, endDate, defaultCurrency.id);
-      const spendByCategory: Record<number, number> = {};
-      for (const row of spendingRows) {
-        if (row.categoryId != null) {
-          spendByCategory[row.categoryId] = row.total;
-        }
+    const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
+    const lastDay = clampDayToMonth(yearNum, monthNum, 31);
+    const startDate = `${selectedMonth}-01`;
+    const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+    const spendingRows = await getSpendingByCategory(
+      startDate,
+      endDate,
+      resolvedCurrencyId,
+    );
+    const spendByCategory: Record<number, number> = {};
+    for (const row of spendingRows) {
+      if (row.categoryId != null) {
+        spendByCategory[row.categoryId] = row.total;
       }
-      setSpentByCategory(spendByCategory);
-    } else {
-      setSpentByCategory({});
     }
-  }, [selectedMonth]);
+    setSpentByCategory(spendByCategory);
+  }, [selectedMonth, currencyId]);
 
+  // Re-runs on focus and whenever `load` itself changes identity — which
+  // happens whenever selectedMonth or currencyId changes (see load's own
+  // dependency array) — so switching the month or the currency tab both
+  // reload.
   useFocusEffect(
     useCallback(() => {
       load();
@@ -81,6 +116,9 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   };
 
   const handleSaveAll = async () => {
+    if (currencyId == null) {
+      return;
+    }
     const entries = Object.entries(amounts).filter(
       ([, value]) => value.trim() !== '',
     );
@@ -93,6 +131,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         return upsertCategoryBudget(
           selectedMonth,
           Number(categoryId),
+          currencyId,
           parsedAmount,
         );
       }),
@@ -112,6 +151,15 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         onMonthChange={setMonth}
         onYearChange={setYear}
       />
+
+      {currencyOptions.length > 1 && (
+        <CurrencyTabs
+          currencies={currencyOptions}
+          value={currencyId}
+          onChange={setCurrencyId}
+          style={styles.currencyTabs}
+        />
+      )}
 
       <Text
         style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
@@ -204,6 +252,9 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: 12,
+  },
+  currencyTabs: {
+    marginTop: 12,
   },
   sectionLabel: {
     marginTop: 16,

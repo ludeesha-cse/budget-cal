@@ -1,8 +1,9 @@
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, asc, eq, like, sql } from 'drizzle-orm';
 import { db } from '../index';
 import {
   accounts,
   categories,
+  currencies,
   transactions,
 } from '../schema';
 
@@ -118,11 +119,16 @@ export async function getTransactionsByMonth(month: string) {
         date: transactions.date,
         entryType: transactions.entryType,
         currencyId: transactions.currencyId,
+        // Joined in so History can show a currency tag on any row whose
+        // currency differs from the app's default — see TransactionRow's
+        // own render logic. Same join searchTransactions already does.
+        currencyCode: currencies.code,
         excludeFromBudget: transactions.excludeFromBudget,
         createdAt: transactions.createdAt,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(like(transactions.date, `${month}%`));
   } catch (error) {
@@ -151,11 +157,13 @@ export async function getTransactionsByYear(year: string) {
         date: transactions.date,
         entryType: transactions.entryType,
         currencyId: transactions.currencyId,
+        currencyCode: currencies.code,
         excludeFromBudget: transactions.excludeFromBudget,
         createdAt: transactions.createdAt,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(like(transactions.date, `${year}%`));
   } catch (error) {
@@ -168,10 +176,15 @@ export async function getTransactionsByYear(year: string) {
 }
 
 //If a backend is added later, replace this with a fetch() call
-// to GET /api/transactions/summary?month=YYYY-MM&groupBy=category, keeping
-// the same return shape. Expense-only — Income entries are tracked
+// to GET /api/transactions/summary?month=YYYY-MM&currencyId=&groupBy=category,
+// keeping the same return shape. Expense-only — Income entries are tracked
 // separately (getMonthlyIncome) rather than netted into "expenses by type".
-export async function getExpensesByType(month: string) {
+// Currency-scoped and excludeFromBudget-filtered, matching getMonthlyTotal
+// and getSpendingByCategory's semantics — this used to mix every currency
+// together (a USD 10 coffee and an LKR 1000 coffee would add up to "11
+// Food") and never respected excludeFromBudget at all; both were bugs,
+// not intentional behavior differences from the rest of the budget layer.
+export async function getExpensesByType(month: string, currencyId: number) {
   try {
     return await db
       .select({
@@ -184,12 +197,58 @@ export async function getExpensesByType(month: string) {
         and(
           like(transactions.date, `${month}%`),
           eq(transactions.entryType, 'Expense'),
+          eq(transactions.currencyId, currencyId),
+          eq(transactions.excludeFromBudget, false),
         ),
       )
       .groupBy(categories.name);
   } catch (error) {
     console.error(
-      `getExpensesByType: failed to summarize expenses by category for month=${month}`,
+      `getExpensesByType: failed to summarize expenses by category for month=${month} currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+export type ExpenseCurrencyOption = { id: number; code: string; name: string };
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/transactions/summary/currencies?month=YYYY-MM, keeping
+// the same return shape. Backs ExpensesByTypeScreen's currency tabs —
+// unlike CategoryBudgetsScreen's tabs (every app currency, since you can
+// budget ahead of any spending), this is a view-only screen, so it only
+// offers currencies that actually have expense activity this month —
+// same "available currencies" idea as Reports' useReportData, just scoped
+// to expenses-by-category instead of the full report set.
+export async function getExpenseCurrenciesForMonth(
+  month: string,
+): Promise<ExpenseCurrencyOption[]> {
+  try {
+    return await db
+      .selectDistinct({
+        id: currencies.id,
+        code: currencies.code,
+        name: currencies.name,
+      })
+      .from(transactions)
+      .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
+      .where(
+        and(
+          like(transactions.date, `${month}%`),
+          eq(transactions.entryType, 'Expense'),
+          eq(transactions.excludeFromBudget, false),
+          // A currency the user has disabled on the Currencies screen
+          // never gets its own tab here either, even if it has real
+          // spending this month — same "disabled means hidden
+          // everywhere" rule every other currency picker follows.
+          eq(currencies.active, true),
+        ),
+      )
+      .orderBy(asc(currencies.code));
+  } catch (error) {
+    console.error(
+      `getExpenseCurrenciesForMonth: failed to list active currencies for month=${month}`,
       error,
     );
     throw error;
@@ -205,7 +264,15 @@ export async function getExpensesByType(month: string) {
 // "include excluded" toggle at all (that's a Reports-only concept). A
 // transaction marked excludeFromBudget still exists and still shows up
 // in History; it just never contributes to what "spent this month" means.
-export async function getMonthlyTotal(month: string): Promise<number> {
+// Currency-scoped since Stage 21b — this used to sum every transaction's
+// amount regardless of currency (an expense entered in USD would silently
+// deduct from an LKR budget, arithmetically nonsensical since the two
+// numbers aren't the same unit). Every caller must now say which
+// currency's budget it's asking about.
+export async function getMonthlyTotal(
+  month: string,
+  currencyId: number,
+): Promise<number> {
   try {
     const [row] = await db
       .select({ total: sql<number>`sum(${transactions.amount})` })
@@ -214,13 +281,14 @@ export async function getMonthlyTotal(month: string): Promise<number> {
         and(
           like(transactions.date, `${month}%`),
           eq(transactions.entryType, 'Expense'),
+          eq(transactions.currencyId, currencyId),
           eq(transactions.excludeFromBudget, false),
         ),
       );
     return row?.total ?? 0;
   } catch (error) {
     console.error(
-      `getMonthlyTotal: failed to sum expenses for month=${month}`,
+      `getMonthlyTotal: failed to sum expenses for month=${month} currency id=${currencyId}`,
       error,
     );
     throw error;
@@ -231,7 +299,10 @@ export async function getMonthlyTotal(month: string): Promise<number> {
 // call to GET /api/transactions/summary?month=YYYY-MM&total=1&entryType=Income,
 // keeping the same return shape. Mirrors getMonthlyTotal but for Income —
 // same Stage 16a excludeFromBudget exclusion, same reasoning.
-export async function getMonthlyIncome(month: string): Promise<number> {
+export async function getMonthlyIncome(
+  month: string,
+  currencyId: number,
+): Promise<number> {
   try {
     const [row] = await db
       .select({ total: sql<number>`sum(${transactions.amount})` })
@@ -240,13 +311,14 @@ export async function getMonthlyIncome(month: string): Promise<number> {
         and(
           like(transactions.date, `${month}%`),
           eq(transactions.entryType, 'Income'),
+          eq(transactions.currencyId, currencyId),
           eq(transactions.excludeFromBudget, false),
         ),
       );
     return row?.total ?? 0;
   } catch (error) {
     console.error(
-      `getMonthlyIncome: failed to sum income for month=${month}`,
+      `getMonthlyIncome: failed to sum income for month=${month} currency id=${currencyId}`,
       error,
     );
     throw error;

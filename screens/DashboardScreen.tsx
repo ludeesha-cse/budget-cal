@@ -38,17 +38,21 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
   // small on its own to be worth a matching hook.
   const [balancesHidden, setBalancesHidden] = useState(false);
 
-  const percentUsed =
-    data.budget && data.budget.limitAmount > 0
-      ? Math.round((data.total / data.budget.limitAmount) * 100)
-      : 0;
-  const budgetStatusColor = budgetStatusFor(
-    data.total,
-    data.budget?.limitAmount ?? 0,
-    colors,
-  ).text;
-
   const month = getCurrentMonthString();
+  // Up to 2 currency budget cards shown here; the rest (if any) are only
+  // ever a "+N more" tap away on BudgetSettingsScreen, which now doubles
+  // as the "manage every currency's budget" screen rather than just the
+  // default currency's — see its own currency-tabs comment. Two, not one
+  // or three, because this is a glance dashboard: a single card would
+  // hide a second currency's budget entirely (the original bug report),
+  // but more than 2 starts crowding a screen that already has five other
+  // sections below it.
+  const VISIBLE_BUDGET_CARDS = 2;
+  const visibleBudgetCards = data.budgetCards.slice(0, VISIBLE_BUDGET_CARDS);
+  const hiddenBudgetCardCount = Math.max(
+    0,
+    data.budgetCards.length - VISIBLE_BUDGET_CARDS,
+  );
 
   return (
     // DashboardHome's native-stack header is hidden (see App.tsx) so this
@@ -80,18 +84,59 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           <ActivityIndicator size="large" style={styles.loadingSpinner} />
         ) : (
           <>
-            <Text style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
-              This Month's Budget
-            </Text>
-            <BudgetSummaryCard
-              month={month}
-              total={data.total}
-              budget={data.budget}
-              amountLeft={data.amountLeft}
-              averageLeftPerDay={data.averageLeftPerDay}
-              percentUsed={percentUsed}
-              statusColor={budgetStatusColor}
-            />
+            <View style={styles.sectionHeaderRow}>
+              <Text
+                style={[
+                  typography.eyebrow,
+                  styles.sectionLabel,
+                  styles.sectionLabelInline,
+                  { color: colors.textSecondary },
+                ]}>
+                This Month's Budget
+              </Text>
+              {hiddenBudgetCardCount > 0 && (
+                <Pressable
+                  onPress={() =>
+                    tabNavigation.navigate('Settings', { screen: 'BudgetSettings' })
+                  }>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>
+                    +{hiddenBudgetCardCount} more · Manage →
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+            {visibleBudgetCards.length === 0 ? (
+              <BudgetSummaryCard
+                month={month}
+                currencyCode=""
+                total={0}
+                budget={null}
+                amountLeft={null}
+                averageLeftPerDay={null}
+                percentUsed={0}
+                statusColor={colors.textSecondary}
+              />
+            ) : (
+              visibleBudgetCards.map(card => (
+                <BudgetSummaryCard
+                  key={card.currencyId}
+                  month={month}
+                  currencyCode={card.currencyCode}
+                  total={card.total}
+                  budget={card.budget}
+                  amountLeft={card.amountLeft}
+                  averageLeftPerDay={card.averageLeftPerDay}
+                  percentUsed={
+                    card.budget.limitAmount > 0
+                      ? Math.round((card.total / card.budget.limitAmount) * 100)
+                      : 0
+                  }
+                  statusColor={
+                    budgetStatusFor(card.total, card.budget.limitAmount, colors).text
+                  }
+                />
+              ))
+            )}
 
             <View style={styles.sectionHeaderRow}>
               <Text

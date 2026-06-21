@@ -2,11 +2,11 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getAccounts,
+  getActiveCurrencies,
   getAllAccountBalances,
-  getCurrencies,
 } from '../db/queries';
 
-export type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+export type CurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
 export type AccountBalanceRow = Awaited<
   ReturnType<typeof getAllAccountBalances>
 >[number];
@@ -36,7 +36,7 @@ export function useAccounts(): UseAccountsResult {
   const load = useCallback(async () => {
     const [rows, currencyRows, allBalances] = await Promise.all([
       getAccounts(),
-      getCurrencies(),
+      getActiveCurrencies(),
       getAllAccountBalances(),
     ]);
     setCurrencies(currencyRows);

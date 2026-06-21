@@ -1,0 +1,1 @@
+ALTER TABLE `currencies` ADD `active` integer DEFAULT true NOT NULL;

@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getAccounts,
+  getActiveCurrencies,
   getCategories,
-  getCurrencies,
   getInstallmentPayments,
   getInstallmentPlans,
 } from '../db/queries';
@@ -19,7 +19,7 @@ export type InstallmentCategoryRow = Awaited<
   ReturnType<typeof getCategories>
 >[number];
 export type InstallmentCurrencyRow = Awaited<
-  ReturnType<typeof getCurrencies>
+  ReturnType<typeof getActiveCurrencies>
 >[number];
 export type InstallmentAccountRow = Awaited<
   ReturnType<typeof getAccounts>
@@ -53,7 +53,7 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
       await Promise.all([
         getInstallmentPlans(),
         getCategories(),
-        getCurrencies(),
+        getActiveCurrencies(),
         getAccounts(),
       ]);
     setPlans(planRows);

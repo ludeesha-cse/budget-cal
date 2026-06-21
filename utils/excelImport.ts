@@ -222,6 +222,26 @@ class RowValidator {
     return value;
   }
 
+  // Same existence check as requiredResolvedName, but for a column that's
+  // allowed to be blank — used only by Budgets/CategoryBudgets'
+  // CurrencyCode, which is missing entirely on a pre-v2 export (see
+  // exportFormat.ts's SCHEMA_VERSION comment) and falls back to the
+  // app's default currency at apply time (db/queries/dataExport.ts)
+  // rather than being an error.
+  optionalResolvedName(
+    column: string,
+    set: ReadonlySet<string>,
+    kindLabel: string,
+  ): string {
+    const value = this.string(column);
+    if (value && !set.has(value)) {
+      this.push(
+        `${column} "${value}" does not match an existing ${kindLabel}, and no ${kindLabel} with that name is defined elsewhere in this workbook.`,
+      );
+    }
+    return value;
+  }
+
   // Category and Tag names need no existence check at all — either one
   // needs nothing but its own name to be a fully valid row, so any name
   // referenced anywhere is simply auto-created during apply. This
@@ -549,6 +569,14 @@ export async function validateExcelFile(
     rows.forEach((row, i) => {
       const v = new RowValidator('Budgets', row, i + 2, errors);
       const month = v.requiredString('Month');
+      // Optional, not required — a pre-v2 export has no CurrencyCode
+      // column at all (see exportFormat.ts), and importData() falls back
+      // to the app's default currency when this is blank.
+      const currencyCode = v.optionalResolvedName(
+        'CurrencyCode',
+        currencyCodeSet,
+        'currency',
+      );
       const category = v.requiredString('Category');
       const limitAmount = v.requiredNumber('LimitAmount');
       const period = v.requiredString('Period');
@@ -556,6 +584,7 @@ export async function validateExcelFile(
       const createdAt = v.string('CreatedAt');
       sheetRows.push({
         Month: month,
+        CurrencyCode: currencyCode,
         Category: category,
         LimitAmount: limitAmount,
         Period: period,
@@ -581,8 +610,18 @@ export async function validateExcelFile(
       const v = new RowValidator('CategoryBudgets', row, i + 2, errors);
       const month = v.requiredString('Month');
       const categoryName = v.requiredString('CategoryName');
+      const currencyCode = v.optionalResolvedName(
+        'CurrencyCode',
+        currencyCodeSet,
+        'currency',
+      );
       const amount = v.requiredNumber('Amount');
-      sheetRows.push({ Month: month, CategoryName: categoryName, Amount: amount });
+      sheetRows.push({
+        Month: month,
+        CategoryName: categoryName,
+        CurrencyCode: currencyCode,
+        Amount: amount,
+      });
     });
     data.CategoryBudgets = sheetRows;
     rowCounts.CategoryBudgets = sheetRows.length;

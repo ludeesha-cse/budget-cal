@@ -12,6 +12,7 @@ type BudgetRow = Awaited<ReturnType<typeof getBudgetForMonth>>;
 
 type Props = {
   month: string;
+  currencyCode: string;
   total: number;
   budget: BudgetRow;
   amountLeft: number | null;
@@ -22,9 +23,18 @@ type Props = {
 
 // "This Month's Budget" card body — the section label above it stays in
 // the screen orchestrator, same as every other section header on this
-// screen.
+// screen. Renders one currency's budget; DashboardScreen renders up to 2
+// of these side by side (see its own "up to 2 + more" comment) rather
+// than this component knowing anything about multi-currency itself.
+//
+// currencyCode is a required prop, not a hardcoded "Rs." string like this
+// component used to have — that was a pre-existing bug (it silently
+// assumed every installation's budget was in LKR, independent of whatever
+// the actual default/selected currency was), fixed here as part of the
+// wider multi-currency budget pass rather than left in place.
 function BudgetSummaryCard({
   month,
+  currencyCode,
   total,
   budget,
   amountLeft,
@@ -50,7 +60,7 @@ function BudgetSummaryCard({
         <Text
           style={[typography.cardTitle, styles.budgetCardTitle, { color: colors.text }]}
           numberOfLines={1}>
-          Overall — {formatMonthTitle(month)}
+          Overall — {formatMonthTitle(month)} · {currencyCode}
         </Text>
         <View style={[styles.percentPill, { backgroundColor: colors.successSoft }]}>
           <Text style={[styles.percentPillText, typography.amountMono, { color: colors.success }]}>
@@ -64,11 +74,11 @@ function BudgetSummaryCard({
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.7}>
-          Rs. {formatAmount(total, '', { decimals: 0, hideCode: true })}
+          {formatAmount(total, currencyCode, { decimals: 0 })}
         </Text>
         <Text style={[typography.amountMono, styles.budgetAmountOf, { color: colors.textSecondary }]}>
           {' '}
-          of {formatAmount(budget.limitAmount, '', { decimals: 0, hideCode: true })}
+          of {formatAmount(budget.limitAmount, currencyCode, { decimals: 0, hideCode: true })}
         </Text>
       </View>
       <ProgressBar
@@ -79,11 +89,11 @@ function BudgetSummaryCard({
       />
       <View style={styles.budgetFooterRow}>
         <Text style={[typography.amountMono, { color: colors.textSecondary }]}>
-          Rs. {formatAmount(Math.max(0, amountLeft), '', { decimals: 0, hideCode: true })} left
+          {formatAmount(Math.max(0, amountLeft), currencyCode, { decimals: 0 })} left
         </Text>
         {averageLeftPerDay !== null && (
           <Text style={[typography.amountMono, { color: colors.textSecondary }]}>
-            Rs. {formatAmount(Math.round(averageLeftPerDay), '', { decimals: 0, hideCode: true })} / day
+            {formatAmount(Math.round(averageLeftPerDay), currencyCode, { decimals: 0 })} / day
             remaining
           </Text>
         )}

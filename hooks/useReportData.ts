@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  getCurrencies,
+  getActiveCurrencies,
   getDefaultCurrency,
   getMonthlyTrend,
   getReportSummary,
@@ -12,7 +12,7 @@ import { getReportRange } from '../utils/dateUtils';
 import type { ReportRangePreset } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 
-export type ReportCurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+export type ReportCurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
 export type ReportSummaryResult = Awaited<ReturnType<typeof getReportSummary>>;
 export type ReportCategoryRow = Awaited<ReturnType<typeof getSpendingByCategory>>[number];
 export type ReportAccountTypeRow = Awaited<
@@ -65,10 +65,13 @@ export function useReportData(
   // Which currencies actually have activity in this range, and which one
   // should end up selected: the current selection if it's still valid,
   // else the app's default currency if that's available, else the first
-  // available one.
+  // available one. Starts from getActiveCurrencies() rather than every
+  // currency in the app — a currency the user has disabled on the
+  // Currencies screen shouldn't surface as a report tab even if it has
+  // old activity sitting in it.
   const resolveAvailableCurrencies = useCallback(async () => {
     const [allCurrencies, defaultCurrency] = await Promise.all([
-      getCurrencies(),
+      getActiveCurrencies(),
       getDefaultCurrency(),
     ]);
     // One summary per currency just to test "does this currency have any

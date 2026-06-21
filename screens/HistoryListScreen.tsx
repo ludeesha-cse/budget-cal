@@ -35,13 +35,14 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const filters = useTransactionHistoryFilters();
   const { month, year, isSearchMode, debouncedQuery, activeTagFilterIds } = filters;
 
-  const { rows, loading, tagsByTransactionId, reload } = useTransactionHistoryData({
-    month,
-    year,
-    isSearchMode,
-    debouncedQuery,
-    activeTagFilterIds,
-  });
+  const { rows, loading, tagsByTransactionId, defaultCurrencyId, reload } =
+    useTransactionHistoryData({
+      month,
+      year,
+      isSearchMode,
+      debouncedQuery,
+      activeTagFilterIds,
+    });
 
   const editTransferModal = useEditTransferModal(reload);
   const { handleDelete, handleDeleteTransfer } = useTransactionActions(reload);
@@ -104,6 +105,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
                 <TransactionRow
                   transaction={item.data}
                   tags={tagsByTransactionId[item.data.id] ?? []}
+                  defaultCurrencyId={defaultCurrencyId}
                   onPress={() => navigation.navigate('EditTransaction', { id: item.data.id })}
                   onDelete={() => handleDelete(item.data.id)}
                 />

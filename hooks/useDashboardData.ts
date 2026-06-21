@@ -2,12 +2,14 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   generatePendingOccurrences,
-  getBudgetForMonth,
+  getBudgetsForMonth,
+  getDefaultCurrency,
   getMonthlyIncome,
   getMonthlyTotal,
   getPendingOccurrences,
   getTotalCashInHandByCurrency,
   getTotalCreditCardDebt,
+  type BudgetWithCurrency,
 } from '../db/queries';
 import { getAmountLeft, getAverageLeftPerDay } from '../utils/budgetCalculations';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
@@ -21,14 +23,25 @@ import type {
 import { useAccountShortcuts } from './useAccountShortcuts';
 import type { ShortcutAccountRow } from './useAccountShortcuts';
 
+// One of these per currency that has an overall budget set for the
+// current month — Dashboard shows up to the first 2 (see DashboardScreen),
+// with a "more" link to BudgetSettingsScreen for the rest, rather than
+// assuming (as this hook used to) that there's ever only one budget at
+// all.
+export type DashboardBudgetCard = {
+  currencyId: number;
+  currencyCode: string;
+  budget: BudgetWithCurrency;
+  total: number;
+  amountLeft: number | null;
+  averageLeftPerDay: number | null;
+};
+
 type CoreDashboardFields = {
   loading: boolean;
   pendingOccurrenceCount: number;
-  total: number;
   totalIncome: number;
-  budget: Awaited<ReturnType<typeof getBudgetForMonth>>;
-  amountLeft: number | null;
-  averageLeftPerDay: number | null;
+  budgetCards: DashboardBudgetCard[];
   cashInHandByCurrency: Record<string, number>;
   creditCardDebt: number;
 };
@@ -45,11 +58,8 @@ export interface DashboardData extends CoreDashboardFields {
 const INITIAL_CORE: CoreDashboardFields = {
   loading: true,
   pendingOccurrenceCount: 0,
-  total: 0,
   totalIncome: 0,
-  budget: null,
-  amountLeft: null,
-  averageLeftPerDay: null,
+  budgetCards: [],
   cashInHandByCurrency: {},
   creditCardDebt: 0,
 };
@@ -97,44 +107,81 @@ export function useDashboardData(): DashboardData {
       generatePendingOccurrences()
         .then(() =>
           Promise.all([
-            getMonthlyTotal(month),
-            getMonthlyIncome(month),
-            getBudgetForMonth(month),
-            getAmountLeft(month),
-            getAverageLeftPerDay(month),
+            getDefaultCurrency(),
+            getBudgetsForMonth(month),
             getTotalCashInHandByCurrency(),
             getTotalCreditCardDebt(),
             getPendingOccurrences(),
-            computeCategoryBreakdown(month),
             computeUpcomingReminders(today),
             computeShortcutAccounts(),
           ] as const),
         )
         .then(
-          ([
-            monthlyTotal,
-            monthlyIncome,
-            monthlyBudget,
-            left,
-            avgLeftPerDay,
+          async ([
+            defaultCurrency,
+            budgetsThisMonth,
             cashByCurrency,
             cardDebt,
             pendingOccurrences,
-            breakdown,
             reminders,
             shortcuts,
           ]) => {
             if (cancelled) {
               return;
             }
+
+            // Every budgeted currency gets its own spent/left/per-day
+            // figures — see DashboardBudgetCard. Small list at this app's
+            // scale (a personal tracker rarely budgets more than a
+            // handful of currencies), so N sequential small queries here
+            // is simpler than a single mega-query and not worth
+            // optimizing away.
+            const budgetCards = await Promise.all(
+              budgetsThisMonth.map(async budget => {
+                const [total, amountLeft, averageLeftPerDay] = await Promise.all([
+                  getMonthlyTotal(month, budget.currencyId),
+                  getAmountLeft(month, budget.currencyId),
+                  getAverageLeftPerDay(month, budget.currencyId),
+                ]);
+                return {
+                  currencyId: budget.currencyId,
+                  currencyCode: budget.currencyCode,
+                  budget,
+                  total,
+                  amountLeft,
+                  averageLeftPerDay,
+                };
+              }),
+            );
+
+            // Income + the "By Category" preview are both scoped to the
+            // app's default currency — see useCategoryBreakdown's own
+            // comment for why that list in particular doesn't get a
+            // per-currency tab set the way CategoryBudgetsScreen does.
+            // Falls back to the first budgeted currency, then to 0/empty,
+            // if no default currency exists at all (shouldn't happen in
+            // practice — seedDefaultCategories-style setup always leaves
+            // exactly one currency flagged default — but this avoids a
+            // crash rather than assuming it can't).
+            const incomeCurrencyId =
+              defaultCurrency?.id ?? budgetsThisMonth[0]?.currencyId ?? null;
+            const [totalIncome, breakdown] = await Promise.all([
+              incomeCurrencyId != null
+                ? getMonthlyIncome(month, incomeCurrencyId)
+                : Promise.resolve(0),
+              incomeCurrencyId != null
+                ? computeCategoryBreakdown(month, incomeCurrencyId)
+                : Promise.resolve([]),
+            ]);
+
+            if (cancelled) {
+              return;
+            }
             setCore({
               loading: false,
               pendingOccurrenceCount: pendingOccurrences.length,
-              total: monthlyTotal,
-              totalIncome: monthlyIncome,
-              budget: monthlyBudget,
-              amountLeft: left,
-              averageLeftPerDay: avgLeftPerDay,
+              totalIncome,
+              budgetCards,
               cashInHandByCurrency: cashByCurrency,
               creditCardDebt: cardDebt,
             });

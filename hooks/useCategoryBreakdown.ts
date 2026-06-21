@@ -22,7 +22,10 @@ export type CategoryBreakdownRow = {
 export interface UseCategoryBreakdownResult {
   categoryBreakdown: CategoryBreakdownRow[];
   setCategoryBreakdown: React.Dispatch<React.SetStateAction<CategoryBreakdownRow[]>>;
-  computeCategoryBreakdown: (month: string) => Promise<CategoryBreakdownRow[]>;
+  computeCategoryBreakdown: (
+    month: string,
+    currencyId: number,
+  ) => Promise<CategoryBreakdownRow[]>;
 }
 
 // Dashboard's own hand-built "spent vs. budget per category" list —
@@ -35,17 +38,27 @@ export interface UseCategoryBreakdownResult {
 // effect's own single `cancelled` flag is still false once everything
 // resolves, exactly mirroring the original screen's one-cancellation-
 // guard-for-everything behavior.
+//
+// Scoped to a single currency (Stage 21b) — this used to sum every
+// transaction's amount across every currency into one figure per
+// category, which silently mixed e.g. a USD purchase into an LKR
+// category's "spent" total. Dashboard only ever shows one at-a-glance
+// breakdown list (unlike CategoryBudgetsScreen, which gets a full
+// currency-tabbed view — see that screen), so this is scoped to the
+// app's default currency; a category budgeted only in a second currency
+// simply won't appear in this preview, the same way its overall budget
+// card only shows up if that currency has a budget at all.
 export function useCategoryBreakdown(): UseCategoryBreakdownResult {
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     CategoryBreakdownRow[]
   >([]);
 
   const computeCategoryBreakdown = useCallback(
-    async (month: string): Promise<CategoryBreakdownRow[]> => {
+    async (month: string, currencyId: number): Promise<CategoryBreakdownRow[]> => {
       const [categories, categoryBudgets, monthTransactions] =
         await Promise.all([
           getCategories(),
-          getCategoryBudgetsForMonth(month),
+          getCategoryBudgetsForMonth(month, currencyId),
           getTransactionsByMonth(month),
         ]);
 
@@ -58,12 +71,14 @@ export function useCategoryBreakdown(): UseCategoryBreakdownResult {
       // getMonthlyTotal/getCategorySpent — getTransactionsByMonth itself
       // still returns everything (History needs the full record), so
       // this is the one place Dashboard applies the exclusion to its own
-      // hand-built category breakdown.
+      // hand-built category breakdown. currencyId filter is the Stage
+      // 21b fix described above.
       const spentByCategory = new Map<number, number>();
       for (const transaction of monthTransactions) {
         if (
           transaction.entryType !== 'Expense' ||
           transaction.categoryId == null ||
+          transaction.currencyId !== currencyId ||
           transaction.excludeFromBudget
         ) {
           continue;
@@ -94,8 +109,8 @@ export function useCategoryBreakdown(): UseCategoryBreakdownResult {
           const hasBudget = budgetAmount !== null;
           const [rowAmountLeft, rowAverageLeftPerDay] = hasBudget
             ? await Promise.all([
-                getCategoryAmountLeft(month, categoryId),
-                getCategoryAverageLeftPerDay(month, categoryId),
+                getCategoryAmountLeft(month, categoryId, currencyId),
+                getCategoryAverageLeftPerDay(month, categoryId, currencyId),
               ])
             : [null, null];
           return {

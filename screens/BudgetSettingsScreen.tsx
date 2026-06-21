@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
   Alert,
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,7 +11,8 @@ import {
 import { Check, Info } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
-import { settleCreditCardAccount, upsertBudget } from '../db/queries';
+import CurrencyTabs from '../components/common/CurrencyTabs';
+import { deleteBudget, settleCreditCardAccount, upsertBudget } from '../db/queries';
 import { useBudgetSettingsData } from '../hooks/useBudgetSettingsData';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
@@ -31,8 +32,19 @@ function BudgetSettingsScreen(): React.JSX.Element {
 
   const selectedMonth = `${year}-${month}`;
 
-  const { amount, setAmount, currencyCode, allBudgets, creditCards, reload } =
-    useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
+  const {
+    amount,
+    setAmount,
+    currencyId,
+    setCurrencyId,
+    currencyOptions,
+    currencyCode,
+    defaultCurrencyCode,
+    currentBudgetId,
+    allBudgets,
+    creditCards,
+    reload,
+  } = useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
 
   const parsedAmount = Number(amount);
   const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
@@ -43,12 +55,34 @@ function BudgetSettingsScreen(): React.JSX.Element {
     : null;
 
   const handleSave = async () => {
-    if (!amountValid) {
+    if (!amountValid || currencyId == null) {
       return;
     }
-    await upsertBudget(selectedMonth, parsedAmount);
+    await upsertBudget(selectedMonth, currencyId, parsedAmount);
     setSavedMessage('Budget saved');
     reload();
+  };
+
+  const handleDelete = () => {
+    if (currentBudgetId == null) {
+      return;
+    }
+    Alert.alert(
+      'Delete budget',
+      `Remove the ${currencyCode} budget for ${selectedMonth}? This only removes the budget limit — none of your ${currencyCode} transactions are affected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteBudget(currentBudgetId);
+            setAmount('');
+            reload();
+          },
+        },
+      ],
+    );
   };
 
   const handleSettle = (id: number, name: string) => {
@@ -69,7 +103,27 @@ function BudgetSettingsScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    // A plain View + two unbounded FlatLists used to sit here — with no
+    // scroll container at all, the screen's real height depended on
+    // however tall PAST BUDGETS/CREDIT CARDS happened to render, so
+    // Android's adjustResize (see AndroidManifest.xml) shrinking the
+    // window for the keyboard had nowhere sensible to put that overflow:
+    // the Save button and the currency tabs above it would get squeezed
+    // or shoved off-screen instead of the screen simply scrolling. A
+    // single ScrollView fixes that — everything below is now reachable
+    // by scrolling regardless of keyboard state, and PAST BUDGETS/CREDIT
+    // CARDS are now plain `.map()`s rather than nested FlatLists (a
+    // VirtualizedList inside a ScrollView with the same scroll direction
+    // is an RN anti-pattern that itself causes layout glitches) — both
+    // lists are small enough (a personal tracker's handful of currencies/
+    // cards) that virtualization was never buying anything here anyway.
+    // keyboardShouldPersistTaps="handled" so Save/Delete are tappable in
+    // one tap while the amount field's keyboard is still up, instead of
+    // needing a first tap to dismiss it.
+    <ScrollView
+      style={[styles.scroll, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled">
       <Text style={[typography.screenTitle, styles.title, { color: colors.text }]}>
         Monthly Budget
       </Text>
@@ -79,6 +133,15 @@ function BudgetSettingsScreen(): React.JSX.Element {
         onMonthChange={setMonth}
         onYearChange={setYear}
       />
+
+      {currencyOptions.length > 1 && (
+        <CurrencyTabs
+          currencies={currencyOptions}
+          value={currencyId}
+          onChange={setCurrencyId}
+          style={styles.currencyTabs}
+        />
+      )}
 
       <Card colors={colors} style={styles.amountCard}>
         <Text
@@ -112,41 +175,50 @@ function BudgetSettingsScreen(): React.JSX.Element {
         </View>
       )}
 
-      <Pressable
-        disabled={!amountValid}
-        style={[
-          styles.saveButton,
-          { backgroundColor: !amountValid ? colors.neutralSoft : colors.primary },
-        ]}
-        onPress={handleSave}>
-        <Text
+      <View style={styles.actionRow}>
+        <Pressable
+          disabled={!amountValid}
           style={[
-            styles.saveButtonText,
-            { color: !amountValid ? colors.textSecondary : colors.primaryText },
-          ]}>
-          Save Budget
-        </Text>
-      </Pressable>
+            styles.saveButton,
+            styles.actionButtonGrow,
+            { backgroundColor: !amountValid ? colors.neutralSoft : colors.primary },
+          ]}
+          onPress={handleSave}>
+          <Text
+            style={[
+              styles.saveButtonText,
+              { color: !amountValid ? colors.textSecondary : colors.primaryText },
+            ]}>
+            Save Budget
+          </Text>
+        </Pressable>
+        {currentBudgetId != null && (
+          <Pressable
+            style={[styles.deleteBudgetButton, { borderColor: colors.dangerSoft }]}
+            onPress={handleDelete}>
+            <Text style={[styles.deleteBudgetButtonText, { color: colors.danger }]}>
+              Delete
+            </Text>
+          </Pressable>
+        )}
+      </View>
 
       <Text
         style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
         PAST BUDGETS
       </Text>
-      <FlatList
-        data={allBudgets}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <Card colors={colors} style={styles.pastRow}>
+      {allBudgets.length === 0 ? (
+        <EmptyState message="No budgets set yet." />
+      ) : (
+        allBudgets.map(item => (
+          <Card key={item.id} colors={colors} style={styles.pastRow}>
             <Text style={{ color: colors.text }}>{item.month ?? '—'}</Text>
             <Text style={[typography.amountMono, { color: colors.text }]}>
               {formatAmount(item.limitAmount, currencyCode)}
             </Text>
           </Card>
-        )}
-        ListEmptyComponent={
-          <EmptyState message="No budgets set yet." />
-        }
-      />
+        ))
+      )}
 
       <Text
         style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
@@ -160,17 +232,17 @@ function BudgetSettingsScreen(): React.JSX.Element {
           history.
         </Text>
       </View>
-      <FlatList
-        data={creditCards}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <Card colors={colors} style={styles.cardRow}>
+      {creditCards.length === 0 ? (
+        <EmptyState message="No credit cards yet." />
+      ) : (
+        creditCards.map(item => (
+          <Card key={item.id} colors={colors} style={styles.cardRow}>
             <View style={styles.cardInfo}>
               <Text style={[styles.rowName, { color: colors.text }]}>
                 {item.name}
               </Text>
               <Text style={[typography.amountMono, styles.rowDebt, { color: colors.danger }]}>
-                Owed: {formatAmount(item.debt, currencyCode)}
+                Owed: {formatAmount(item.debt, defaultCurrencyCode)}
               </Text>
             </View>
             <Pressable
@@ -181,21 +253,25 @@ function BudgetSettingsScreen(): React.JSX.Element {
               </Text>
             </Pressable>
           </Card>
-        )}
-        ListEmptyComponent={
-          <EmptyState message="No credit cards yet." />
-        }
-      />
+        ))
+      )}
 
       <NumericInputAccessory />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scroll: {
     flex: 1,
+  },
+  container: {
     padding: 16,
+    // Clears the floating tab bar pill + FAB (see App.tsx) the same way
+    // every other scrollable top-level screen in this app already does
+    // (ReportsScreen, TransactionForm, ...) — this screen just didn't
+    // need it before since it had no ScrollView of its own yet.
+    paddingBottom: 120,
   },
   title: {
     marginBottom: 12,
@@ -230,6 +306,18 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(13),
     fontWeight: '600',
   },
+  currencyTabs: {
+    marginTop: 12,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  actionButtonGrow: {
+    flex: 1,
+    marginTop: 0,
+  },
   saveButton: {
     borderRadius: 14,
     paddingVertical: 14,
@@ -237,6 +325,18 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   saveButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+  },
+  deleteBudgetButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBudgetButtonText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
   },

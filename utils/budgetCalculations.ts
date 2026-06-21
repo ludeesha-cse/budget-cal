@@ -6,22 +6,26 @@ import {
 } from '../db/queries';
 import { getCurrentMonthString, getDaysRemainingInMonth } from './dateUtils';
 
-export async function getAmountLeft(month: string): Promise<number | null> {
-  const budget = await getBudgetForMonth(month);
+export async function getAmountLeft(
+  month: string,
+  currencyId: number,
+): Promise<number | null> {
+  const budget = await getBudgetForMonth(month, currencyId);
   if (!budget) {
     return null;
   }
-  const spent = await getMonthlyTotal(month);
+  const spent = await getMonthlyTotal(month, currencyId);
   return budget.limitAmount - spent;
 }
 
 export async function getAverageLeftPerDay(
   month: string,
+  currencyId: number,
 ): Promise<number | null> {
   if (month !== getCurrentMonthString()) {
     return null;
   }
-  const amountLeft = await getAmountLeft(month);
+  const amountLeft = await getAmountLeft(month, currencyId);
   if (amountLeft === null) {
     return null;
   }
@@ -52,10 +56,13 @@ export function getFullBudgetPerDay(
 // getTransactionsByMonth deliberately returns every transaction
 // (including excludeFromBudget ones — History needs the full record), so
 // this is the one place that applies the Stage 16a exclusion, matching
-// getMonthlyTotal's own filtering for the same reason.
+// getMonthlyTotal's own filtering for the same reason. Also currency-
+// scoped now (Stage 21b) — a category budget set in one currency must
+// only ever be compared against spending in that same currency.
 export async function getCategorySpent(
   month: string,
   categoryId: number,
+  currencyId: number,
 ): Promise<number> {
   const rows = await getTransactionsByMonth(month);
   return rows
@@ -63,6 +70,7 @@ export async function getCategorySpent(
       row =>
         row.categoryId === categoryId &&
         row.entryType === 'Expense' &&
+        row.currencyId === currencyId &&
         !row.excludeFromBudget,
     )
     .reduce((sum, row) => sum + row.amount, 0);
@@ -71,12 +79,13 @@ export async function getCategorySpent(
 export async function getCategoryAmountLeft(
   month: string,
   categoryId: number,
+  currencyId: number,
 ): Promise<number | null> {
-  const budget = await getCategoryBudget(month, categoryId);
+  const budget = await getCategoryBudget(month, categoryId, currencyId);
   if (!budget) {
     return null;
   }
-  const spent = await getCategorySpent(month, categoryId);
+  const spent = await getCategorySpent(month, categoryId, currencyId);
   return budget.amount - spent;
 }
 
@@ -85,11 +94,12 @@ export async function getCategoryAmountLeft(
 export async function getCategoryAverageLeftPerDay(
   month: string,
   categoryId: number,
+  currencyId: number,
 ): Promise<number | null> {
   if (month !== getCurrentMonthString()) {
     return null;
   }
-  const amountLeft = await getCategoryAmountLeft(month, categoryId);
+  const amountLeft = await getCategoryAmountLeft(month, categoryId, currencyId);
   if (amountLeft === null) {
     return null;
   }

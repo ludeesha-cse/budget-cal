@@ -11,13 +11,30 @@ import type { TransactionRow as TransactionRowData } from '../../hooks/useTransa
 type Props = {
   transaction: TransactionRowData;
   tags: TagRow[];
+  // null while the default currency hasn't loaded yet, or if none is set
+  // at all — the currency tag below is simply not shown in either case,
+  // same as "no tag" rather than guessing.
+  defaultCurrencyId: number | null;
   onPress: () => void;
   onDelete: () => void;
 };
 
-function TransactionRow({ transaction, tags, onPress, onDelete }: Props): React.JSX.Element {
+function TransactionRow({
+  transaction,
+  tags,
+  defaultCurrencyId,
+  onPress,
+  onDelete,
+}: Props): React.JSX.Element {
   const { colors } = useTheme();
   const isIncome = transaction.entryType === 'Income';
+  // Highlights any transaction recorded in a currency other than the
+  // app's current default — this is the fix for the "an expense in a
+  // different currency silently deducted from the wrong budget" report:
+  // even once budgets are correctly currency-scoped, History itself gave
+  // no visual indication a row was in a non-default currency at all.
+  const isNonDefaultCurrency =
+    defaultCurrencyId != null && transaction.currencyId !== defaultCurrencyId;
 
   return (
     <Pressable style={styles.row} onPress={onPress}>
@@ -28,8 +45,15 @@ function TransactionRow({ transaction, tags, onPress, onDelete }: Props): React.
             transaction.categoryName ||
             (isIncome ? 'Income' : 'Expense')}
         </Text>
-        {(transaction.categoryName || tags.length > 0) && (
+        {(transaction.categoryName || tags.length > 0 || isNonDefaultCurrency) && (
           <View style={styles.badgeRow}>
+            {isNonDefaultCurrency && (
+              <View style={[styles.badge, styles.currencyBadge, { borderColor: colors.primary }]}>
+                <Text style={[typography.eyebrow, styles.badgeText, { color: colors.primary }]}>
+                  {transaction.currencyCode}
+                </Text>
+              </View>
+            )}
             {transaction.categoryName && (
               <View style={[styles.badge, { borderColor: colors.border }]}>
                 <Text style={[typography.eyebrow, styles.badgeText, { color: colors.textSecondary }]}>
@@ -114,6 +138,13 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     paddingHorizontal: 6,
     paddingVertical: 2,
+  },
+  // Slightly heavier border than the plain category/tag badge (which uses
+  // colors.border) so a non-default-currency row reads as a genuine
+  // callout rather than just another neutral label — it's flagging
+  // something the user should notice, not just categorizing the row.
+  currencyBadge: {
+    borderWidth: 1,
   },
   badgeText: {
     fontSize: scaleFont(9.5),

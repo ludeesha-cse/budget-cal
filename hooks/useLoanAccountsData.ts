@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getAccounts,
+  getActiveCurrencies,
   getActiveLoanAccounts,
-  getCurrencies,
   getInactiveLoanAccounts,
   getLoanTotalOwed,
   type LoanAccountType,
@@ -15,7 +15,7 @@ export type ActiveLoan = Awaited<ReturnType<typeof getActiveLoanAccounts>>[numbe
 export type InactiveLoan = Awaited<
   ReturnType<typeof getInactiveLoanAccounts>
 >[number];
-export type LoanCurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+export type LoanCurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
 export type LoanAccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 export interface UseLoanAccountsDataResult {
@@ -58,7 +58,7 @@ export function useLoanAccountsData(
         getActiveLoanAccounts('Liability'),
         getActiveLoanAccounts('Receivable'),
         getInactiveLoanAccounts(type),
-        getCurrencies(),
+        getActiveCurrencies(),
         getAccounts(),
       ]);
     setActiveLiabilities(liabilityRows);

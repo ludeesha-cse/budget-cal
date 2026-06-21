@@ -4,7 +4,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
 import ProgressBar from '../components/common/ProgressBar';
-import { getExpensesByType } from '../db/queries';
+import CurrencyTabs from '../components/common/CurrencyTabs';
+import {
+  getExpenseCurrenciesForMonth,
+  getExpensesByType,
+  type ExpenseCurrencyOption,
+} from '../db/queries';
 import { getCurrentMonthString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
@@ -15,24 +20,53 @@ type ExpenseRow = Awaited<ReturnType<typeof getExpensesByType>>[number];
 function ExpensesByTypeScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [currencies, setCurrencies] = useState<ExpenseCurrencyOption[]>([]);
+  // null until the first load resolves a starting tab, or permanently
+  // null if there's no expense activity at all this month (see load()).
+  const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Currency tabs here are activity-based (only currencies with at least
+  // one expense this month) rather than every app currency — unlike
+  // CategoryBudgetsScreen, this is a view-only breakdown, so offering a
+  // tab for a currency with nothing to show would just be an empty tab.
+  // Same "available currencies" idea as Reports' useReportData.
+  const load = useCallback(async () => {
+    setLoading(true);
+    const month = getCurrentMonthString();
+    const activeCurrencies = await getExpenseCurrenciesForMonth(month);
+    setCurrencies(activeCurrencies);
+
+    const resolvedCurrencyId =
+      currencyId != null && activeCurrencies.some(c => c.id === currencyId)
+        ? currencyId
+        : (activeCurrencies[0]?.id ?? null);
+    if (resolvedCurrencyId !== currencyId) {
+      setCurrencyId(resolvedCurrencyId);
+    }
+
+    if (resolvedCurrencyId == null) {
+      setExpenses([]);
+      setLoading(false);
+      return;
+    }
+
+    const rows = await getExpensesByType(month, resolvedCurrencyId);
+    setExpenses(rows);
+    setLoading(false);
+  }, [currencyId]);
+
+  // Re-runs on focus and whenever `load` itself changes identity — which
+  // happens whenever currencyId changes (see load's own dependency array)
+  // — so switching the currency tab reloads too. Same pattern as
+  // CategoryBudgetsScreen's own load-on-change effect.
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      getExpensesByType(getCurrentMonthString()).then(rows => {
-        if (!cancelled) {
-          setExpenses(rows);
-          setLoading(false);
-        }
-      });
-      return () => {
-        cancelled = true;
-      };
-    }, []),
+      load();
+    }, [load]),
   );
 
+  const currencyCode = currencies.find(c => c.id === currencyId)?.code ?? '';
   const total = expenses.reduce((sum, row) => sum + row.total, 0);
   const sorted = [...expenses].sort((a, b) => b.total - a.total);
 
@@ -44,6 +78,15 @@ function ExpensesByTypeScreen(): React.JSX.Element {
       <Text style={[typography.eyebrow, styles.subtitle, { color: colors.textSecondary }]}>
         THIS MONTH
       </Text>
+
+      {currencies.length > 1 && (
+        <CurrencyTabs
+          currencies={currencies}
+          value={currencyId}
+          onChange={setCurrencyId}
+          style={styles.currencyTabs}
+        />
+      )}
 
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
@@ -65,7 +108,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
                     {item.type}
                   </Text>
                   <Text style={[typography.amountMono, styles.rowAmount, { color: colors.text }]}>
-                    {formatAmount(item.total, '', { hideCode: true })}
+                    {formatAmount(item.total, currencyCode, { hideCode: true })}
                   </Text>
                 </View>
                 <ProgressBar percent={percent} color={dotColor} style={styles.progressTrack} />
@@ -77,7 +120,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
 
       <Text style={[styles.hint, { color: colors.textSecondary }]}>
         This is a quick month-at-a-glance view. For a deeper breakdown with
-        custom date ranges and currencies, check the Reports tab.
+        custom date ranges, check the Reports tab.
       </Text>
     </View>
   );
@@ -93,6 +136,9 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginBottom: 16,
+  },
+  currencyTabs: {
+    marginBottom: 12,
   },
   list: {
     marginTop: 4,

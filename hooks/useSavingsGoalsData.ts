@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { getCurrencies, getSavingsGoals } from '../db/queries';
+import { getActiveCurrencies, getSavingsGoals } from '../db/queries';
 
 export type SavingsGoalRow = Awaited<ReturnType<typeof getSavingsGoals>>[number];
 export type SavingsGoalCurrencyRow = Awaited<
-  ReturnType<typeof getCurrencies>
+  ReturnType<typeof getActiveCurrencies>
 >[number];
 
 export type SavingsGoalFilter = 'active' | 'history';
@@ -29,7 +29,7 @@ export function useSavingsGoalsData(): UseSavingsGoalsDataResult {
     setLoading(true);
     const [goalRows, currencyRows] = await Promise.all([
       getSavingsGoals(),
-      getCurrencies(),
+      getActiveCurrencies(),
     ]);
     setGoals(goalRows);
     setCurrencies(currencyRows);

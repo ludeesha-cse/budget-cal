@@ -23,6 +23,8 @@ import m0018 from './0018_add_tags.sql';
 import m0019 from './0019_add_exclude_from_budget.sql';
 import m0020 from './0020_add_palette_id.sql';
 import m0021 from './0021_add_installment_due_day.sql';
+import m0022 from './0022_fast_blue_shield.sql';
+import m0023 from './0023_lyrical_winter_soldier.sql';
 
   export default {
     journal,
@@ -48,7 +50,9 @@ m0017,
 m0018,
 m0019,
 m0020,
-m0021
+m0021,
+m0022,
+m0023
     }
   }
   

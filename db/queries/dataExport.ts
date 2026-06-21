@@ -209,6 +209,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       Budgets: allBudgets.map(
         (b): ExportRow => ({
           Month: b.month ?? '',
+          CurrencyCode: currencyCode.get(b.currencyId) ?? '',
           Category: b.category,
           LimitAmount: b.limitAmount,
           Period: b.period,
@@ -220,6 +221,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
         (cb): ExportRow => ({
           Month: cb.month,
           CategoryName: categoryName.get(cb.categoryId) ?? '',
+          CurrencyCode: currencyCode.get(cb.currencyId) ?? '',
           Amount: cb.amount,
         }),
       ),
@@ -489,6 +491,17 @@ export async function importData(
       }
       rowCounts.Currencies = data.Currencies?.length ?? 0;
 
+      // Fallback target for Budgets/CategoryBudgets rows with no
+      // CurrencyCode — either a pre-v2 export (the column didn't exist
+      // yet) or a hand-edited sheet with a blank cell. Resolved once,
+      // from whichever currency this database already has flagged
+      // default, so an old backup restores its budgets exactly where
+      // they'd have landed before multi-currency budgets existed at all.
+      const defaultCurrencyId =
+        existingCurrencies.find(c => c.isDefault)?.id ??
+        existingCurrencies[0]?.id ??
+        null;
+
       // ---- Categories: explicit sheet rows, get-or-create by name.
       // References elsewhere in the workbook (Transactions,
       // InstallmentPlans, RecurringRules) share this same
@@ -621,14 +634,26 @@ export async function importData(
       }
       rowCounts.Transactions = data.Transactions?.length ?? 0;
 
-      // ---- Budgets: the single overall monthly budget, upserted by
-      // month — same semantics as upsertBudget. ----
+      // ---- Budgets: one overall budget per (month, currency), upserted
+      // accordingly — same semantics as upsertBudget. A blank/missing
+      // CurrencyCode (pre-v2 export) falls back to defaultCurrencyId
+      // above rather than being skipped, so restoring an old backup
+      // still lands its budgets somewhere sensible. ----
       for (const row of data.Budgets ?? []) {
         const month = String(row.Month);
+        const rawCurrencyCode = String(row.CurrencyCode ?? '');
+        const currencyId = rawCurrencyCode
+          ? (currencyIdByCode.get(rawCurrencyCode) ?? defaultCurrencyId)
+          : defaultCurrencyId;
+        if (currencyId == null) {
+          continue; // no currency to resolve to at all — nothing sane to import against
+        }
         const [existing] = await tx
           .select()
           .from(budgets)
-          .where(eq(budgets.month, month))
+          .where(
+            and(eq(budgets.month, month), eq(budgets.currencyId, currencyId)),
+          )
           .limit(1);
         if (existing) {
           await tx
@@ -642,18 +667,27 @@ export async function importData(
             period: String(row.Period),
             startDate: dateOnlyToEpoch(String(row.StartDate ?? '')),
             month,
+            currencyId,
             createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
           });
         }
       }
       rowCounts.Budgets = data.Budgets?.length ?? 0;
 
-      // ---- CategoryBudgets: upserted by (month, categoryId). ----
+      // ---- CategoryBudgets: upserted by (month, categoryId, currencyId)
+      // — same CurrencyCode fallback as Budgets above. ----
       for (const row of data.CategoryBudgets ?? []) {
         const month = String(row.Month);
         const categoryId = await getOrCreateCategoryId(
           String(row.CategoryName),
         );
+        const rawCurrencyCode = String(row.CurrencyCode ?? '');
+        const currencyId = rawCurrencyCode
+          ? (currencyIdByCode.get(rawCurrencyCode) ?? defaultCurrencyId)
+          : defaultCurrencyId;
+        if (currencyId == null) {
+          continue;
+        }
         const [existing] = await tx
           .select()
           .from(categoryBudgets)
@@ -661,6 +695,7 @@ export async function importData(
             and(
               eq(categoryBudgets.month, month),
               eq(categoryBudgets.categoryId, categoryId),
+              eq(categoryBudgets.currencyId, currencyId),
             ),
           )
           .limit(1);
@@ -673,6 +708,7 @@ export async function importData(
           await tx.insert(categoryBudgets).values({
             month,
             categoryId,
+            currencyId,
             amount: Number(row.Amount),
           });
         }

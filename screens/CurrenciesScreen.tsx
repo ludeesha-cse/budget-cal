@@ -1,7 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Crown, Plus, Trash2 } from 'lucide-react-native';
+import { ChevronRight, Crown, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
 import EmptyState from '../components/common/EmptyState';
@@ -9,16 +9,20 @@ import {
   addCurrency,
   deleteCurrency,
   getCurrencies,
+  setCurrencyActive,
   setDefaultCurrency,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
-import { scaleFont } from '../theme/typography';
+import { scaleFont, typography } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntityFormModal } from '../hooks/useEntityFormModal';
 
-// Lists existing currencies and lets the user add new ones; the seeded
-// default currency is flagged with a badge and can't be added again.
+// Lists ENABLED currencies and lets the user enable a disabled one or add
+// a brand-new one; the seeded default currency is flagged with a badge
+// and can't be disabled or added again. Every picker/tab elsewhere in the
+// app (budgets, transactions, reports, ...) only ever shows currencies
+// enabled here — see getActiveCurrencies() in db/queries/currencies.ts.
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
 type CurrencyFormValues = { code: string; name: string };
@@ -27,11 +31,18 @@ function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
-  const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
+  // Always the FULL list (active + disabled) — this screen is the one
+  // place in the app that needs both, so it can list disabled currencies
+  // as re-enable candidates in the "Add Currency" sheet below.
+  const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
+  // Separate from the "add a brand-new currency" form sheet (below) — this
+  // is the picker that opens first when "Add Currency" is tapped, listing
+  // every currency that already exists but isn't enabled yet.
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await getCurrencies();
-    setCurrencies(rows);
+    setAllCurrencies(rows);
   }, []);
 
   useFocusEffect(
@@ -40,12 +51,21 @@ function CurrenciesScreen(): React.JSX.Element {
     }, [load]),
   );
 
+  const activeCurrencies = useMemo(
+    () => allCurrencies.filter(c => c.active),
+    [allCurrencies],
+  );
+  const disabledCurrencies = useMemo(
+    () => allCurrencies.filter(c => !c.active),
+    [allCurrencies],
+  );
+
   const {
     visible: formVisible,
     values,
     setValues,
     canSave: formCanSave,
-    openAdd: handleAddPress,
+    openAdd: openNewCurrencyForm,
     close: closeForm,
     submit: handleSubmit,
   } = useEntityFormModal<CurrencyRow, CurrencyFormValues, CurrencyFormValues>({
@@ -72,6 +92,25 @@ function CurrenciesScreen(): React.JSX.Element {
     }, 'Cannot set default currency');
   };
 
+  // Soft, reversible opt-out — the currency row itself, and any past data
+  // in it, is untouched. It just stops appearing in this screen's active
+  // list and in every picker/tab across the app until re-enabled from the
+  // "Add Currency" sheet below.
+  const handleDisable = (currencyId: number) => {
+    runAction(async () => {
+      await setCurrencyActive(currencyId, false);
+      await load();
+    }, 'Cannot disable currency');
+  };
+
+  const handleEnable = (currencyId: number) => {
+    runAction(async () => {
+      await setCurrencyActive(currencyId, true);
+      await load();
+      setPickerVisible(false);
+    }, 'Cannot enable currency');
+  };
+
   const handleDelete = (currencyId: number, currencyCode: string) => {
     confirmDelete(
       'Delete currency',
@@ -89,7 +128,7 @@ function CurrenciesScreen(): React.JSX.Element {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Pressable
         style={[styles.addButton, { borderColor: colors.primary }]}
-        onPress={handleAddPress}>
+        onPress={() => setPickerVisible(true)}>
         <Plus size={16} color={colors.primary} strokeWidth={2.5} />
         <Text style={[styles.addButtonText, { color: colors.primary }]}>
           Add Currency
@@ -98,7 +137,7 @@ function CurrenciesScreen(): React.JSX.Element {
 
       <FlatList
         style={styles.list}
-        data={currencies}
+        data={activeCurrencies}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
           <Card colors={colors} style={styles.row}>
@@ -123,8 +162,13 @@ function CurrenciesScreen(): React.JSX.Element {
             ) : (
               <View style={styles.rowActions}>
                 <Pressable onPress={() => handleSetDefault(item.id)}>
-                  <Text style={[styles.setDefaultLink, { color: colors.primary }]}>
+                  <Text style={[styles.actionLink, { color: colors.primary }]}>
                     Set Default
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => handleDisable(item.id)}>
+                  <Text style={[styles.actionLink, { color: colors.textSecondary }]}>
+                    Disable
                   </Text>
                 </Pressable>
                 <Pressable
@@ -138,16 +182,64 @@ function CurrenciesScreen(): React.JSX.Element {
           </Card>
         )}
         ListEmptyComponent={
-          <EmptyState message="No currencies yet." />
+          <EmptyState message="No currencies enabled." />
         }
       />
+
+      <BottomSheetModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        title="Add Currency">
+        {disabledCurrencies.length > 0 ? (
+          <>
+            <Text
+              style={[
+                typography.eyebrow,
+                styles.pickerSectionLabel,
+                { color: colors.textSecondary },
+              ]}>
+              ENABLE AN EXISTING CURRENCY
+            </Text>
+            {disabledCurrencies.map(currency => (
+              <Pressable
+                key={currency.id}
+                style={[styles.pickerRow, { borderColor: colors.border }]}
+                onPress={() => handleEnable(currency.id)}>
+                <View style={styles.rowDetails}>
+                  <Text style={[styles.rowCode, { color: colors.text }]}>
+                    {currency.code}
+                  </Text>
+                  <Text style={{ color: colors.textSecondary }}>{currency.name}</Text>
+                </View>
+                <Plus size={18} color={colors.primary} strokeWidth={2.5} />
+              </Pressable>
+            ))}
+          </>
+        ) : (
+          <Text style={{ color: colors.textSecondary }}>
+            Every currency this app knows about is already enabled.
+          </Text>
+        )}
+
+        <Pressable
+          style={[styles.newCurrencyRow, { borderColor: colors.border }]}
+          onPress={() => {
+            setPickerVisible(false);
+            openNewCurrencyForm();
+          }}>
+          <Text style={[styles.actionLink, { color: colors.primary }]}>
+            + Add a brand-new currency
+          </Text>
+          <ChevronRight size={16} color={colors.primary} />
+        </Pressable>
+      </BottomSheetModal>
 
       <BottomSheetModal
         visible={formVisible}
         onClose={closeForm}
         onSave={handleSubmit}
         canSave={formCanSave}
-        title="Add Currency"
+        title="Add a New Currency"
         saveLabel="Add">
         <Text style={[styles.label, { color: colors.text }]}>Code</Text>
         <TextInput
@@ -242,7 +334,7 @@ const styles = StyleSheet.create({
   rowCode: {
     fontWeight: '600',
   },
-  setDefaultLink: {
+  actionLink: {
     fontSize: scaleFont(13),
     fontWeight: '700',
   },
@@ -260,6 +352,30 @@ const styles = StyleSheet.create({
   defaultBadgeText: {
     fontSize: scaleFont(12),
     fontWeight: '700',
+  },
+  pickerSectionLabel: {
+    marginBottom: 8,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  newCurrencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 4,
   },
 });
 

@@ -22,6 +22,18 @@ export const currencies = sqliteTable('currencies', {
   isDefault: integer('is_default', { mode: 'boolean' })
     .notNull()
     .default(false),
+  // Whether this currency should appear in any picker/tab list across the
+  // app (budgets, transactions, transfers, loans, installments, savings
+  // goals, reports, ...) — getActiveCurrencies() is what every one of
+  // those reads from, never this table directly. Defaults to true so
+  // every currency that already existed before this column was added
+  // (the six DEFAULT_CURRENCIES seeded in db/index.ts, plus anything a
+  // user added by hand) keeps showing up exactly as it did before —
+  // nothing silently disappears on migration; users opt OUT per currency
+  // from the Currencies screen instead. The default currency itself can
+  // never be set inactive (see setCurrencyActive's guard) — the app
+  // always needs at least one usable currency.
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: int('created_at').notNull(),
 });
 
@@ -140,15 +152,39 @@ export const loanPayments = sqliteTable('loan_payments', {
   createdAt: int('created_at').notNull(),
 });
 
-export const budgets = sqliteTable('budgets', {
-  id: int('id').primaryKey({ autoIncrement: true }),
-  category: text('category').notNull(),
-  limitAmount: real('limit_amount').notNull(),
-  period: text('period').notNull(), // 'weekly' | 'monthly' | 'yearly'
-  startDate: int('start_date').notNull(),
-  month: text('month'), // 'YYYY-MM', set for the overall monthly budget
-  createdAt: int('created_at').notNull(),
-});
+export const budgets = sqliteTable(
+  'budgets',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    category: text('category').notNull(),
+    limitAmount: real('limit_amount').notNull(),
+    period: text('period').notNull(), // 'weekly' | 'monthly' | 'yearly'
+    startDate: int('start_date').notNull(),
+    month: text('month'), // 'YYYY-MM', set for the overall monthly budget
+    // Multi-currency budgets: one overall budget row per (month, currency)
+    // rather than one per month — a household spending in both LKR and
+    // USD needs its own budget (and its own "amount spent") per currency,
+    // since currency amounts are never summed together anywhere else in
+    // this app either (see utils/currencyTotals.ts). Defaults to 1 (LKR,
+    // always the first seeded currency) for the same reason
+    // transactions.currencyId defaults to 1 below — every budget row that
+    // existed before this column was added is backfilled to that default
+    // by SQLite's ALTER TABLE ... DEFAULT, so pre-migration budgets keep
+    // behaving exactly as they did when there was only ever one currency
+    // in play.
+    currencyId: int('currency_id')
+      .notNull()
+      .references(() => currencies.id)
+      .default(1),
+    createdAt: int('created_at').notNull(),
+  },
+  table => ({
+    monthCurrencyUnique: uniqueIndex('budget_month_currency_unique').on(
+      table.month,
+      table.currencyId,
+    ),
+  }),
+);
 
 // Singleton row (always id=1) holding app-wide preferences that aren't
 // tied to any account/category/etc. Currently just the theme, but shaped
@@ -439,11 +475,19 @@ export const categoryBudgets = sqliteTable(
       .notNull()
       .references(() => categories.id),
     amount: integer('amount').notNull(),
+    // Same reasoning as budgets.currencyId above — a category budget is
+    // scoped to one currency, so the same category can carry independent
+    // budgets per currency in the same month (e.g. Food: 1000 LKR and
+    // Food: 10 USD are two separate rows, not one mixed figure). Defaults
+    // to 1 (LKR) to match every other currencyId column's convention.
+    currencyId: integer('currency_id')
+      .notNull()
+      .references(() => currencies.id)
+      .default(1),
   },
   table => ({
-    monthCategoryUnique: uniqueIndex('month_category_unique').on(
-      table.month,
-      table.categoryId,
-    ),
+    monthCategoryCurrencyUnique: uniqueIndex(
+      'month_category_currency_unique',
+    ).on(table.month, table.categoryId, table.currencyId),
   }),
 );

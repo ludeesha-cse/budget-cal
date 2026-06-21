@@ -6,7 +6,15 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   DarkTheme as NavigationDarkTheme,
   DefaultTheme as NavigationDefaultTheme,
@@ -271,6 +279,31 @@ function AppNavigator(): React.JSX.Element {
       null,
     );
 
+  // The floating tab bar/FAB below are positioned with a fixed
+  // `marginBottom`/`bottom` measured from THIS view's own bottom edge —
+  // fine normally, but AndroidManifest.xml sets windowSoftInputMode to
+  // adjustResize, which shrinks this entire view's height by the
+  // keyboard's height whenever a TextInput is focused. A bottom-anchored
+  // margin inside a view that just got shorter means the bar/FAB end up
+  // sitting right above the keyboard instead of at the real screen
+  // bottom — exactly the "tab bar chases the keyboard" bug reported.
+  // Hiding both while the keyboard is visible (rather than trying to
+  // re-anchor them) is the simplest fix that also matches what a user
+  // actually wants here: neither is useful to tap while typing anyway.
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () =>
+      setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener('keyboardDidHide', () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   // Maps our own token palette onto React Navigation's theme shape so the
   // tab bar / header chrome and screen backgrounds follow the same
   // light/dark choice as everything else, instead of defaulting to
@@ -371,6 +404,11 @@ function AppNavigator(): React.JSX.Element {
               shadowRadius: 12,
               shadowOffset: { width: 0, height: 6 },
               elevation: 8,
+              // See keyboardVisible's own comment above — this is what
+              // actually keeps the bar off the keyboard, both hiding it
+              // and giving its reserved layout space back to the screen
+              // content while a field is focused.
+              display: keyboardVisible ? 'none' : 'flex',
             },
             tabBarLabelStyle: styles.tabBarLabel,
           }}>
@@ -434,21 +472,27 @@ function AppNavigator(): React.JSX.Element {
           docked to the bar rather than floating independently, without
           sinking down far enough to cover the History/Reports labels the
           way a lower value did. */}
-      <Pressable
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.primary,
-            bottom: insets.bottom + 56,
-          },
-        ]}
-        onPress={() => setSheetOpen(open => !open)}>
-        {sheetOpen ? (
-          <X size={26} color={colors.primaryText} strokeWidth={2.5} />
-        ) : (
-          <Plus size={26} color={colors.primaryText} strokeWidth={2.5} />
-        )}
-      </Pressable>
+      {/* Same fixed-from-bottom positioning problem as tabBarStyle above,
+          so the same fix: just don't render it while a field is focused
+          — there's nothing useful to tap here while typing anyway, and
+          it would otherwise float up and sit on top of the keyboard. */}
+      {!keyboardVisible && (
+        <Pressable
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.primary,
+              bottom: insets.bottom + 56,
+            },
+          ]}
+          onPress={() => setSheetOpen(open => !open)}>
+          {sheetOpen ? (
+            <X size={26} color={colors.primaryText} strokeWidth={2.5} />
+          ) : (
+            <Plus size={26} color={colors.primaryText} strokeWidth={2.5} />
+          )}
+        </Pressable>
+      )}
 
       <AddEntrySheet
         visible={sheetOpen}
