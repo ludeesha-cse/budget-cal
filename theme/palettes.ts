@@ -163,13 +163,68 @@ const PLATINUM: Palette = {
   },
 };
 
+// Premium fintech palette — dark side uses the "Obsidian" brief (deep
+// near-black canvas, emerald as the single primary/success color, gold
+// reserved for warning/premium accents per the existing `warning`
+// convention above), light side is the "Executive Reserve" brief (crisp
+// alabaster + institutional navy + muted teal). Unlike PLATINUM, both
+// modes get a gradient — the brief explicitly asked for "suitable
+// gradient colors for cards and stuff" rather than treating gradients as
+// a dark-only flourish.
+const RESERVE: Palette = {
+  id: 'reserve',
+  label: 'Executive Reserve',
+  light: {
+    background: '#F8FAFC',
+    surface: '#FFFFFF',
+    card: '#FFFFFF',
+    border: '#E2E8F0',
+    text: '#0F172A',
+    textSecondary: '#64748B',
+    primary: '#0D9488',
+    primaryText: '#FFFFFF',
+    success: '#0D9488',
+    danger: '#B91C1C',
+    warning: '#B45309',
+    chevron: '#94A3B8',
+    successSoft: '#CCFBF1',
+    dangerSoft: '#FEE2E2',
+    primarySoft: '#D9F5F1',
+    neutralSoft: '#F1F5F9',
+    chart: ['#0D9488', '#B45309', '#0F172A', '#64748B', '#B91C1C', '#7C3AED'],
+    backgroundGradient: ['#FFFFFF', '#F8FAFC', '#EEF2F6'],
+    cardGradient: ['#FFFFFF', '#F8FAFC'],
+  },
+  dark: {
+    background: '#0B0F19',
+    surface: '#131B2E',
+    card: '#131B2E',
+    border: '#1E293B',
+    text: '#F1F5F9',
+    textSecondary: '#94A3B8',
+    primary: '#00C896',
+    primaryText: '#04120E',
+    success: '#00C896',
+    danger: '#F87171',
+    warning: '#E2C08A',
+    chevron: '#64748B',
+    successSoft: '#0F3B31',
+    dangerSoft: '#3B1518',
+    primarySoft: '#123C33',
+    neutralSoft: '#1B2436',
+    chart: ['#00C896', '#E2C08A', '#38BDF8', '#94A3B8', '#F87171', '#A78BFA'],
+    backgroundGradient: ['#0F1626', '#0B0F19', '#070A11'],
+    cardGradient: ['#182338', '#131B2E'],
+  },
+};
+
 // Add a new theme by appending another Palette here — nothing else in
 // the app needs to change for it to show up in AppSettingsScreen's
 // picker and become selectable.
-export const PALETTES: Palette[] = [LEDGER, PLATINUM];
+export const PALETTES: Palette[] = [RESERVE, LEDGER, PLATINUM];
 
-export const DEFAULT_PALETTE_ID = 'ledger';
+export const DEFAULT_PALETTE_ID = 'reserve';
 
 export function getPalette(paletteId: string): Palette {
-  return PALETTES.find(p => p.id === paletteId) ?? LEDGER;
+  return PALETTES.find(p => p.id === paletteId) ?? RESERVE;
 }

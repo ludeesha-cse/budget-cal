@@ -1,19 +1,30 @@
 import { Dimensions, Platform, TextStyle } from 'react-native';
 
-// System fonts only — no bundled/custom font files. Georgia and Menlo
-// (iOS) / the generic 'serif'/'monospace' aliases (Android) ship with
-// every device already, so there's no font-linking step (Info.plist
-// entries, Android assets, react-native.config.js, a rebuild) to get
-// wrong. Close enough to the mockups to read as "an editorial ledger",
-// not a pixel-exact match — swapping in a bundled Google Font later is a
-// contained change (this file, plus the linking step) if closer fidelity
-// ever matters more than that simplicity.
+// System fonts only — no bundled/custom font files. Avenir Next and Menlo
+// (iOS) / the generic 'sans-serif-medium'/'monospace' aliases (Android)
+// ship with every device already, so there's no font-linking step
+// (Info.plist entries, Android assets, react-native.config.js, a
+// rebuild) to get wrong. Swapped from the earlier Georgia/serif pairing
+// to match the "Executive Reserve" premium-fintech palette (see
+// theme/palettes.ts) — a clean geometric sans reads as modern/private-bank
+// rather than editorial-ledger. Key names (`serif`/`serifBold`) are kept
+// as-is even though neither points at an actual serif anymore, since
+// every screen references them (via the `typography` presets below)
+// rather than the literal font string — renaming would touch call sites
+// for zero visual benefit. Swapping in a bundled Google Font later is
+// still a contained change (this file, plus the linking step) if closer
+// fidelity to a specific typeface ever matters more than zero-setup
+// system fonts.
 export const fontFamily = {
-  serif: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+  serif: Platform.select({
+    ios: 'AvenirNext-Medium',
+    android: 'sans-serif-medium',
+    default: 'sans-serif',
+  }),
   serifBold: Platform.select({
-    ios: 'Georgia-Bold',
-    android: 'serif',
-    default: 'serif',
+    ios: 'AvenirNext-Bold',
+    android: 'sans-serif-medium',
+    default: 'sans-serif',
   }),
   mono: Platform.select({
     ios: 'Menlo',
@@ -72,7 +83,7 @@ export const typography = {
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   } satisfies TextStyle,
-  // "Ledger", "History", "Reports" — the big serif screen title.
+  // "Ledger", "History", "Reports" — the big screen title.
   screenTitle: {
     fontFamily: fontFamily.serifBold,
     fontSize: scaleFont(30),
@@ -84,7 +95,7 @@ export const typography = {
     fontSize: scaleFont(16),
     fontWeight: '600',
   } satisfies TextStyle,
-  // "Rs. 31,000" — the large serif figure on the budget card.
+  // "Rs. 31,000" — the large figure on the budget card.
   amountLarge: {
     fontFamily: fontFamily.serifBold,
     fontSize: scaleFont(32),

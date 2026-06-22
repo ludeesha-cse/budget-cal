@@ -11,6 +11,7 @@ import {
   currencies,
   tags,
 } from './schema';
+import { DEFAULT_PALETTE_ID } from '../theme/palettes';
 
 const opsqliteDb = open({ name: 'budget-tracker.db' });
 
@@ -184,7 +185,14 @@ async function seedAppSettings(): Promise<void> {
   if (existing.length > 0) {
     return;
   }
-  await db.insert(appSettings).values({ themeMode: 'system' });
+  // paletteId set explicitly (rather than left to the `palette_id` column's
+  // own SQL default, which is still the older 'ledger' literal baked into
+  // migration 0020) so a fresh install picks up whichever palette
+  // theme/palettes.ts currently names DEFAULT_PALETTE_ID without needing a
+  // matching schema migration every time that changes.
+  await db
+    .insert(appSettings)
+    .values({ themeMode: 'system', paletteId: DEFAULT_PALETTE_ID });
 }
 
 const DEFAULT_TAGS = ['Reimbursable', 'Shared', 'Pending'] as const;

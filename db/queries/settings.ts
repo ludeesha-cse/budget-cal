@@ -35,7 +35,12 @@ export async function setThemeMode(mode: ThemeMode): Promise<void> {
         .set({ themeMode: mode })
         .where(eq(appSettings.id, row.id));
     } else {
-      await db.insert(appSettings).values({ themeMode: mode });
+      // paletteId set explicitly here too (not just in seedAppSettings) so
+      // this fallback-insert edge case can't silently land on the
+      // `palette_id` column's own stale SQL default (see schema.ts).
+      await db
+        .insert(appSettings)
+        .values({ themeMode: mode, paletteId: DEFAULT_PALETTE_ID });
     }
   } catch (error) {
     console.error('setThemeMode: failed to save theme mode', mode, error);

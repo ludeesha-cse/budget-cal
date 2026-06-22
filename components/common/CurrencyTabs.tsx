@@ -28,8 +28,18 @@ type Props = {
 function CurrencyTabs({ currencies, value, onChange, style }: Props): React.JSX.Element {
   const { colors } = useTheme();
   return (
+    // `style` (an explicit style on the ScrollView itself, not just its
+    // contentContainerStyle) matters here — without it, a horizontal
+    // ScrollView has nothing of its own establishing a definite
+    // cross-axis size on some Android layouts, which has shown up as
+    // pills rendering with the right size/color/border but blank labels
+    // (the Text inside apparently laid out before the row's own height
+    // was settled). Giving the ScrollView a plain flexGrow:0 style
+    // removes that ambiguity — it sizes to its own content like a normal
+    // View would, same as SegmentedToggle's plain (non-scrolling) row.
     <ScrollView
       horizontal
+      style={styles.scrollView}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.row, style]}>
       {currencies.map(currency => {
@@ -44,12 +54,13 @@ function CurrencyTabs({ currencies, value, onChange, style }: Props): React.JSX.
             ]}
             onPress={() => onChange(currency.id)}>
             <Text
+              numberOfLines={1}
               style={[
                 styles.tabText,
                 { color: colors.text },
                 active && { color: colors.primaryText },
               ]}>
-              {currency.code}
+              {currency.code || '—'}
             </Text>
           </Pressable>
         );
@@ -59,6 +70,9 @@ function CurrencyTabs({ currencies, value, onChange, style }: Props): React.JSX.
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flexGrow: 0,
+  },
   row: {
     flexDirection: 'row',
     gap: 8,
@@ -69,6 +83,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 18,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   tabText: {
     fontSize: scaleFont(14),

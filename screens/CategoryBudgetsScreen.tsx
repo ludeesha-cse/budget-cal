@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
@@ -23,6 +23,7 @@ import EmptyState from '../components/common/EmptyState';
 import ProgressBar from '../components/common/ProgressBar';
 import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
+import { useEditGate } from '../hooks/useEditGate';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
@@ -38,6 +39,24 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   // pattern in useBudgetSettingsData/useReportData.
   const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  // Read-only until Edit is tapped, then Save only lights up once
+  // something actually changed — see hooks/useEditGate.ts's own doc
+  // comment for why this is a shared hook rather than screen-local state.
+  const editGate = useEditGate<Record<number, string>>({
+    value: amounts,
+    onChange: setAmounts,
+  });
+
+  // load() (below) runs on every focus, including a plain tab-switch-
+  // away-and-back with no month/currency change — without this guard it
+  // would clobber an in-progress, unsaved edit the moment the user so
+  // much as glanced at another tab. Read as a ref (not a load()
+  // dependency) so toggling edit mode doesn't itself trigger a reload.
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    isEditingRef.current = editGate.isEditing;
+  }, [editGate.isEditing]);
 
   const selectedMonth = `${year}-${month}`;
   const currencyCode =
@@ -67,7 +86,9 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     }
 
     if (resolvedCurrencyId == null) {
-      setAmounts({});
+      if (!isEditingRef.current) {
+        setAmounts({});
+      }
       setSpentByCategory({});
       return;
     }
@@ -80,7 +101,9 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     for (const budget of existingBudgets) {
       byCategory[budget.categoryId] = String(budget.amount);
     }
-    setAmounts(byCategory);
+    if (!isEditingRef.current) {
+      setAmounts(byCategory);
+    }
 
     const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
     const lastDay = clampDayToMonth(yearNum, monthNum, 31);
@@ -136,12 +159,28 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         );
       }),
     );
+    editGate.finishEdit();
     setSavedMessage('Category budgets saved');
     load();
   };
 
+  const handleCancel = () => {
+    editGate.cancelEdit();
+    setSavedMessage(null);
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    // A plain View + one unbounded FlatList used to sit here, with the
+    // Save button living outside it — fine for the list itself (a
+    // FlatList is its own scroll container), but not for the Edit/
+    // Cancel/Save row, which needs to be part of the same scrollable
+    // content rather than a separate fixed element for it to reliably
+    // stay reachable and end up at the bottom, matching
+    // BudgetSettingsScreen's own fix for the identical shape of bug.
+    <ScrollView
+      style={[styles.scroll, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled">
       <Text style={[typography.screenTitle, styles.title, { color: colors.text }]}>
         Category Budgets
       </Text>
@@ -176,11 +215,10 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         </View>
       )}
 
-      <FlatList
-        style={styles.list}
-        data={categories}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => {
+      {categories.length === 0 ? (
+        <EmptyState message="No categories yet." />
+      ) : (
+        categories.map(item => {
           const budgetAmount = Number(amounts[item.id] ?? 0);
           const spent = spentByCategory[item.id] ?? 0;
           const hasBudget = (amounts[item.id] ?? '').trim() !== '' && budgetAmount > 0;
@@ -189,7 +227,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
             ? budgetStatusFor(spent, budgetAmount, colors).text
             : colors.border;
           return (
-            <Card colors={colors} style={styles.row}>
+            <Card key={item.id} colors={colors} style={styles.row}>
               <View style={styles.rowHeader}>
                 <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
                   {item.name}
@@ -197,8 +235,17 @@ function CategoryBudgetsScreen(): React.JSX.Element {
                 <TextInput
                   style={[
                     styles.input,
-                    { borderColor: colors.border, color: colors.text, backgroundColor: colors.background },
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.background,
+                    },
+                    !editGate.isEditing && {
+                      backgroundColor: colors.neutralSoft,
+                      color: colors.textSecondary,
+                    },
                   ]}
+                  editable={editGate.isEditing}
                   value={amounts[item.id] ?? ''}
                   onChangeText={value => handleAmountChange(item.id, value)}
                   keyboardType="numeric"
@@ -226,29 +273,59 @@ function CategoryBudgetsScreen(): React.JSX.Element {
               </Text>
             </Card>
           );
-        }}
-        ListEmptyComponent={
-          <EmptyState message="No categories yet." />
-        }
-      />
+        })
+      )}
 
-      <Pressable
-        style={[styles.saveButton, { backgroundColor: colors.primary }]}
-        onPress={handleSaveAll}>
-        <Text style={[styles.saveButtonText, { color: colors.primaryText }]}>
-          Save All
-        </Text>
-      </Pressable>
+      {editGate.isEditing ? (
+        <View style={styles.editActionRow}>
+          <Pressable
+            style={[styles.cancelButton, { borderColor: colors.border }]}
+            onPress={handleCancel}>
+            <Text style={[styles.cancelButtonText, { color: colors.text }]}>
+              Cancel
+            </Text>
+          </Pressable>
+          <Pressable
+            disabled={!editGate.isDirty}
+            style={[
+              styles.saveButton,
+              styles.actionButtonGrow,
+              { backgroundColor: !editGate.isDirty ? colors.neutralSoft : colors.primary },
+            ]}
+            onPress={handleSaveAll}>
+            <Text
+              style={[
+                styles.saveButtonText,
+                { color: !editGate.isDirty ? colors.textSecondary : colors.primaryText },
+              ]}>
+              Save All
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable
+          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+          onPress={editGate.startEdit}>
+          <Text style={[styles.saveButtonText, { color: colors.primaryText }]}>
+            Edit
+          </Text>
+        </Pressable>
+      )}
 
       <NumericInputAccessory />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scroll: {
     flex: 1,
+  },
+  container: {
     padding: 16,
+    // Clears the floating tab bar pill + FAB (see App.tsx), same as every
+    // other scrollable top-level screen.
+    paddingBottom: 120,
   },
   title: {
     marginBottom: 12,
@@ -272,9 +349,6 @@ const styles = StyleSheet.create({
   successText: {
     fontSize: scaleFont(13),
     fontWeight: '600',
-  },
-  list: {
-    marginTop: 4,
   },
   row: {
     padding: 14,
@@ -306,6 +380,27 @@ const styles = StyleSheet.create({
   rowSpent: {
     fontSize: scaleFont(12.5),
     marginTop: 6,
+  },
+  editActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  actionButtonGrow: {
+    flex: 1,
+    marginTop: 0,
+  },
+  cancelButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
   },
   saveButton: {
     borderRadius: 14,
