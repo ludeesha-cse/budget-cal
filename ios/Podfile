@@ -8,6 +8,11 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# This project links pods statically (no use_frameworks! by default), which
+# react-native-firebase's SPM-based Firebase resolution doesn't support.
+# Fall back to CocoaPods-based Firebase instead.
+$RNFirebaseDisableSPM = true
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
@@ -16,6 +21,13 @@ end
 
 target 'BudgetTrackerMobile' do
   config = use_native_modules!
+
+  # AppCheckCore (pulled in by @react-native-firebase/auth) is a Swift pod
+  # that depends on these plain ObjC pods. Without modules they can't be
+  # imported from Swift when linking statically (the default here), so
+  # opt just these two into modular headers rather than globally.
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'RecaptchaInterop', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],
