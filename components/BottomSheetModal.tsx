@@ -4,6 +4,7 @@ import {
   Dimensions,
   Keyboard,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,6 +31,16 @@ type Props = {
   // the ordinary primary-colored one — rare, defaults off.
   saveDestructive?: boolean;
   children: React.ReactNode;
+  // Fires once this sheet's real native Modal has actually finished
+  // closing — later than `visible` going false, which only starts the
+  // slide-down animation below. A caller that needs to present a SECOND
+  // native Modal right after this one closes (e.g. the free-tier paywall
+  // gating in useInstallmentForm/useAccountForm/CategoriesScreen) must
+  // wait for this rather than guessing a timeout: iOS silently refuses to
+  // present a new Modal while a previous one is still mid-dismissal —
+  // no error, no log, just nothing happens — which is exactly the freeze
+  // those callers hit before this existed.
+  onFullyClosed?: () => void;
 };
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -56,6 +67,7 @@ function BottomSheetModal({
   cancelLabel = 'Cancel',
   saveDestructive = false,
   children,
+  onFullyClosed,
 }: Props): React.JSX.Element | null {
   const { colors } = useTheme();
   // Stays mounted through the closing animation — flipping `visible` to
@@ -63,14 +75,22 @@ function BottomSheetModal({
   // play the collapse-down animation first, since RN's Modal has no
   // exit-animation hook of its own once its own `visible` prop goes
   // false. This mirrors it one render late, unmounting only once the
-  // slide-down Animated.timing actually finishes.
+  // real native Modal is confirmed gone (see modalVisible below), not
+  // just once our own slide-down animation finishes.
   const [rendered, setRendered] = useState(visible);
+  // The REAL native <Modal>'s own `visible` prop — kept true through the
+  // whole slide-down animation (there has to be something on screen to
+  // animate), only flipped false once that finishes. That flip is what
+  // actually tells iOS to tear down the presented view controller, and
+  // is the only thing that makes `onDismiss` below fire.
+  const [modalVisible, setModalVisible] = useState(visible);
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setRendered(true);
+      setModalVisible(true);
       translateY.setValue(SCREEN_HEIGHT);
       backdropOpacity.setValue(0);
       Animated.parallel([
@@ -98,8 +118,21 @@ function BottomSheetModal({
           useNativeDriver: true,
         }),
       ]).start(({ finished }) => {
-        if (finished) {
+        if (!finished) {
+          return;
+        }
+        // Now that it's fully off screen, actually tell the native
+        // Modal to dismiss. iOS does this asynchronously — see
+        // handleNativeDismiss below, fired by RN once it's truly gone.
+        // Android's Modal doesn't implement onDismiss at all (see
+        // react-native's own Modal.js) but also tears the native modal
+        // down synchronously with this same prop flip, so it's safe to
+        // finish the close right here instead of waiting on a callback
+        // that will never come.
+        setModalVisible(false);
+        if (Platform.OS !== 'ios') {
           setRendered(false);
+          onFullyClosed?.();
         }
       });
     }
@@ -109,12 +142,22 @@ function BottomSheetModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  const handleNativeDismiss = () => {
+    setRendered(false);
+    onFullyClosed?.();
+  };
+
   if (!rendered) {
     return null;
   }
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+    <Modal
+      visible={modalVisible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+      onDismiss={handleNativeDismiss}>
       <View style={styles.fill}>
         <Animated.View
           style={[styles.backdrop, { opacity: backdropOpacity }]}

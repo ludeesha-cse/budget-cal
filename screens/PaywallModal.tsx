@@ -25,6 +25,8 @@ function PaywallModal(): React.JSX.Element {
   const { isOpen, request, closePaywall } = usePaywall();
   const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null);
 
+  console.log('[PaywallModal] render, isOpen =', isOpen, 'reason =', request?.reason);
+
   const monthly = PLACEHOLDER_PRICING.monthlyAmount;
   const undiscountedYearly = monthly * 12;
   const discountedYearly = undiscountedYearly * YEARLY_DISCOUNT_MULTIPLIER;

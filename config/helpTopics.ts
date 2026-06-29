@@ -48,7 +48,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       'That has one important consequence worth knowing up front: if you lose the phone or delete the app, the data goes with it. Use More → Export Data regularly to save an Excel backup you can restore from, and keep that file somewhere you trust.',
       'The app works entirely without a network connection. The only thing that ever leaves the app is a file you deliberately export, or a message you deliberately send us from the contact section at the bottom of this page.',
     ],
-    image: null,
+    image: require('../public/welcome-onboarding.png'),
   },
   {
     key: 'money-in-out',
@@ -62,7 +62,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       'Every entry can be edited or deleted afterwards from the History tab. Tap any row to open it; the amount, category, account, date, note and tags can all be changed, and the balances and budgets recalculate themselves from the new values.',
       'Tags are a second, freeform way to label an entry alongside its category — useful for cutting across categories ("Reimbursable", "Shared", a trip name). Manage the list from More → Tags, and filter History by tag from the search bar at the top of that tab.',
     ],
-    image: null,
+    image: require('../public/money-in-out.png'),
   },
   {
     key: 'budgets',
@@ -72,10 +72,10 @@ export const HELP_TOPICS: HelpTopic[] = [
     detail: [
       'There are two kinds of budget, and they work together. The overall monthly budget (More → Monthly Budget) is one number for the whole month. Category budgets (More → Category Budgets) set a separate ceiling per category on top of that.',
       'Both are set per month and per currency. A budget you set for August does not carry into September automatically — this is deliberate, so a month with unusual spending does not quietly become your new normal. A budget in LKR and a budget in USD are two separate figures and are never converted into each other.',
-      'The Dashboard shows the current month\'s progress: what you have budgeted, what you have spent against it, and what is left. The category breakdown underneath shows the same thing per category, so an overspend is visible before the month ends rather than after.',
+      "The Dashboard shows the current month's progress: what you have budgeted, what you have spent against it, and what is left. The category breakdown underneath shows the same thing per category, so an overspend is visible before the month ends rather than after.",
       'Individual transactions can be excluded from budget calculations with the "Exclude from budget" checkbox on the entry form. Use it for one-off items that would otherwise distort the picture — a reimbursed work expense, a large annual payment you account for separately.',
     ],
-    image: null,
+    image: require('../public/budgets.png'),
   },
   {
     key: 'accounts',
@@ -84,13 +84,13 @@ export const HELP_TOPICS: HelpTopic[] = [
       'Add every place your money sits — cash, bank accounts, credit cards, crypto wallets — and the app tracks each balance for you. Any account can hold several currencies at once, each kept as its own separate balance. Currencies are never converted into one another, so nothing is distorted by an exchange rate.',
     detail: [
       'An account is any place money sits: cash in your wallet, a bank account, a credit card, a crypto wallet. Add them from More → Accounts. Each one carries its own balance, which the app keeps up to date as you record transactions against it.',
-      'A single account can hold balances in more than one currency at the same time — a bank account with both an LKR and a USD balance is two balance rows under one account, not two accounts. Add a currency to an account from that account\'s row on the Accounts screen.',
+      "A single account can hold balances in more than one currency at the same time — a bank account with both an LKR and a USD balance is two balance rows under one account, not two accounts. Add a currency to an account from that account's row on the Accounts screen.",
       'Currencies are never converted into one another anywhere in this app. There is no exchange rate table and no automatic conversion, on purpose: rates move, and a converted figure recorded today would silently become wrong tomorrow. Totals, budgets and reports are always shown per currency, side by side.',
       'Manage the currency list itself from More → Currencies. You can add a currency the app does not know about, disable ones you never use so they stop cluttering every picker, and change which currency is the default. The default currency cannot be disabled — the app always needs at least one currency it can fall back to.',
       'Credit cards behave a little differently from other accounts: spending increases what you owe, and paying the card off from another account is recorded as a payoff rather than as a new expense. This is what stops a card purchase being counted twice — once when you bought the thing, and again when you paid the bill.',
       'Liabilities and receivables (More → Liabilities & Receivables) track money you owe to people and money people owe you, including loans with interest. Recording a repayment updates both the loan and the account the money moved through.',
     ],
-    image: null,
+    image: require('../public/accounts.png'),
   },
   {
     key: 'automation',
@@ -104,7 +104,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       'Savings goals (More → Savings Goals) are the opposite direction: a target amount you are working towards, with each contribution recorded against it. The goal card shows how much is in, how much is left, and how far along you are.',
       'All three are per currency, like everything else. A goal in USD tracks only USD contributions.',
     ],
-    image: null,
+    image: require('../public/automation.png'),
   },
   {
     key: 'reports-history',
@@ -118,13 +118,13 @@ export const HELP_TOPICS: HelpTopic[] = [
       'More → Net Worth (linked from the bottom of the Accounts screen) totals everything you own against everything you owe, per currency. It is deliberately one extra tap away rather than on the main list — it is a number worth looking at monthly, not one worth checking anxiously every day.',
       'Nothing in Reports or History changes your data. They are views. The only screens that write anything are the entry forms and the management screens under More.',
     ],
-    image: null,
+    image: require('../public/reports-history.png'),
   },
   {
     key: 'more',
     heading: 'Everything else lives in More',
     summary:
-      'The More tab is the app\'s control panel — accounts, categories, tags, budgets, recurring rules, installments, savings goals and app settings all live there. It is also where Export and Import Data live, which is how you back up and move to a new phone. This Help page is at the bottom of that list whenever you need it again.',
+      "The More tab is the app's control panel — accounts, categories, tags, budgets, recurring rules, installments, savings goals and app settings all live there. It is also where Export and Import Data live, which is how you back up and move to a new phone. This Help page is at the bottom of that list whenever you need it again.",
     detail: [
       'The More tab groups every management screen in the app: Budget, Accounts & Balances, Transactions (categories, tags, recurring, installments), Goals, Data, and App settings. If you are looking for a screen and it is not one of the four tabs, it is in More.',
       'App Settings holds the light/dark mode choice and the colour theme. These are cosmetic only and change nothing about your data.',
@@ -132,6 +132,6 @@ export const HELP_TOPICS: HelpTopic[] = [
       'Import Data reads one of those exported files back in. It offers two modes. Merge adds the records in the file to what you already have and removes nothing. Replace deletes everything currently in the app and restores it from the file exactly as exported — use Replace when moving to a new phone, and read the confirmation carefully, because it cannot be undone.',
       'Help & Support — this page — is the last item in More, and it is always reachable from there whether or not you have been through the welcome carousel.',
     ],
-    image: null,
+    image: require('../public/more.png'),
   },
 ];

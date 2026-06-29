@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAsyncAction } from './useAsyncAction';
 
 // Every "add/edit this kind of thing in a BottomSheetModal" screen in this
@@ -53,6 +53,16 @@ export interface UseEntityFormModalResult<TRow, TValues> {
   close: () => void;
   submit: () => Promise<void>;
   setVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  // Wire straight into this form's <BottomSheetModal onFullyClosed=...>.
+  // Fires once that sheet's real native Modal has actually finished
+  // closing (later than `visible` going false).
+  notifyFullyClosed: () => void;
+  // Resolves the next time notifyFullyClosed() fires. Only an onCreate
+  // that needs to present a second native Modal right after this one
+  // closes (the free-tier paywall gating) should await this — awaiting
+  // it without the sheet ever actually closing again would hang forever,
+  // same as any unresolved promise.
+  waitForFullyClosed: () => Promise<void>;
 }
 
 export function useEntityFormModal<
@@ -103,6 +113,22 @@ export function useEntityFormModal<
     setError(null);
   }, [initialValues]);
 
+  const closeWaitersRef = useRef<Array<() => void>>([]);
+
+  const notifyFullyClosed = useCallback(() => {
+    const waiters = closeWaitersRef.current;
+    closeWaitersRef.current = [];
+    waiters.forEach(resolve => resolve());
+  }, []);
+
+  const waitForFullyClosed = useCallback(
+    () =>
+      new Promise<void>(resolve => {
+        closeWaitersRef.current.push(resolve);
+      }),
+    [],
+  );
+
   const canSave = validate(values) === null;
 
   const submit = useCallback(async () => {
@@ -144,5 +170,7 @@ export function useEntityFormModal<
     close,
     submit,
     setVisible,
+    notifyFullyClosed,
+    waitForFullyClosed,
   };
 }

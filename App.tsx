@@ -670,7 +670,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   hiddenTabItem: {

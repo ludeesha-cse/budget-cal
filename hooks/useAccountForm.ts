@@ -143,7 +143,18 @@ export function useAccountForm(deps: UseAccountFormDeps): UseAccountFormResult {
       // call that produces it: by the time onCreate actually runs (later,
       // on submit), the assignment below has long since completed —
       // exactly the pattern CategoriesScreen's own onCreate uses.
+      //
+      // setVisible(false) alone isn't enough: BottomSheetModal keeps its
+      // native Modal mounted until it actually finishes tearing itself
+      // down, so opening the paywall immediately here can still overlap
+      // two native Modals — iOS silently drops the second Modal's
+      // presentation when that happens, with no error to log (see
+      // useInstallmentForm's own onCreate, where this was actually
+      // reproduced). waitForFullyClosed() resolves only once
+      // BottomSheetModal's onFullyClosed (wired up in AccountFormModal)
+      // confirms the native Modal is really gone.
       form.setVisible(false);
+      await form.waitForFullyClosed();
       await new Promise<void>(resolve => {
         openPaywall({
           reason: check.reason ?? `${params.type} accounts require Premium.`,

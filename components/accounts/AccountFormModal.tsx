@@ -38,7 +38,8 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
       onSave={submit}
       canSave={canSave}
       title={editingId ? 'Edit Account' : 'Add Account'}
-      saveLabel={editingId ? 'Update' : 'Add'}>
+      saveLabel={editingId ? 'Update' : 'Add'}
+      onFullyClosed={form.notifyFullyClosed}>
       <Text style={[styles.label, { color: colors.text }]}>Name</Text>
       <TextInput
         style={[

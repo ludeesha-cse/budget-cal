@@ -117,7 +117,8 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
         onSave={form.submit}
         canSave={form.canSave}
         title={form.editingId ? 'Edit Plan' : 'New Installment Plan'}
-        saveLabel={form.editingId ? 'Save' : 'Create'}>
+        saveLabel={form.editingId ? 'Save' : 'Create'}
+        onFullyClosed={form.notifyFullyClosed}>
         <InstallmentFormFields form={form} categories={categories} currencies={currencies} />
         <NumericInputAccessory />
       </BottomSheetModal>

@@ -196,6 +196,7 @@ export function useInstallmentForm(
     // AccountsScreen/CategoriesScreen/LiabilitiesReceivablesScreen.
     onUpdate: (id, params) => updateInstallmentPlan(id, params),
     onCreate: async params => {
+      console.log('[useInstallmentForm] onCreate: tier =', tier);
       const performCreate = () => createInstallmentPlan(params);
       if (tier === 'free') {
         // Hide this screen's own form sheet before showing the
@@ -203,15 +204,34 @@ export function useInstallmentForm(
         // onCreate for why (two native Modals open at once freezes iOS
         // solid). onDismiss restores the form, still filled in, if the
         // user backs out without buying.
+        //
+        // A fixed setTimeout here used to guess how long that took and
+        // guessed wrong — BottomSheetModal's own slide-down animation and
+        // this timer both started from the same `form.setVisible(false)`
+        // call, so they raced, and the paywall's Modal could try to
+        // present before the add sheet's native Modal had actually torn
+        // itself down. iOS silently drops a Modal presentation attempted
+        // while another is still mid-dismissal — no error, no log,
+        // openPaywall() just did nothing. waitForFullyClosed() instead
+        // resolves from BottomSheetModal's own onFullyClosed (wired up in
+        // InstallmentPlansScreen), which only fires once the native side
+        // confirms the previous Modal is really gone.
+        console.log('[useInstallmentForm] free tier — closing add sheet before opening paywall');
         form.setVisible(false);
+        await form.waitForFullyClosed();
         await new Promise<void>(resolve => {
+          console.log('[useInstallmentForm] opening paywall');
           openPaywall({
             reason: 'Installment plans require Premium.',
             onPurchaseSuccess: async () => {
+              console.log('[useInstallmentForm] paywall purchase success — creating plan');
               await performCreate();
               resolve();
             },
-            onDismiss: () => form.setVisible(true),
+            onDismiss: () => {
+              console.log('[useInstallmentForm] paywall dismissed — restoring add sheet');
+              form.setVisible(true);
+            },
           });
         });
         return;

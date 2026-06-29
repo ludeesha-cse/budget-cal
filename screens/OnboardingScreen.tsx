@@ -271,9 +271,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     justifyContent: 'center',
   },
+  // 4:3 — matches the supplied artwork (e.g. public/welcome-onboarding.png,
+  // 2000x1500) exactly. aspectRatio rather than a fixed height is what
+  // makes this ratio hold on every device: width already tracks the
+  // slide's measured pageWidth via '100%', so a fixed height here would
+  // have stretched the same image differently on a narrow phone vs a
+  // Pro Max. Export every onboarding image at this same 4:3 ratio
+  // (e.g. 1200x900 or 2000x1500) so none of them need per-image styling.
   slideImage: {
-    width: '100%',
-    height: 260,
+    width: 360,
+    height: 270,
     borderRadius: 20,
     marginBottom: 32,
   },

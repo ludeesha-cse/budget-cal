@@ -55,6 +55,8 @@ function CategoriesScreen(): React.JSX.Element {
     close: closeForm,
     submit: handleSubmit,
     setVisible,
+    notifyFullyClosed,
+    waitForFullyClosed,
   } = useEntityFormModal<CategoryRow, string, string>({
     initialValues: '',
     populateFromRow: category => category.name,
@@ -79,7 +81,18 @@ function CategoriesScreen(): React.JSX.Element {
       // This promise deliberately never resolves in the dismiss case —
       // the hook's submit() only closes the sheet and reloads once
       // onCreate resolves, so a decline must leave both untouched.
+      //
+      // setVisible(false) alone isn't enough: BottomSheetModal keeps its
+      // native Modal mounted until it actually finishes tearing itself
+      // down, so opening the paywall immediately here can still overlap
+      // two native Modals — iOS silently drops the second Modal's
+      // presentation when that happens, with no error to log (see
+      // useInstallmentForm's own onCreate, where this was actually
+      // reproduced). waitForFullyClosed() resolves only once
+      // BottomSheetModal's onFullyClosed below confirms the native Modal
+      // is really gone.
       setVisible(false);
+      await waitForFullyClosed();
       await new Promise<void>(resolve => {
         openPaywall({
           reason: check.reason ?? 'Additional categories require Premium.',
@@ -176,7 +189,8 @@ function CategoriesScreen(): React.JSX.Element {
         onSave={handleSubmit}
         canSave={formCanSave}
         title={editingId ? 'Edit Category' : 'Add Category'}
-        saveLabel={editingId ? 'Save' : 'Add'}>
+        saveLabel={editingId ? 'Save' : 'Add'}
+        onFullyClosed={notifyFullyClosed}>
         <Text style={[styles.label, { color: colors.text }]}>Name</Text>
         <TextInput
           style={[
