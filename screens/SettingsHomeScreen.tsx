@@ -34,6 +34,7 @@ import {
   Upload,
   Wallet,
   Banknote,
+  LifeBuoy,
 } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDevEntitlementToggle } from '../hooks/useEntitlement';
@@ -420,6 +421,21 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
           label: 'App Settings',
           icon: SettingsIcon,
           onPress: () => navigation.navigate('AppSettings'),
+        },
+        // Deliberately the LAST row of the last section — Stage 19 spec
+        // places Help & Support at the very bottom of this list, below
+        // everything else including the premium/upgrade entry point (which
+        // this screen doesn't render as a row of its own today; the paywall
+        // is opened from the individual gated screens via usePaywall()).
+        // If a Premium row is ever added to this "App" section, it goes
+        // above this one.
+        {
+          key: 'helpSupport',
+          label: 'Help & Support',
+          subtitle:
+            'How everything works, plus a way to message us if it doesn\'t.',
+          icon: LifeBuoy,
+          onPress: () => navigation.navigate('HelpSupport'),
         },
       ],
     },

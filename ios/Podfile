@@ -22,12 +22,33 @@ end
 target 'BudgetTrackerMobile' do
   config = use_native_modules!
 
-  # AppCheckCore (pulled in by @react-native-firebase/auth) is a Swift pod
-  # that depends on these plain ObjC pods. Without modules they can't be
-  # imported from Swift when linking statically (the default here), so
-  # opt just these two into modular headers rather than globally.
-  pod 'GoogleUtilities', :modular_headers => true
-  pod 'RecaptchaInterop', :modular_headers => true
+  unless linkage
+    # Firebase's Swift pods (FirebaseAuth, AppCheckCore, etc., pulled in by
+    # @react-native-firebase/auth) depend on plain ObjC pods that don't define
+    # modules. Without modules those can't be imported from Swift when linking
+    # statically (the default here), so generate module maps for just those
+    # pods. Deliberately scoped instead of a blanket use_modular_headers!,
+    # which also forces React's ReactCommon and React-RuntimeApple pods
+    # (which intentionally share the module name "ReactCommon") into
+    # separate per-pod modulemaps, causing a "Redefinition of module
+    # 'ReactCommon'" build error.
+    %w[
+      AppCheckCore
+      Firebase
+      FirebaseAppCheckInterop
+      FirebaseAuth
+      FirebaseAuthInterop
+      FirebaseCore
+      FirebaseCoreExtension
+      FirebaseCoreInternal
+      GTMAppAuth
+      GTMSessionFetcher
+      GoogleSignIn
+      GoogleUtilities
+      PromisesObjC
+      RecaptchaInterop
+    ].each { |pod_name| pod pod_name, :modular_headers => true }
+  end
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -43,6 +64,58 @@ target 'BudgetTrackerMobile' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Fix React-jsitooling and React-RuntimeCore both declaring 'module react_runtime'
+    # with umbrella headers in the same directory, which causes build errors under
+    # use_modular_headers!. Replace the umbrella approach with explicit header paths.
+    jsitooling_map = File.join(installer.sandbox.public_headers.root.to_s, 'react_runtime', 'React-jsitooling.modulemap')
+    if File.exist?(jsitooling_map)
+      File.write(jsitooling_map, <<~MODULEMAP)
+        module React_jsitooling {
+          header "../React-jsitooling/react/runtime/JSRuntimeFactory.h"
+          header "../React-jsitooling/react/runtime/JSRuntimeFactoryCAPI.h"
+          export *
+        }
+      MODULEMAP
+    end
+
+    # RNFBApp and RNFBAuth import Firebase.h, which pulls in FirebaseAuth's
+    # generated FirebaseAuth-Swift.h. That header only exists inside
+    # FirebaseAuth's own build products directory ("Swift Compatibility
+    # Header/"), which isn't on any consuming target's header search path
+    # (only Pods/Headers/Public/<Pod> is) -- referencing it purely via
+    # FirebaseAuth's modulemap doesn't resolve the angle-bracket import
+    # either, under Explicit or implicit Clang modules. Copy the generated
+    # header into the public headers dir once FirebaseAuth finishes
+    # building, and force real build-order (RNFBApp/RNFBAuth only depend on
+    # the 'Firebase' umbrella pod, never 'FirebaseAuth' itself) so that copy
+    # always happens before it's needed.
+    firebase_auth_target = installer.pods_project.targets.find { |t| t.name == 'FirebaseAuth' }
+    if firebase_auth_target
+      copy_phase = firebase_auth_target.new_shell_script_build_phase('Copy FirebaseAuth-Swift.h to Public Headers')
+      copy_phase.shell_script = <<~SCRIPT
+        set -e
+        SRC="${BUILT_PRODUCTS_DIR}/FirebaseAuth/Swift Compatibility Header/FirebaseAuth-Swift.h"
+        DEST_DIR="#{installer.sandbox.public_headers.root}/FirebaseAuth"
+        if [ -f "$SRC" ]; then
+          mkdir -p "$DEST_DIR"
+          cp "$SRC" "$DEST_DIR/FirebaseAuth-Swift.h"
+        fi
+      SCRIPT
+
+      installer.pods_project.targets.each do |target|
+        next unless %w[RNFBApp RNFBAuth].include?(target.name)
+        target.add_dependency(firebase_auth_target)
+        # Explicit Modules scans header dependencies statically, before any
+        # target's build phases run, so it never sees the header the copy
+        # phase above produces. Fall back to classic (non-explicit) module
+        # resolution for these two targets, which re-checks the filesystem
+        # at compile time and does respect the dependency added above.
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        end
+      end
+    end
 
     # Work around fmt 11.0.2 using a `consteval` FMT_STRING pattern that
     # newer Clang (Xcode 16.3+/26.x) rejects with "call to consteval

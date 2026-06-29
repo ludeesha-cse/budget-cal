@@ -49,6 +49,11 @@ export type SettingsStackParamList = {
   // Stage 18 (Android only) — Google sign-in/out. Not gated behind
   // anything and gates nothing else; see AccountScreen.tsx.
   Account: undefined;
+  // Stage 19 — the reference version of the first-launch carousel,
+  // listed last on SettingsHome. Reachable at any time regardless of
+  // onboarding state; the onboarding/default-currency screens
+  // themselves are deliberately NOT routes (see App.tsx's RootFlow).
+  HelpSupport: undefined;
 };
 
 export type RootTabParamList = {

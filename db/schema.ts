@@ -210,6 +210,34 @@ export const appSettings = sqliteTable('app_settings', {
   paletteId: text('palette_id').notNull().default('ledger'),
 });
 
+// One-time, first-launch bookkeeping — deliberately its own table rather
+// than two more columns on app_settings, because these are not
+// preferences: app_settings holds things the user can go back and change
+// whenever they like (theme, palette), while these two are one-way
+// latches that flip once during first launch and are never meant to be
+// flipped back from the UI. Keeping them apart means nothing in the
+// Settings screens can accidentally write to them, and a future "reset
+// onboarding" debug affordance has an obvious single row to clear.
+//
+// Singleton, exactly like app_settings (always exactly one row, seeded by
+// seedAppMeta() in db/index.ts). Both flags default false so a genuinely
+// fresh install starts at the beginning of the flow; they are stored
+// separately (rather than one "setupStep" integer) so a partial first
+// session — onboarding finished, app killed before the currency screen —
+// resumes at the currency screen instead of replaying the carousel. See
+// App.tsx's RootFlow for the decision that reads them.
+export const appMeta = sqliteTable('app_meta', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  onboardingCompleted: integer('onboarding_completed', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  defaultCurrencyConfirmed: integer('default_currency_confirmed', {
+    mode: 'boolean',
+  })
+    .notNull()
+    .default(false),
+});
+
 // One row per payoff payment against a credit card. Deliberately separate
 // from `transactions` — a payoff is money moving between two accounts
 // you already own, not a purchase, so it must never carry a category or

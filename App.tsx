@@ -35,7 +35,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { runMigrations } from './db';
-import { ensureDefaultAccount } from './db/queries';
+import { ensureDefaultAccount, getAppMeta } from './db/queries';
 import DashboardScreen from './screens/DashboardScreen';
 import HistoryListScreen from './screens/HistoryListScreen';
 import EditTransactionScreen from './screens/EditTransactionScreen';
@@ -57,6 +57,9 @@ import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
 import TagsScreen from './screens/TagsScreen';
 import ReviewOccurrencesScreen from './screens/ReviewOccurrencesScreen';
 import AccountScreen from './screens/AccountScreen';
+import HelpSupportScreen from './screens/HelpSupportScreen';
+import OnboardingScreen from './screens/OnboardingScreen';
+import DefaultCurrencyScreen from './screens/DefaultCurrencyScreen';
 import PaywallModal from './screens/PaywallModal';
 import AddEntrySheet, { AddEntryKind } from './components/AddEntrySheet';
 import { EntitlementProvider } from './hooks/useEntitlement';
@@ -196,6 +199,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         component={AccountScreen}
         options={{ title: 'Account' }}
       />
+      <SettingsStack.Screen
+        name="HelpSupport"
+        component={HelpSupportScreen}
+        options={{ title: 'Help & Support' }}
+      />
     </SettingsStack.Navigator>
   );
 }
@@ -250,9 +258,102 @@ function AppShell(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <RootFlow />
+    </SafeAreaProvider>
+  );
+}
+
+// The first-launch gate (Stage 19). Reads app_meta once on mount and
+// decides which of three things the app actually shows:
+//
+//   onboardingCompleted false        -> the welcome carousel
+//   ...true, currency confirmed false -> the default currency screen
+//   both true                        -> the normal tab navigator
+//
+// The middle case is why these are two independent flags rather than one:
+// a first session that got through the carousel and was killed before the
+// currency screen resumes exactly where it stopped, instead of replaying
+// seven slides the user has already read.
+//
+// Onboarding and DefaultCurrency are rendered as plain components here,
+// NOT as routes in a navigator. They have no back destination, nothing
+// deep-links to them, and they must not be reachable from anywhere else
+// in the app — giving them routes would create exactly those affordances
+// for no benefit. Once `phase` reaches 'app' this component renders the
+// same <AppNavigator /> + <PaywallModal /> pair AppShell used to render
+// directly, so nothing downstream of first launch behaves differently
+// than it did before this stage: no existing screen or feature is gated
+// on onboarding beyond the initial flow itself.
+//
+// Lives INSIDE SafeAreaProvider (see AppShell) because both first-launch
+// screens render <ScreenBackground edges={['top','bottom']}>, whose
+// SafeAreaView needs that provider's context — the same constraint
+// AppNavigator's own header comment describes for useSafeAreaInsets().
+type FirstLaunchPhase = 'loading' | 'onboarding' | 'currency' | 'app';
+
+function RootFlow(): React.JSX.Element {
+  const [phase, setPhase] = useState<FirstLaunchPhase>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    getAppMeta()
+      .then(meta => {
+        if (cancelled) {
+          return;
+        }
+        // A missing row (meta == null) is treated as a fresh install
+        // rather than as an error — see getAppMeta's own comment. Showing
+        // the carousel one extra time is a far cheaper failure than
+        // silently skipping first-run currency setup.
+        const next: FirstLaunchPhase = !meta?.onboardingCompleted
+          ? 'onboarding'
+          : !meta.defaultCurrencyConfirmed
+            ? 'currency'
+            : 'app';
+        console.log(
+          `[first launch] app_meta onboardingCompleted=${meta?.onboardingCompleted} ` +
+            `defaultCurrencyConfirmed=${meta?.defaultCurrencyConfirmed} -> phase=${next}`,
+        );
+        setPhase(next);
+      })
+      .catch(error => {
+        // Already logged inside getAppMeta. Falling through to the normal
+        // app (rather than to onboarding) is the deliberate choice for a
+        // READ failure specifically: an existing user whose database
+        // hiccuped on one query should land in their app, not be handed a
+        // welcome tour and a setup screen that would then try to write to
+        // the same failing database.
+        console.error('RootFlow: could not read app_meta, showing the app', error);
+        if (!cancelled) {
+          setPhase('app');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (phase === 'loading') {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (phase === 'onboarding') {
+    return <OnboardingScreen onDone={() => setPhase('currency')} />;
+  }
+
+  if (phase === 'currency') {
+    return <DefaultCurrencyScreen onDone={() => setPhase('app')} />;
+  }
+
+  return (
+    <>
       <AppNavigator />
       <PaywallModal />
-    </SafeAreaProvider>
+    </>
   );
 }
 

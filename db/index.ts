@@ -6,6 +6,7 @@ import migrations from '../drizzle/migrations';
 import {
   accountBalances,
   accounts,
+  appMeta,
   appSettings,
   categories,
   currencies,
@@ -176,6 +177,28 @@ async function runCurrencyMigration(
   }
 }
 
+// app_meta is a singleton too (see db/schema.ts), holding the two
+// first-launch latches the root navigation gate reads. Seeded here —
+// immediately after runCurrencyMigration above, so the very first launch
+// has both its currency list and its "have we onboarded yet" answer
+// ready in the same startup pass — using the same table-emptiness gate
+// as every other seed* function, so re-running on every app start is a
+// no-op after the first.
+//
+// Both columns are deliberately left to their schema defaults (false)
+// rather than passed explicitly: an existing install upgrading into this
+// migration gets the same fresh-install starting point, which is the
+// intended behavior — someone who has been using the app already has
+// simply never seen the onboarding, so showing it once on the upgrade
+// launch is correct rather than a bug.
+async function seedAppMeta(): Promise<void> {
+  const existing = await db.select().from(appMeta).limit(1);
+  if (existing.length > 0) {
+    return;
+  }
+  await db.insert(appMeta).values({});
+}
+
 // app_settings is a singleton (always exactly one row) holding app-wide
 // preferences like the theme. Seeded once here, same pattern as the other
 // seed* functions — gated on table-emptiness so re-running on every app
@@ -220,6 +243,7 @@ export async function runMigrations(): Promise<void> {
   await seedDefaultCategories();
   await seedReservedBankCategory();
   await runCurrencyMigration(legacyBalances);
+  await seedAppMeta();
   await seedAppSettings();
   await seedDefaultTags();
 }

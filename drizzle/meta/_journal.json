@@ -169,6 +169,13 @@
       "when": 1786529154038,
       "tag": "0023_lyrical_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1787139357608,
+      "tag": "0024_add_app_meta",
+      "breakpoints": true
     }
   ]
 }

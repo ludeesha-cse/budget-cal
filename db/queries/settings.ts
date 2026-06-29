@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../index';
 import {
+  appMeta,
   appSettings,
 } from '../schema';
 import { DEFAULT_PALETTE_ID } from '../../theme/palettes';
@@ -84,3 +85,83 @@ export async function setPaletteId(paletteId: string): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------
+// app_meta — first-launch flow state (Stage 19). Separate table from
+// app_settings above on purpose; see db/schema.ts's appMeta comment.
+// ---------------------------------------------------------------------
+
+export type AppMeta = typeof appMeta.$inferSelect;
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/app-meta, keeping the same return type. app_meta is
+// seeded with exactly one row by seedAppMeta() in db/index.ts, so this
+// normally always resolves to a row. Returns null rather than throwing on
+// a genuinely missing row so the caller (App.tsx's RootFlow) can decide
+// what a missing row means — it treats it as "fresh install, show
+// onboarding", which is the safe reading: showing the carousel one extra
+// time is far less bad than silently skipping first-run currency setup.
+export async function getAppMeta(): Promise<AppMeta | null> {
+  try {
+    const [row] = await db.select().from(appMeta).limit(1);
+    return row ?? null;
+  } catch (error) {
+    console.error('getAppMeta: failed to read app meta row', error);
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to PATCH /api/app-meta, keeping the same input shape. Updates the
+// singleton row in place; falls back to inserting it if seeding somehow
+// hasn't run yet, so tapping "Get Started" can never silently no-op and
+// strand the user on a carousel that reappears on every launch.
+export async function setOnboardingCompleted(): Promise<void> {
+  try {
+    const [row] = await db.select().from(appMeta).limit(1);
+    if (row) {
+      await db
+        .update(appMeta)
+        .set({ onboardingCompleted: true })
+        .where(eq(appMeta.id, row.id));
+    } else {
+      await db.insert(appMeta).values({ onboardingCompleted: true });
+    }
+  } catch (error) {
+    console.error(
+      'setOnboardingCompleted: failed to mark onboarding complete',
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to PATCH /api/app-meta, keeping the same input shape. Mirrors
+// setOnboardingCompleted exactly, for the other latch.
+//
+// Also sets onboardingCompleted on the insert fallback path: reaching the
+// currency screen at all means the carousel is behind the user, so the
+// two flags must never be left in the impossible
+// "currency confirmed but onboarding not" state that would send the next
+// launch back to slide 1.
+export async function setDefaultCurrencyConfirmed(): Promise<void> {
+  try {
+    const [row] = await db.select().from(appMeta).limit(1);
+    if (row) {
+      await db
+        .update(appMeta)
+        .set({ defaultCurrencyConfirmed: true })
+        .where(eq(appMeta.id, row.id));
+    } else {
+      await db
+        .insert(appMeta)
+        .values({ onboardingCompleted: true, defaultCurrencyConfirmed: true });
+    }
+  } catch (error) {
+    console.error(
+      'setDefaultCurrencyConfirmed: failed to mark default currency confirmed',
+      error,
+    );
+    throw error;
+  }
+}

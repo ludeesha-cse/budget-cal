@@ -1,31 +1,32 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChevronRight, Crown, Plus, Trash2 } from 'lucide-react-native';
+import { Crown, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
-import BottomSheetModal from '../components/BottomSheetModal';
 import EmptyState from '../components/common/EmptyState';
+import AddCurrencySheets from '../components/currencies/AddCurrencySheets';
 import {
-  addCurrency,
   deleteCurrency,
   getCurrencies,
   setCurrencyActive,
   setDefaultCurrency,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
-import { scaleFont, typography } from '../theme/typography';
+import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
-import { useEntityFormModal } from '../hooks/useEntityFormModal';
 
 // Lists ENABLED currencies and lets the user enable a disabled one or add
 // a brand-new one; the seeded default currency is flagged with a badge
 // and can't be disabled or added again. Every picker/tab elsewhere in the
 // app (budgets, transactions, reports, ...) only ever shows currencies
 // enabled here — see getActiveCurrencies() in db/queries/currencies.ts.
+//
+// The "Add Currency" sheets themselves now live in
+// components/currencies/AddCurrencySheets.tsx rather than here, because
+// the first-launch DefaultCurrencyScreen offers the same flow — see that
+// component's own header.
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
-
-type CurrencyFormValues = { code: string; name: string };
 
 function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -35,9 +36,6 @@ function CurrenciesScreen(): React.JSX.Element {
   // place in the app that needs both, so it can list disabled currencies
   // as re-enable candidates in the "Add Currency" sheet below.
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
-  // Separate from the "add a brand-new currency" form sheet (below) — this
-  // is the picker that opens first when "Add Currency" is tapped, listing
-  // every currency that already exists but isn't enabled yet.
   const [pickerVisible, setPickerVisible] = useState(false);
 
   const load = useCallback(async () => {
@@ -60,31 +58,6 @@ function CurrenciesScreen(): React.JSX.Element {
     [allCurrencies],
   );
 
-  const {
-    visible: formVisible,
-    values,
-    setValues,
-    canSave: formCanSave,
-    openAdd: openNewCurrencyForm,
-    close: closeForm,
-    submit: handleSubmit,
-  } = useEntityFormModal<CurrencyRow, CurrencyFormValues, CurrencyFormValues>({
-    initialValues: { code: '', name: '' },
-    // Never actually invoked — this screen is add-only (no edit path,
-    // hence no onUpdate below), so openEdit is never called. Still
-    // required by the hook's type.
-    populateFromRow: currency => ({ code: currency.code, name: currency.name }),
-    validate: v =>
-      v.code.trim() === '' || v.name.trim() === ''
-        ? 'Enter a currency code and name.'
-        : null,
-    toParams: v => ({ code: v.code.trim().toUpperCase(), name: v.name.trim() }),
-    onCreate: params => addCurrency(params.code, params.name),
-    onUpdate: undefined,
-    onSaved: load,
-    errorTitle: 'Cannot add currency',
-  });
-
   const handleSetDefault = async (currencyId: number) => {
     await runAction(async () => {
       await setDefaultCurrency(currencyId);
@@ -101,14 +74,6 @@ function CurrenciesScreen(): React.JSX.Element {
       await setCurrencyActive(currencyId, false);
       await load();
     }, 'Cannot disable currency');
-  };
-
-  const handleEnable = (currencyId: number) => {
-    runAction(async () => {
-      await setCurrencyActive(currencyId, true);
-      await load();
-      setPickerVisible(false);
-    }, 'Cannot enable currency');
   };
 
   const handleDelete = (currencyId: number, currencyCode: string) => {
@@ -186,86 +151,12 @@ function CurrenciesScreen(): React.JSX.Element {
         }
       />
 
-      <BottomSheetModal
+      <AddCurrencySheets
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
-        title="Add Currency">
-        {disabledCurrencies.length > 0 ? (
-          <>
-            <Text
-              style={[
-                typography.eyebrow,
-                styles.pickerSectionLabel,
-                { color: colors.textSecondary },
-              ]}>
-              ENABLE AN EXISTING CURRENCY
-            </Text>
-            {disabledCurrencies.map(currency => (
-              <Pressable
-                key={currency.id}
-                style={[styles.pickerRow, { borderColor: colors.border }]}
-                onPress={() => handleEnable(currency.id)}>
-                <View style={styles.rowDetails}>
-                  <Text style={[styles.rowCode, { color: colors.text }]}>
-                    {currency.code}
-                  </Text>
-                  <Text style={{ color: colors.textSecondary }}>{currency.name}</Text>
-                </View>
-                <Plus size={18} color={colors.primary} strokeWidth={2.5} />
-              </Pressable>
-            ))}
-          </>
-        ) : (
-          <Text style={{ color: colors.textSecondary }}>
-            Every currency this app knows about is already enabled.
-          </Text>
-        )}
-
-        <Pressable
-          style={[styles.newCurrencyRow, { borderColor: colors.border }]}
-          onPress={() => {
-            setPickerVisible(false);
-            openNewCurrencyForm();
-          }}>
-          <Text style={[styles.actionLink, { color: colors.primary }]}>
-            + Add a brand-new currency
-          </Text>
-          <ChevronRight size={16} color={colors.primary} />
-        </Pressable>
-      </BottomSheetModal>
-
-      <BottomSheetModal
-        visible={formVisible}
-        onClose={closeForm}
-        onSave={handleSubmit}
-        canSave={formCanSave}
-        title="Add a New Currency"
-        saveLabel="Add">
-        <Text style={[styles.label, { color: colors.text }]}>Code</Text>
-        <TextInput
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-          ]}
-          value={values.code}
-          onChangeText={text => setValues(v => ({ ...v, code: text }))}
-          placeholder="e.g. JPY"
-          placeholderTextColor={colors.textSecondary}
-          autoCapitalize="characters"
-        />
-
-        <Text style={[styles.label, { color: colors.text }]}>Name</Text>
-        <TextInput
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
-          ]}
-          value={values.name}
-          onChangeText={text => setValues(v => ({ ...v, name: text }))}
-          placeholder="e.g. Japanese Yen"
-          placeholderTextColor={colors.textSecondary}
-        />
-      </BottomSheetModal>
+        disabledCurrencies={disabledCurrencies}
+        onChanged={load}
+      />
     </View>
   );
 }
@@ -288,19 +179,6 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 16,
   },
   list: {
     marginTop: 16,
@@ -352,30 +230,6 @@ const styles = StyleSheet.create({
   defaultBadgeText: {
     fontSize: scaleFont(12),
     fontWeight: '700',
-  },
-  pickerSectionLabel: {
-    marginBottom: 8,
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 8,
-  },
-  newCurrencyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginTop: 4,
   },
 });
 
