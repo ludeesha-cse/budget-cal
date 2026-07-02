@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -58,6 +59,11 @@ function BudgetSettingsScreen(): React.JSX.Element {
     if (!amountValid || currencyId == null) {
       return;
     }
+    // The amount TextInput's returnKeyType="done" has no onSubmitEditing
+    // of its own (it relies on inputAccessoryViewID, an iOS-only "Done"
+    // bar) — so without this, tapping Save while that field is focused
+    // submits the form but leaves the keyboard open on both platforms.
+    Keyboard.dismiss();
     await upsertBudget(selectedMonth, currencyId, parsedAmount);
     setSavedMessage('Budget saved');
     reload();

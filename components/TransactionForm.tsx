@@ -206,6 +206,7 @@ function TransactionForm({
           label: c.name === 'Bank' ? `${c.name} (reserved)` : c.name,
           value: String(c.id),
         }))}
+        label="Category"
       />
 
       <Text

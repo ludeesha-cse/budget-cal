@@ -41,11 +41,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
   const { currencies, loading, filter, setFilter, visibleGoals, reload } =
     useSavingsGoalsData();
 
-  // Contribution history is fetched lazily on first expand — most goals
-  // will never be expanded in a given session. `refresh` re-fetches one
-  // goal's contributions without collapsing it, needed because the
-  // add/edit/delete contribution controls live inside the expanded
-  // section itself.
   const contributionsDetail = useLazyExpandableDetail(getContributions);
 
   const goalForm = useSavingsGoalForm(currencies, reload);
@@ -86,8 +81,6 @@ function SavingsGoalsScreen(): React.JSX.Element {
   };
 
   const handleDeleteGoal = (goal: SavingsGoalRow) => {
-    // Steers toward Abandon first — deletion also removes every
-    // contribution ever logged against this goal, with no undo.
     confirmDelete(
       'Delete goal',
       `Delete "${goal.name}"? This permanently removes it and its entire contribution history. If you just want to stop tracking it, abandon it instead. This cannot be undone.`,

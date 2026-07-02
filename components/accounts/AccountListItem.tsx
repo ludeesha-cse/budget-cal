@@ -19,12 +19,6 @@ import type { UseAddCurrencyResult } from '../../hooks/useAddCurrency';
 
 const CREDIT_CARD_TYPE = 'CreditCard';
 
-// The left accent bar's color per account type — asset accounts (Cash/
-// Bank/Crypto) get the palette's own primary accent, a credit card's bar
-// reads as debt (danger), and a Liability/Receivable loan account reads
-// as a pending obligation (warning), same semantic colors those account
-// types already use elsewhere (LiabilitiesReceivablesScreen, Dashboard's
-// Due Soon card).
 function accentColorFor(type: string, colors: ThemeColors): string {
   if (type === CREDIT_CARD_TYPE) {
     return colors.danger;

@@ -47,6 +47,7 @@ function AddCurrencyForm({
           label: `${c.code} — ${c.name}`,
           value: String(c.id),
         }))}
+        label="Currency"
       />
       <TextInput
         style={[

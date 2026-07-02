@@ -25,28 +25,13 @@ type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>;
 
 function DashboardScreen({ navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  // Cross-tab navigation (Settings, Add) needs the tab navigator's own
-  // prop, not DashboardStack's — same pattern AddTransactionScreen's
-  // "Liabilities & Receivables" shortcut already uses.
   const tabNavigation =
     useNavigation<BottomTabNavigationProp<RootTabParamList, 'Dashboard'>>();
-
   const data = useDashboardData();
   const banner = useDismissibleBanner();
-  // Also session-only, same reasoning as the banner — hiding balances is
-  // a glance-privacy toggle for right now, not a saved preference. Too
-  // small on its own to be worth a matching hook.
   const [balancesHidden, setBalancesHidden] = useState(false);
 
   const month = getCurrentMonthString();
-  // Up to 2 currency budget cards shown here; the rest (if any) are only
-  // ever a "+N more" tap away on BudgetSettingsScreen, which now doubles
-  // as the "manage every currency's budget" screen rather than just the
-  // default currency's — see its own currency-tabs comment. Two, not one
-  // or three, because this is a glance dashboard: a single card would
-  // hide a second currency's budget entirely (the original bug report),
-  // but more than 2 starts crowding a screen that already has five other
-  // sections below it.
   const VISIBLE_BUDGET_CARDS = 2;
   const visibleBudgetCards = data.budgetCards.slice(0, VISIBLE_BUDGET_CARDS);
   const hiddenBudgetCardCount = Math.max(
@@ -223,14 +208,6 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
                 Total owed to you: {formatCurrencyTotals(data.receivableTotals)}
               </Text>
             </Card>
-
-            {/* Net Worth deliberately does NOT live here — a single "here's
-                everything you own minus everything you owe" figure is
-                exactly the kind of thing that shouldn't be one glance away
-                on the screen the app opens to. It's its own screen now,
-                reached from Accounts ("View Net Worth →" at the bottom of
-                that list) rather than a Dashboard card or a flat entry in
-                the More list — see screens/NetWorthScreen.tsx. */}
           </>
         )}
       </ScrollView>
@@ -287,9 +264,6 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(13),
     fontWeight: '700',
   },
-  // border/borderRadius/backgroundColor are NOT here — Card (see
-  // components/Card.tsx) owns those itself so it can swap in a gradient
-  // fill for palettes that define one. This only carries layout.
   card: {
     padding: 16,
     marginBottom: 10,

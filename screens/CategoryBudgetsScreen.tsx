@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
@@ -142,6 +142,11 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     if (currencyId == null) {
       return;
     }
+    // Same gap as BudgetSettingsScreen's Save button — the per-row amount
+    // fields rely solely on the iOS-only numeric accessory bar to blur,
+    // so without this the keyboard stays open (on both platforms) after
+    // tapping Save while a field is still focused.
+    Keyboard.dismiss();
     const entries = Object.entries(amounts).filter(
       ([, value]) => value.trim() !== '',
     );

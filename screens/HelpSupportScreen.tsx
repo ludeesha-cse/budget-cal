@@ -15,40 +15,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import { HELP_TOPICS } from '../config/helpTopics';
 
-// TODO: replace with real WhatsApp number before release.
-// Digits only, in full international form: country code followed by the
-// subscriber number, with no '+', no leading zero and no spaces or
-// dashes — that is exactly the format wa.me expects, and the most common
-// way these links are shipped broken. The value below is a placeholder
-// and is deliberately NOT a plausible real number, so a missed
-// replacement fails visibly in testing instead of quietly messaging a
-// stranger.
-const SUPPORT_WHATSAPP_NUMBER = '00000000000';
+const SUPPORT_WHATSAPP_NUMBER = '94701838014';
 
-// wa.me is the link format that actually opens WhatsApp — a `tel:` link
-// hands the number to the phone dialer instead, which is not what anyone
-// tapping a "message us on WhatsApp" row expects. Deliberately no
-// pre-filled `?text=` body: the user is writing about their own problem,
-// and a canned opener just has to be deleted first.
 const SUPPORT_WHATSAPP_URL = `https://wa.me/${SUPPORT_WHATSAPP_NUMBER}`;
 
-// The reference version of the first-launch carousel. Same topics, same
-// order (both read config/helpTopics.ts), but rendering each topic's
-// `detail` paragraphs instead of its one-slide `summary` — written for
-// someone who arrived here with a specific question rather than someone
-// swiping through on their first day.
-//
-// Reachable from More at any time, independent of onboarding state: this
-// is not part of the first-launch flow and never gates anything.
 function HelpSupportScreen(): React.JSX.Element {
   const { colors } = useTheme();
 
-  // openURL rather than a raw <Text onPress> so the OS decides what
-  // handles the link — WhatsApp if installed, otherwise wa.me in a
-  // browser, which is that link format's own documented fallback. This
-  // opens an external app via the device's link handler; it is not a
-  // network request this app makes, and nothing about the user's data
-  // goes with it.
   const handleWhatsAppPress = async () => {
     try {
       await Linking.openURL(SUPPORT_WHATSAPP_URL);

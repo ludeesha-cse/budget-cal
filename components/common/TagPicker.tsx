@@ -13,11 +13,6 @@ type Props = {
   emptyMessage?: string;
 };
 
-// Multi-select tag chip row, shared by TransactionForm and IncomeForm — a
-// plain hint line when there are no tags yet, otherwise a wrapping row of
-// toggleable chips. Selection is fully controlled: the caller owns
-// `selectedIds` and reacts to `onToggle`, same convention as every other
-// shared form control in this app.
 function TagPicker({
   tags,
   selectedIds,

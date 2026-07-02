@@ -16,25 +16,12 @@ import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 
-// Lists ENABLED currencies and lets the user enable a disabled one or add
-// a brand-new one; the seeded default currency is flagged with a badge
-// and can't be disabled or added again. Every picker/tab elsewhere in the
-// app (budgets, transactions, reports, ...) only ever shows currencies
-// enabled here — see getActiveCurrencies() in db/queries/currencies.ts.
-//
-// The "Add Currency" sheets themselves now live in
-// components/currencies/AddCurrencySheets.tsx rather than here, because
-// the first-launch DefaultCurrencyScreen offers the same flow — see that
-// component's own header.
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
 function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
-  // Always the FULL list (active + disabled) — this screen is the one
-  // place in the app that needs both, so it can list disabled currencies
-  // as re-enable candidates in the "Add Currency" sheet below.
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
 
@@ -65,10 +52,6 @@ function CurrenciesScreen(): React.JSX.Element {
     }, 'Cannot set default currency');
   };
 
-  // Soft, reversible opt-out — the currency row itself, and any past data
-  // in it, is untouched. It just stops appearing in this screen's active
-  // list and in every picker/tab across the app until re-enabled from the
-  // "Add Currency" sheet below.
   const handleDisable = (currencyId: number) => {
     runAction(async () => {
       await setCurrencyActive(currencyId, false);

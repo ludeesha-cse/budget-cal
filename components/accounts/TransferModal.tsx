@@ -62,6 +62,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
             label: `${a.name} (${a.type})`,
             value: String(a.id),
           }))}
+          label="From"
         />
       )}
 
@@ -84,6 +85,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
                 label: `${b.currencyCode} — ${b.currencyName}`,
                 value: String(b.currencyId),
               }))}
+              label="Currency"
             />
           )}
         </>
@@ -103,6 +105,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
                 label: `${a.name} (${a.type})`,
                 value: String(a.id),
               }))}
+              label="To"
             />
           )}
         </>

@@ -97,6 +97,7 @@ function LoanFormFields({
         selectedValue={values.currencyId}
         onValueChange={form.setCurrencyId}
         items={currencies.map(c => ({ label: `${c.code} — ${c.name}`, value: String(c.id) }))}
+        label="Currency"
       />
 
       <Text style={[styles.label, { color: colors.text }]}>
@@ -110,6 +111,7 @@ function LoanFormFields({
           label: `${a.name} (${a.type})`,
           value: String(a.id),
         }))}
+        label={type === 'Liability' ? 'Deposit into' : 'Paid from'}
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Due date (optional)</Text>
@@ -145,6 +147,7 @@ function LoanFormFields({
             selectedValue={values.interestPeriod}
             onValueChange={form.setInterestPeriod}
             items={INTEREST_PERIODS.map(p => ({ label: p, value: p }))}
+            label="Interest period"
           />
         </>
       )}

@@ -26,10 +26,6 @@ import { useUpdateBalance } from '../hooks/useUpdateBalance';
 import { usePayOffCard } from '../hooks/usePayOffCard';
 import { useTransfer } from '../hooks/useTransfer';
 
-// Purely a display grouping (matches the mockup's "BANK & CASH" section
-// label) — has no effect on which accounts are eligible for what, that's
-// still governed entirely by each account's own `type`. A section with
-// no matching accounts is simply never rendered.
 const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
   { label: 'Bank & Cash', types: ['Cash', 'Bank'] },
   { label: 'Crypto', types: ['CryptoWallet'] },
@@ -39,10 +35,6 @@ const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;
 
-// Orchestrator: wires the six Accounts hooks (data + five independent
-// modal flows) to their matching components. Every field-level concern
-// lives in one of those hooks or components now — this file only ever
-// decides which one to call and in what order.
 function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
@@ -76,9 +68,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     );
   };
 
-  // Mirrors closeAccount's own zero-balance gate here so the blocked path
-  // shows an explanatory message instead of a confirm dialog — there's no
-  // "close anyway" option, by design.
   const handleClose = (account: AccountWithBalances) => {
     const isZeroBalance = account.balances.every(b => b.balance === 0);
     if (!isZeroBalance) {
@@ -170,11 +159,6 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
 
       <AccountFormModal form={accountForm} currencies={currencies} tier={tier} />
 
-      {/* Deliberately placed here rather than as a SettingsHome list entry
-          or a Dashboard card — net worth is sensitive enough that it
-          should take a real choice to see, not show up on the screen the
-          app opens to or a flat row one tap from More. See NetWorthScreen's
-          own header comment. */}
       <Pressable onPress={() => navigation.navigate('NetWorth')}>
         <Card colors={colors} style={styles.netWorthLink}>
           <View

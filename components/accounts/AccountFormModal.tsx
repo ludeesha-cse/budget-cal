@@ -57,6 +57,7 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
         selectedValue={values.type}
         onValueChange={setType}
         items={ACCOUNT_TYPES.map(t => ({ label: t, value: t }))}
+        label="Type"
       />
       {/* Only while creating — editing an existing account of a premium
           type is never blocked, so flagging it here would be misleading
@@ -80,6 +81,7 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
               label: `${c.code} — ${c.name}`,
               value: String(c.id),
             }))}
+            label="Initial currency"
           />
 
           <Text style={[styles.label, { color: colors.text }]}>

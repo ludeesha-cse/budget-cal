@@ -25,27 +25,13 @@ import { scaleFont, typography } from '../theme/typography';
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
 type Props = {
-  // Same shape as OnboardingScreen's — App.tsx's RootFlow owns what comes
-  // next (the normal tab navigator), so this screen needs no navigator
-  // and no route of its own.
   onDone: () => void;
 };
 
-// Step two of first launch: confirm which currency everything defaults to.
-// Deliberately a confirmation, not a forced choice — db/index.ts already
-// seeds LKR as the default, so the common case is a user who taps Continue
-// once without changing anything. The screen exists because the LESS
-// common case (someone whose money isn't in rupees) would otherwise have
-// to discover More → Currencies on their own after their first few entries
-// were already recorded against the wrong default.
 function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const runAction = useAsyncAction();
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
-  // What the DB says the default is right now, captured on load. Compared
-  // against `selectedId` on Continue so setDefaultCurrency() is only
-  // called when the user genuinely picked something else — re-writing the
-  // same default would run a two-statement transaction for no reason.
   const [storedDefaultId, setStoredDefaultId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,21 +39,14 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
   const [confirming, setConfirming] = useState(false);
 
   const load = useCallback(async () => {
-    // getCurrencies() (the FULL list, active + disabled) rather than
-    // getActiveCurrencies(), because the "Add Currency" sheet below needs
-    // the disabled ones to offer as re-enable candidates — same reason
-    // CurrenciesScreen reads the full list. Only the active ones are
-    // offered as a default below, though: setCurrencyActive() refuses to
-    // disable the default currency precisely because the app assumes its
-    // default is always usable, and letting first launch pick a disabled
-    // one would walk straight into the state that guard exists to prevent.
+
     const [rows, current] = await Promise.all([
       getCurrencies(),
       getDefaultCurrency(),
     ]);
     setAllCurrencies(rows);
     setStoredDefaultId(current?.id ?? null);
-    // Only seeds the selection the first time — a reload after adding a
+    // Only seeds the selection the first time. a reload after adding a
     // currency must not throw away a choice the user already made.
     setSelectedId(previous => previous ?? current?.id ?? null);
     setLoading(false);
@@ -95,9 +74,7 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
     }
     setConfirming(true);
     await runAction(async () => {
-      // storedDefaultId == null covers the theoretical "no currency is
-      // flagged default at all" case — there the write is required, not
-      // optional, so it can't be skipped by the equality check alone.
+      
       if (storedDefaultId == null || selectedId !== storedDefaultId) {
         console.log(
           `[first launch] changing default currency ${storedDefaultId} -> ${selectedId}`,
@@ -111,10 +88,6 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
       await setDefaultCurrencyConfirmed();
       onDone();
     }, 'Cannot confirm default currency');
-    // Not in a `finally` — if the action succeeded, onDone() has already
-    // swapped this screen out and setting state on the way out would be a
-    // no-op at best. This only matters on the failure path, where the
-    // Alert has been shown and the button needs to become tappable again.
     setConfirming(false);
   };
 

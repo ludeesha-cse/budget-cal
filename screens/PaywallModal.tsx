@@ -16,10 +16,7 @@ const PREMIUM_FEATURES = [
   'Unlimited categories',
 ];
 
-// Rendered once at the root (see App.tsx), driven entirely by
-// PaywallContext — there is exactly one of these for the whole app, so
-// it can overlay whatever screen is currently active as a true modal
-// rather than a pushed route, and dismissing it never navigates anywhere.
+
 function PaywallModal(): React.JSX.Element {
   const { colors } = useTheme();
   const { isOpen, request, closePaywall } = usePaywall();
@@ -48,15 +45,7 @@ function PaywallModal(): React.JSX.Element {
 
   const handleClose = () => {
     setPurchaseMessage(null);
-    // Fires before closePaywall() clears `request` — lets whichever
-    // gated screen opened this restore its own form Modal (see the iOS
-    // fix in AccountsScreen/CategoriesScreen/InstallmentPlansScreen: they
-    // hide that Modal before calling openPaywall so only one native
-    // Modal is ever visible at once, and use this to bring it back now
-    // that the paywall itself is going away).
     request?.onDismiss?.();
-    // Just hides the overlay — the screen underneath was never
-    // unmounted, so whatever the user had filled in is still there.
     closePaywall();
   };
 

@@ -167,6 +167,7 @@ function InstallmentFormFields({
         selectedValue={values.categoryId}
         onValueChange={form.setCategoryId}
         items={categories.map(c => ({ label: c.name, value: String(c.id) }))}
+        label="Category"
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
@@ -178,6 +179,7 @@ function InstallmentFormFields({
           label: `${c.code} — ${c.name}`,
           value: String(c.id),
         }))}
+        label="Currency"
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Start date</Text>

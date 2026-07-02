@@ -7,28 +7,13 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { formatDateString } from '../../utils/date';
 
 type Props = {
-  // null is only meaningful for optional date fields (e.g. an installment
-  // plan's due date) — the trigger falls back to `placeholder`, and the
-  // picker itself opens on today's date rather than crashing on `new
-  // Date(null)`. Screens that clear a date back to null keep their own
-  // "Clear" affordance outside this component; DateField only opens/edits.
+
   value: string | null; // 'YYYY-MM-DD'
   onChange: (date: string) => void;
   placeholder?: string;
-  // Most screens are fine with the default plain <Button> trigger. A couple
-  // of inline/compact spots (e.g. a pill-styled date chip next to a
-  // contribution row) need their own look — this hands back the resolved
-  // label and open handler so the screen can render whatever trigger it
-  // wants without duplicating the picker/Modal machinery below.
   renderTrigger?: (label: string, onPress: () => void) => React.ReactNode;
 };
 
-// Wraps @react-native-community/datetimepicker's two very different native
-// presentations behind one component: Android shows its own dialog inline
-// (no wrapper needed, and it dismisses itself on pick/cancel), while iOS has
-// no built-in dismiss chrome, so it's shown inside a bottom-sheet-style
-// Modal with an explicit Done button. Screens only ever see a plain
-// 'YYYY-MM-DD' string in and out.
 function DateField({
   value,
   onChange,

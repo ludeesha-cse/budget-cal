@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
+import { BottomSheetPickerContext } from './BottomSheetModal';
+import { typography, scaleFont } from '../theme/typography';
 
 export type CollapsiblePickerOption = {
   label: string;
@@ -12,6 +14,10 @@ type CollapsiblePickerProps = {
   selectedValue: string;
   onValueChange: (value: string) => void;
   items: CollapsiblePickerOption[];
+  // The field's own name (e.g. "Currency", "Account type") — shown as the
+  // picker's title, whether it hands off to a parent BottomSheetModal (see
+  // below) or opens its own standalone one.
+  label?: string;
 };
 
 function CollapsiblePicker({
@@ -19,9 +25,11 @@ function CollapsiblePicker({
   selectedValue,
   onValueChange,
   items,
+  label,
 }: CollapsiblePickerProps): React.JSX.Element {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
+  const pickerHost = useContext(BottomSheetPickerContext);
 
   // Selecting an option always collapses the list, even when it's the
   // option already selected — a native Picker's onValueChange only fires
@@ -31,51 +39,77 @@ function CollapsiblePicker({
     setExpanded(false);
   };
 
+  const handlePress = () => {
+    if (pickerHost) {
+      pickerHost.openPicker({
+        title: label ?? 'Select',
+        items,
+        selectedValue,
+        onSelect: onValueChange,
+      });
+      return;
+    }
+    setExpanded(true);
+  };
+
   return (
-    <View style={[styles.container, expanded && styles.containerExpanded]}>
+    <View style={styles.container}>
       <Pressable
         style={[
           styles.button,
           { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
-        onPress={() => setExpanded(current => !current)}>
+        onPress={handlePress}>
         <Text style={[styles.buttonText, { color: colors.text }]}>
           {displayLabel}
         </Text>
       </Pressable>
-      {expanded && (
-        // Capped height + internal scroll so long option lists (e.g. many
-        // currencies) don't overflow off-screen.
-        <View
-          style={[
-            styles.optionsOverlay,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}>
-          <ScrollView
-            style={styles.optionsScroll}
-            nestedScrollEnabled
-            keyboardShouldPersistTaps="handled">
-            {items.map((item, index) => (
-              <Pressable
-                key={item.value}
-                style={[
-                  styles.option,
-                  { backgroundColor: colors.surface, borderBottomColor: colors.border },
-                  index === items.length - 1 && styles.optionLast,
-                ]}
-                onPress={() => handleSelect(item.value)}>
+      {!pickerHost && (
+        <Modal
+          transparent
+          visible={expanded}
+          animationType="slide"
+          onRequestClose={() => setExpanded(false)}>
+          <View style={styles.modalFill}>
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => setExpanded(false)}
+            />
+            <View
+              style={[
+                styles.modalSheet,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}>
+              {label && (
                 <Text
-                  style={[
-                    styles.optionText,
-                    { color: colors.text },
-                    item.value === selectedValue && styles.optionTextSelected,
-                  ]}>
-                  {item.label}
+                  style={[typography.cardTitle, styles.modalTitle, { color: colors.text }]}>
+                  {label}
                 </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
+              )}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {items.map((item, index) => (
+                  <Pressable
+                    key={item.value}
+                    style={[
+                      styles.option,
+                      { borderBottomColor: colors.border },
+                      index === items.length - 1 && styles.optionLast,
+                    ]}
+                    onPress={() => handleSelect(item.value)}>
+                    <Text
+                      style={[
+                        styles.optionText,
+                        { color: colors.text },
+                        item.value === selectedValue && styles.optionTextSelected,
+                      ]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       )}
     </View>
   );
@@ -84,10 +118,6 @@ function CollapsiblePicker({
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
-  },
-  containerExpanded: {
-    zIndex: 10,
-    elevation: 10,
   },
   button: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -98,34 +128,36 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
   },
-  optionsOverlay: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: 4,
-    maxHeight: 240,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 6,
+  modalFill: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
-  optionsScroll: {
-    maxHeight: 240,
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalSheet: {
+    maxHeight: '70%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  modalTitle: {
+    marginBottom: 12,
   },
   option: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   optionLast: {
     borderBottomWidth: 0,
   },
   optionText: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
   optionTextSelected: {
     fontWeight: '700',

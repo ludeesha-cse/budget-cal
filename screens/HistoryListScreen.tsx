@@ -18,11 +18,6 @@ import { useTransactionActions } from '../hooks/useTransactionActions';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography } from '../theme/typography';
 
-// Module-scope, not inline in the FlatList below — react/no-unstable-nested-components
-// would otherwise flag a JSX-returning function declared during
-// HistoryListScreen's render as a fresh component type on every render.
-// Reads its own color from useTheme() rather than taking a prop, since
-// ItemSeparatorComponent's own signature has no room to pass one through.
 function RowSeparator(): React.JSX.Element {
   const { colors } = useTheme();
   return <View style={[styles.separator, { backgroundColor: colors.border }]} />;
@@ -48,11 +43,6 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const { handleDelete, handleDeleteTransfer } = useTransactionActions(reload);
 
   return (
-    // HistoryList's native-stack header is hidden (see App.tsx) — top-only
-    // safe area edge, same reasoning as DashboardScreen's own
-    // ScreenBackground (used here too, instead of a plain SafeAreaView,
-    // so a gradient palette like Platinum paints its sweep behind this
-    // screen's content).
     <ScreenBackground colors={colors} edges={['top']}>
       <View style={styles.container}>
         <View style={styles.header}>
@@ -141,9 +131,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 16,
     paddingHorizontal: 14,
-    // Well past the floating tab bar pill's own footprint (see App.tsx),
-    // not just a card-to-card gap — otherwise the last few rows end up
-    // scrollable-but-hidden behind the pill instead of clearing it.
     marginBottom: 116,
   },
   separator: {

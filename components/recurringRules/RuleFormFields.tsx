@@ -80,6 +80,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
         selectedValue={values.dayOfMonth}
         onValueChange={form.setDayOfMonth}
         items={DAY_OF_MONTH_OPTIONS}
+        label="Day of month"
       />
       {parsedDayPreview >= 29 && (
         <Text style={[styles.hint, { color: colors.textSecondary }]}>
@@ -100,6 +101,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
             label: `${a.name} (${a.type})`,
             value: String(a.id),
           }))}
+          label="Account"
         />
       )}
 
@@ -119,6 +121,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
               label: `${b.currencyCode} — ${b.currencyName}`,
               value: String(b.currencyId),
             }))}
+            label="Currency"
           />
         </>
       )}
@@ -134,6 +137,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
               selectedValue={values.categoryId != null ? String(values.categoryId) : ''}
               onValueChange={value => form.setCategoryId(Number(value))}
               items={categories.map(c => ({ label: c.name, value: String(c.id) }))}
+              label="Category"
             />
           )}
         </>

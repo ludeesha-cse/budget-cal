@@ -43,23 +43,10 @@ function ReportsScreen(): React.JSX.Element {
   } = useReportData(preset, includeExcluded);
 
   const selectedCurrencyCode = labelForId(currencies, currencyId, 'code', 'Select currency');
-
-  // Fixed chart width derived from the window rather than letting each
-  // chart component size itself — gifted-charts' own auto-sizing behaves
-  // inconsistently between iOS and Android, so pinning an explicit width
-  // (window width minus the screen's 16+16 horizontal padding) keeps
-  // layout predictable on both platforms.
   const windowWidth = useWindowDimensions().width;
   const chartWidth = Math.max(240, windowWidth - 32);
 
   return (
-    // Reports' own Tab.Screen now sets headerShown:false (see App.tsx) so
-    // this screen's custom "Statistics/Reports" header — previously
-    // stacked underneath React Navigation's own default native header,
-    // since nothing had opted this tab out of it — is the only header, and
-    // needs its own top safe-area inset the native header used to provide
-    // for free. ScreenBackground (not a plain SafeAreaView) so a gradient
-    // palette like Platinum paints its sweep behind this content.
     <ScreenBackground colors={colors} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <View style={styles.header}>
@@ -202,9 +189,6 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
-  // border/borderRadius/backgroundColor are NOT here — Card (see
-  // components/Card.tsx) owns those so it can swap in a gradient fill for
-  // palettes that define one. This only carries layout.
   card: {
     padding: 16,
   },

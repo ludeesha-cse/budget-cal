@@ -77,6 +77,7 @@ function SettleLoanFields({
           label: `${a.name} (${a.type})`,
           value: String(a.id),
         }))}
+        label={type === 'Receivable' ? 'Deposit into' : 'Pay from'}
       />
 
       {error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}

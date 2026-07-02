@@ -13,7 +13,7 @@ const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
   { key: 'system', label: 'System' },
 ];
 
-// A small preview of what a palette actually looks like — flat fill or
+
 // gradient sweep, resolved against the CURRENT scheme (not necessarily
 // the palette's dark variant) so "Light"/"Dark"/"System" above and the
 // swatch below always agree with each other. Picking a palette used to be
@@ -57,11 +57,6 @@ function PaletteSwatch({
   );
 }
 
-// Its own dedicated page, reached from More/Settings the same way as
-// Accounts, Categories, Currencies etc. — not a section bolted onto the
-// SettingsHome list. Theme mode (light/dark/system) plus color palette;
-// the shape (a plain screen under the Settings stack) leaves room for
-// more app-wide toggles later without changing how it's navigated to.
 function AppSettingsScreen(): React.JSX.Element {
   const {
     colors,
@@ -103,12 +98,6 @@ function AppSettingsScreen(): React.JSX.Element {
         })}
       </View>
 
-      {/* Add a new theme by appending another Palette to theme/palettes.ts's
-          PALETTES array — nothing in this screen needs to change for it to
-          show up here. Some palettes (see Palette['backgroundGradient'])
-          paint a gradient sweep instead of a flat fill; the swatch below
-          each label previews exactly that, resolved against the scheme
-          selected above. */}
       <Text style={[styles.label, styles.paletteLabel, { color: colors.text }]}>
         Color Theme
       </Text>

@@ -15,12 +15,6 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useRowEditState } from '../hooks/useRowEditState';
 
-// Same exclusion as every other posting flow (TransactionForm, IncomeForm,
-// InstallmentPlansScreen's pay modal) — a Liability/Receivable account
-// only ever moves through the loan flows. Matches payInstallment's own
-// account picker: no currency filtering either, since confirmOccurrence
-// always posts in the rule's fixed currencyId regardless of which
-// account is chosen to pay through.
 const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
 
 type PendingRow = Awaited<ReturnType<typeof getPendingOccurrences>>[number];

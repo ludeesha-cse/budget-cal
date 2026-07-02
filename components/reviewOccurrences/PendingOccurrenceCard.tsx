@@ -81,6 +81,7 @@ function PendingOccurrenceCard({
           label: `${a.name} (${a.type})`,
           value: String(a.id),
         }))}
+        label="Account"
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Date</Text>

@@ -25,12 +25,6 @@ function ExpensesByTypeScreen(): React.JSX.Element {
   // null if there's no expense activity at all this month (see load()).
   const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Currency tabs here are activity-based (only currencies with at least
-  // one expense this month) rather than every app currency — unlike
-  // CategoryBudgetsScreen, this is a view-only breakdown, so offering a
-  // tab for a currency with nothing to show would just be an empty tab.
-  // Same "available currencies" idea as Reports' useReportData.
   const load = useCallback(async () => {
     setLoading(true);
     const month = getCurrentMonthString();

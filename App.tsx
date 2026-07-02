@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
+  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -380,25 +381,27 @@ function AppNavigator(): React.JSX.Element {
       null,
     );
 
-  // The floating tab bar/FAB below are positioned with a fixed
-  // `marginBottom`/`bottom` measured from THIS view's own bottom edge —
-  // fine normally, but AndroidManifest.xml sets windowSoftInputMode to
-  // adjustResize, which shrinks this entire view's height by the
-  // keyboard's height whenever a TextInput is focused. A bottom-anchored
-  // margin inside a view that just got shorter means the bar/FAB end up
-  // sitting right above the keyboard instead of at the real screen
-  // bottom — exactly the "tab bar chases the keyboard" bug reported.
-  // Hiding both while the keyboard is visible (rather than trying to
-  // re-anchor them) is the simplest fix that also matches what a user
-  // actually wants here: neither is useful to tap while typing anyway.
+  // The floating tab bar itself now hides via React Navigation's own
+  // `tabBarHideOnKeyboard` (see screenOptions below) rather than a
+  // hand-rolled listener — it already does the platform-correct thing
+  // (keyboardWillShow/Hide on iOS, keyboardDidShow/Hide on Android) and
+  // animates out instead of snapping via `display`. The FAB below is a
+  // sibling of <Tab.Navigator>, not one of its tab bar's own elements, so
+  // it still needs its own keyboard-visibility flag to hide alongside the
+  // tab bar — mirroring the same platform split here keeps the two in
+  // sync instead of the FAB lagging behind on iOS.
+  // AndroidManifest.xml sets windowSoftInputMode to "adjustPan" (not
+  // adjustResize) specifically so that focusing a field never resizes —
+  // and therefore never re-lays-out — this view; without that, the FAB's
+  // bottom-anchored position would still jump to sit above the keyboard
+  // for a frame before this state flips, the same "chases the keyboard"
+  // bug the tab bar itself used to have.
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () =>
-      setKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener('keyboardDidHide', () =>
-      setKeyboardVisible(false),
-    );
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -479,6 +482,13 @@ function AppNavigator(): React.JSX.Element {
           screenOptions={{
             tabBarActiveTintColor: colors.primary,
             tabBarInactiveTintColor: colors.chevron,
+            // Built-in keyboard handling instead of the hand-rolled
+            // `keyboardVisible` state this used to read for `display` —
+            // internally this already uses keyboardWillShow/Hide on iOS
+            // (synced with the keyboard's own animation, eliminating the
+            // lag a keyboardDidShow-based toggle has) and animates the bar
+            // out via translateY instead of snapping `display`.
+            tabBarHideOnKeyboard: true,
             // A floating pill, not a flush-bottom bar: inset from the
             // left/right/bottom screen edges (marginHorizontal +
             // marginBottom, the last built on insets.bottom so it clears
@@ -505,11 +515,6 @@ function AppNavigator(): React.JSX.Element {
               shadowRadius: 12,
               shadowOffset: { width: 0, height: 6 },
               elevation: 8,
-              // See keyboardVisible's own comment above — this is what
-              // actually keeps the bar off the keyboard, both hiding it
-              // and giving its reserved layout space back to the screen
-              // content while a field is focused.
-              display: keyboardVisible ? 'none' : 'flex',
             },
             tabBarLabelStyle: styles.tabBarLabel,
           }}>

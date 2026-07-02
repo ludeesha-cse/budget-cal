@@ -8,14 +8,9 @@ import { scaleFont } from '../../theme/typography';
 type Props = {
   checked: boolean;
   onToggle: () => void;
-  // Differs per form — TransactionForm's covers both spending and income
-  // ("Still real spending/income...") while IncomeForm's is income-only —
-  // so it's a required prop rather than baked in here.
   hint: string;
 };
 
-// The "Exclude from budget" checkbox card, ~99% identical between
-// TransactionForm and IncomeForm (only the hint text differs).
 function ExcludeFromBudgetCheckbox({
   checked,
   onToggle,

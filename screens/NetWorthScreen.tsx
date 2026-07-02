@@ -8,12 +8,6 @@ import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
-// Its own screen, deliberately NOT a Dashboard card and NOT a flat entry
-// in the main More list — "everything you own minus everything you owe,
-// in one number" is exactly the figure someone glancing over your
-// shoulder shouldn't see for free. Reached from Accounts ("View Net
-// Worth →" at the bottom of that screen) so getting here takes an actual
-// choice, not just opening the app or opening More.
 function NetWorthScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const [netWorthByCurrency, setNetWorthByCurrency] = useState<

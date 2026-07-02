@@ -63,6 +63,7 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
             label: `${c.code} — ${c.name}`,
             value: String(c.id),
           }))}
+          label="Currency"
         />
       )}
 

@@ -70,6 +70,7 @@ function PayOffCardModal({ state }: Props): React.JSX.Element {
                 label: `${a.name} (${a.type})`,
                 value: String(a.id),
               }))}
+              label="Pay from"
             />
           )}
 

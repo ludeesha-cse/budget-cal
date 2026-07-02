@@ -97,10 +97,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  // Export is a free-tier feature with no gating check here at all — see
-  // the Stage 17a spec: it's the only way users get their data out, and
-  // locking it behind entitlement would trap people away from their own
-  // records.
   const handleExport = async () => {
     if (exporting) {
       return;
@@ -119,11 +115,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
     }
   };
 
-  // Formats a validation-error list for an Alert body — Alert has no
-  // scrollable custom view, so this shows the first handful of errors
-  // (each already carrying its sheet name and 1-based row number from
-  // utils/excelImport.ts) plus a "and N more" tail rather than trying to
-  // cram every row's problem onto the screen at once.
   const formatErrors = (errors: ValidationError[]): string => {
     const MAX_SHOWN = 8;
     const lines = errors
@@ -170,12 +161,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
     }
   };
 
-  // Picks a file, reads it, and runs Phase 1 (validateExcelFile) —
-  // nothing here writes to the database. Only once validation returns
-  // { valid: true } does the confirmation step below hand the parsed
-  // data to importData (Phase 2). Mixing the two phases together is
-  // exactly what utils/excelImport.ts's own header comment warns
-  // against, so this function only ever reads.
   const pickAndValidate = async (mode: ImportMode) => {
     let picked;
     try {
@@ -259,10 +244,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       return;
     }
 
-    // REPLACE requires a deliberate two-step confirmation, not a single
-    // OK — the first step shows what's in the file, the second is a
-    // standalone warning naming the permanent deletion explicitly, per
-    // the Stage 17b spec.
     Alert.alert('Ready to restore', `This file contains:\n\n${summary}`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -422,13 +403,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
           icon: SettingsIcon,
           onPress: () => navigation.navigate('AppSettings'),
         },
-        // Deliberately the LAST row of the last section — Stage 19 spec
-        // places Help & Support at the very bottom of this list, below
-        // everything else including the premium/upgrade entry point (which
-        // this screen doesn't render as a row of its own today; the paywall
-        // is opened from the individual gated screens via usePaywall()).
-        // If a Premium row is ever added to this "App" section, it goes
-        // above this one.
         {
           key: 'helpSupport',
           label: 'Help & Support',
@@ -442,13 +416,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   ];
 
   return (
-    // No edges passed to ScreenBackground — this screen sits under a real
-    // native-stack header (SettingsStack's own 'More' title, see App.tsx),
-    // which already provides its own top safe-area inset; adding one here
-    // too would just double it up as dead space. Still uses
-    // ScreenBackground (not a plain ScrollView backgroundColor) so a
-    // gradient palette like Platinum paints its sweep behind this screen
-    // too.
     <ScreenBackground colors={colors}>
       <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       {devEntitlement && (
@@ -499,10 +466,6 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   );
 }
 
-// Extracted rather than inlined in the sections.map above so each row's
-// icon/chevron/spinner rendering only has to be written once — the export
-// and import rows are the same component as every other row, just with a
-// subtitle and a loading spinner substituted in for the chevron.
 function SettingsListRow({
   row,
   colors,
@@ -551,17 +514,12 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
-    // Clears the floating tab bar pill + FAB (see App.tsx) — same
-    // reasoning as DashboardScreen's own container.
-    paddingBottom: 120,
+    paddingBottom: 60,
   },
   sectionLabel: {
     marginTop: 20,
     marginBottom: 10,
   },
-  // border/borderRadius/backgroundColor are NOT here — Card (see
-  // components/Card.tsx) owns those so it can swap in a gradient fill for
-  // palettes that define one. This only carries layout.
   card: {
     paddingHorizontal: 12,
   },

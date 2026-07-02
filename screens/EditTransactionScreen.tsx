@@ -74,9 +74,6 @@ function EditTransactionScreen({
         initialValues={{
           date: transaction.date,
           amount: transaction.amount,
-          // Only legacy Income rows (created before categoryId became
-          // nullable) can actually be null here — TransactionForm still
-          // requires picking one before submit either way.
           categoryId: transaction.categoryId ?? undefined,
           description: transaction.description ?? '',
           accountId: transaction.accountId,

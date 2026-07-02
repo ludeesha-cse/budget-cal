@@ -23,8 +23,6 @@ import { useLoanAccountsData } from '../hooks/useLoanAccountsData';
 import { useLoanForm } from '../hooks/useLoanForm';
 import { useSettleLoan } from '../hooks/useSettleLoan';
 
-// Only these can fund a loan — you can't borrow into a Liability or lend
-// out of another Receivable.
 const COUNTERPART_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
 const TYPE_LABELS: Record<LoanAccountType, { heading: string; add: string }> = {
@@ -37,9 +35,6 @@ const LOAN_TYPE_OPTIONS: SegmentedToggleOption<LoanAccountType>[] = [
   { key: 'Receivable', label: 'Receivables' },
 ];
 
-// Orchestrator: wires the three Liabilities & Receivables hooks (loan
-// list/totals data, the add/reuse form, and the settle flow) to their
-// matching components.
 function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const { tier } = useEntitlement();

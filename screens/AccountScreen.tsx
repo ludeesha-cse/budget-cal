@@ -70,10 +70,6 @@ function AccountScreen(): React.JSX.Element {
               onSignOut={handleSignOut}
             />
           ) : (
-            // iOS — Stage 18a (Sign in with Apple + iOS Google Sign-In)
-            // hasn't been built yet. Deliberately not showing a fake
-            // "iOS Google Sign-In" button here — see AuthContext.tsx's
-            // divergence comment for why.
             <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
               Sign-in isn't available on iOS yet.
             </Text>

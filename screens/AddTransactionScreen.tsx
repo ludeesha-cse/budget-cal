@@ -49,10 +49,6 @@ function AddScreen(): React.JSX.Element {
     setSuccessMessage(null);
   };
 
-  // Same reasoning as LiabilitiesReceivablesScreen's identical effect —
-  // the FAB (App.tsx) navigates here with a fresh `initialTab` while this
-  // tab may already be mounted from an earlier visit, so the useState
-  // initializer above alone won't react to a second navigation.
   useEffect(() => {
     if (route.params?.initialTab) {
       switchTab(route.params.initialTab);
@@ -144,11 +140,6 @@ function AddScreen(): React.JSX.Element {
         )}
       </View>
 
-      {/* Common to both tabs, not tied to activeTab — sits below whichever
-          form is showing. Settling a loan repayment/receivable used to be
-          two separate tabs right here; now it's one tap through to the
-          screen that actually owns that flow (see
-          LiabilitiesReceivablesScreen's Settle / Pay Off action). */}
       <Pressable
         onPress={() =>
           navigation.navigate('Settings', {

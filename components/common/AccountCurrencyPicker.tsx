@@ -49,6 +49,7 @@ function AccountCurrencyPicker({
         selectedValue={accountId != null ? String(accountId) : ''}
         onValueChange={value => onAccountIdChange(Number(value))}
         items={accounts.map(a => ({ label: a.name, value: String(a.id) }))}
+        label="Account"
       />
 
       {accountBalances.length > 1 && (
@@ -70,6 +71,7 @@ function AccountCurrencyPicker({
               label: `${b.currencyCode} — ${b.currencyName}`,
               value: String(b.currencyId),
             }))}
+            label="Currency"
           />
         </>
       )}
