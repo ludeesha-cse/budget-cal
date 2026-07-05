@@ -13,9 +13,9 @@ import ScreenBackground from '../components/ScreenBackground';
 import EmptyState from '../components/common/EmptyState';
 import AddCurrencySheets from '../components/currencies/AddCurrencySheets';
 import {
+  confirmDefaultCurrency,
   getCurrencies,
   getDefaultCurrency,
-  setDefaultCurrency,
   setDefaultCurrencyConfirmed,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
@@ -32,20 +32,17 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const runAction = useAsyncAction();
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
-  const [storedDefaultId, setStoredDefaultId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   const load = useCallback(async () => {
-
     const [rows, current] = await Promise.all([
       getCurrencies(),
       getDefaultCurrency(),
     ]);
     setAllCurrencies(rows);
-    setStoredDefaultId(current?.id ?? null);
     // Only seeds the selection the first time. a reload after adding a
     // currency must not throw away a choice the user already made.
     setSelectedId(previous => previous ?? current?.id ?? null);
@@ -75,16 +72,7 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
     setConfirming(true);
     await runAction(async () => {
       
-      if (storedDefaultId == null || selectedId !== storedDefaultId) {
-        console.log(
-          `[first launch] changing default currency ${storedDefaultId} -> ${selectedId}`,
-        );
-        await setDefaultCurrency(selectedId);
-      } else {
-        console.log(
-          `[first launch] keeping existing default currency ${storedDefaultId} — no write`,
-        );
-      }
+      await confirmDefaultCurrency(selectedId);
       await setDefaultCurrencyConfirmed();
       onDone();
     }, 'Cannot confirm default currency');

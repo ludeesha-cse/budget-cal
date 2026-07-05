@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import BottomSheetModal from '../BottomSheetModal';
@@ -8,6 +8,9 @@ import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useEntityFormModal } from '../../hooks/useEntityFormModal';
 import { addCurrency, setCurrencyActive } from '../../db/queries';
 import type { getCurrencies } from '../../db/queries';
+import type { PaywallRequest } from '../../contexts/PaywallContext';
+import type { EntitlementTier } from '../../hooks/useEntitlement';
+import { canAddCurrency } from '../../utils/entitlementChecks';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type CurrencyFormValues = { code: string; name: string };
@@ -27,6 +30,19 @@ type Props = {
   // Called after a currency is enabled or created, so the parent can
   // re-read its list. The picker closes itself on enable.
   onChanged: () => void | Promise<void>;
+  // Gates both "enable an existing currency" and "add a brand-new
+  // currency" behind canAddCurrency. Omitted by the first-launch
+  // DefaultCurrencyScreen on purpose — that flow always collapses to a
+  // single active currency on confirm (see confirmDefaultCurrency), so
+  // gating this picker there would block a free user from even
+  // previewing a different currency as their one starting default.
+  // CurrenciesScreen (the ongoing "add another currency" flow, where the
+  // free-tier limit actually matters) always passes this.
+  entitlement?: {
+    activeCurrencyCount: number;
+    tier: EntitlementTier;
+    openPaywall: (request: PaywallRequest) => void;
+  };
 };
 
 // The Stage 7b "Add Currency" flow, lifted verbatim out of
@@ -48,19 +64,30 @@ function AddCurrencySheets({
   onClose,
   disabledCurrencies,
   onChanged,
+  entitlement,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const runAction = useAsyncAction();
 
-  const {
-    visible: formVisible,
-    values,
-    setValues,
-    canSave: formCanSave,
-    openAdd: openNewCurrencyForm,
-    close: closeForm,
-    submit: handleSubmit,
-  } = useEntityFormModal<CurrencyRow, CurrencyFormValues, CurrencyFormValues>({
+  // Mirrors useEntityFormModal's own waitForFullyClosed, but for the
+  // PICKER sheet below — that sheet's visible/onClose are owned by the
+  // parent screen, not by useEntityFormModal, so there's no built-in
+  // close-confirmation to await before opening the paywall on top of it.
+  // Without waiting, two native Modals can end up open at once, which
+  // freezes iOS solid (same issue useAccountForm/useInstallmentForm's
+  // onCreate work around for their own form sheets).
+  const pickerCloseWaitersRef = useRef<Array<() => void>>([]);
+  const notifyPickerFullyClosed = () => {
+    const waiters = pickerCloseWaitersRef.current;
+    pickerCloseWaitersRef.current = [];
+    waiters.forEach(resolve => resolve());
+  };
+  const waitForPickerFullyClosed = () =>
+    new Promise<void>(resolve => {
+      pickerCloseWaitersRef.current.push(resolve);
+    });
+
+  const form = useEntityFormModal<CurrencyRow, CurrencyFormValues, CurrencyFormValues>({
     initialValues: { code: '', name: '' },
     // Never actually invoked — this flow is add-only (no edit path, hence
     // no onUpdate below), so openEdit is never called. Still required by
@@ -71,13 +98,68 @@ function AddCurrencySheets({
         ? 'Enter a currency code and name.'
         : null,
     toParams: v => ({ code: v.code.trim().toUpperCase(), name: v.name.trim() }),
-    onCreate: params => addCurrency(params.code, params.name),
+    onCreate: async params => {
+      const performCreate = () => addCurrency(params.code, params.name);
+      const check = entitlement
+        ? canAddCurrency(entitlement.activeCurrencyCount, entitlement.tier)
+        : { allowed: true };
+      if (check.allowed) {
+        await performCreate();
+        return;
+      }
+      // Hide this screen's own form sheet before showing the paywall's —
+      // see useAccountForm/useInstallmentForm's own onCreate for why (two
+      // native Modals open at once freezes iOS solid). onDismiss restores
+      // the form, still filled in, if the user backs out without buying.
+      form.setVisible(false);
+      await form.waitForFullyClosed();
+      await new Promise<void>(resolve => {
+        entitlement!.openPaywall({
+          reason: check.reason ?? 'Multiple currencies require Premium.',
+          onPurchaseSuccess: async () => {
+            await performCreate();
+            resolve();
+          },
+          onDismiss: () => form.setVisible(true),
+        });
+      });
+    },
     onUpdate: undefined,
     onSaved: onChanged,
     errorTitle: 'Cannot add currency',
   });
 
+  const {
+    visible: formVisible,
+    values,
+    setValues,
+    canSave: formCanSave,
+    openAdd: openNewCurrencyForm,
+    close: closeForm,
+    submit: handleSubmit,
+  } = form;
+
   const handleEnable = (currencyId: number) => {
+    const check = entitlement
+      ? canAddCurrency(entitlement.activeCurrencyCount, entitlement.tier)
+      : { allowed: true };
+
+    if (!check.allowed) {
+      onClose();
+      waitForPickerFullyClosed().then(() => {
+        entitlement!.openPaywall({
+          reason: check.reason ?? 'Multiple currencies require Premium.',
+          onPurchaseSuccess: () => {
+            runAction(async () => {
+              await setCurrencyActive(currencyId, true);
+              await onChanged();
+            }, 'Cannot enable currency');
+          },
+        });
+      });
+      return;
+    }
+
     runAction(async () => {
       await setCurrencyActive(currencyId, true);
       await onChanged();
@@ -90,6 +172,7 @@ function AddCurrencySheets({
       <BottomSheetModal
         visible={visible}
         onClose={onClose}
+        onFullyClosed={notifyPickerFullyClosed}
         title="Add Currency">
         {disabledCurrencies.length > 0 ? (
           <>

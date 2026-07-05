@@ -26,11 +26,11 @@ import { useUpdateBalance } from '../hooks/useUpdateBalance';
 import { usePayOffCard } from '../hooks/usePayOffCard';
 import { useTransfer } from '../hooks/useTransfer';
 
+// Excluded Liability/Receivable from account screen to avoid confusion
 const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
   { label: 'Bank & Cash', types: ['Cash', 'Bank'] },
   { label: 'Crypto', types: ['CryptoWallet'] },
   { label: 'Credit Cards', types: ['CreditCard'] },
-  { label: 'Loans', types: ['Liability', 'Receivable'] },
 ];
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;

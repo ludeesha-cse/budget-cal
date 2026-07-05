@@ -35,3 +35,7 @@
  additional feature in future:
  - event and task plan option - another type of account. add that as the purpose for payment and add the value to the account as expense
  - Allow users to add a shortcut to show the selected account on the home screen for quick access. This can be done by long-pressing the account in the list and selecting "Add to Home Screen" or similar option.
+ - add ram cache using tanstack query to reduce the number of queries to the database and improve performance. This can be done by caching frequently accessed data in memory and only querying the database when necessary.
+
+ - for savings goal- allow users to add an existing account that you decide to save money in. And add a transfer option to transfer money from a selected account to the target account. This will help users to track their savings and make it easier to reach their savings goals. 
+ when you have a plan to save 100000 lkr, in account A. Then you can transfer 10000 lkr from account B to account A, and the savings goal will be updated accordingly. This will also help users to keep track of their progress towards their savings goals and make it easier to reach them.

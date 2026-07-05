@@ -2,15 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { Check, ChevronRight, Scale } from 'lucide-react-native';
+import { Check, ChevronRight, Scale, X } from 'lucide-react-native';
 import TransactionForm, {
   TransactionFormSubmitValues,
 } from '../components/TransactionForm';
 import IncomeForm, { IncomeFormSubmitValues } from '../components/IncomeForm';
 import Card from '../components/Card';
+import ScreenBackground from '../components/ScreenBackground';
 import { addIncome, addTransaction, setTransactionTags } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
-import { scaleFont } from '../theme/typography';
+import { scaleFont, typography } from '../theme/typography';
 import type { RootTabParamList } from '../navigation/types';
 
 type AddScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Add'>;
@@ -90,7 +91,24 @@ function AddScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenBackground colors={colors} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.headerTextGroup}>
+          <Text style={[typography.eyebrow, styles.eyebrow, { color: colors.primary }]}>
+            New Entry
+          </Text>
+          <Text style={[typography.screenTitle, styles.headerTitle, { color: colors.text }]}>
+            {activeTab === 'Expense' ? 'Add Expense' : 'Add Income'}
+          </Text>
+        </View>
+        <Pressable
+          hitSlop={12}
+          style={[styles.closeButton, { backgroundColor: colors.neutralSoft }]}
+          onPress={() => navigation.navigate('Dashboard')}>
+          <X size={20} color={colors.text} />
+        </Pressable>
+      </View>
+
       <View style={styles.tabRow}>
         {TABS.map(tab => (
           <Pressable
@@ -156,13 +174,34 @@ function AddScreen(): React.JSX.Element {
           <ChevronRight size={18} color={colors.chevron} />
         </Card>
       </Pressable>
-    </View>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  headerTextGroup: {
     flex: 1,
+  },
+  eyebrow: {
+    marginBottom: 2,
+  },
+  headerTitle: {
+    fontSize: scaleFont(26),
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabRow: {
     flexDirection: 'row',

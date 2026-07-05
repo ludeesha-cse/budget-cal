@@ -24,14 +24,23 @@ function AmountInput({
   return (
     <>
       <Text
-        style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
+        style={[
+          typography.eyebrow,
+          styles.label,
+          { color: colors.textSecondary },
+        ]}
+      >
         {label}
       </Text>
       <TextInput
         style={[
-          typography.amountLarge,
+          typography.amountMid,
           styles.amountInput,
-          { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          {
+            borderColor: colors.border,
+            color: colors.text,
+            backgroundColor: colors.surface,
+          },
         ]}
         value={value}
         onChangeText={onChangeText}

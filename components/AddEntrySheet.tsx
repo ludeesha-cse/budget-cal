@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
+import { useSlideSheet } from '../hooks/useSlideSheet';
 
 export type AddEntryKind =
   | 'Expense'
@@ -64,135 +65,165 @@ type Props = {
 // full-height bottom sheet, since it only ever has to hold four rows.
 // Tapping the dimmed backdrop or any row closes it; onSelect fires after
 // the sheet is already closing so the destination screen never has to
-// render underneath a still-visible modal.
+// render underneath a still-visible modal. Slides up/down via
+// useSlideSheet — the same choreography BottomSheetModal uses — rather
+// than RN's own `animationType="fade"`, which behaved as an instant
+// snap on both open and close.
 function AddEntrySheet({
   visible,
   onClose,
   onSelect,
-}: Props): React.JSX.Element {
+}: Props): React.JSX.Element | null {
   const { colors } = useTheme();
+  const { rendered, modalVisible, translateY, backdropOpacity, handleNativeDismiss } =
+    useSlideSheet(visible);
 
   const handleSelect = (kind: AddEntryKind) => {
     onClose();
     onSelect(kind);
   };
 
+  if (!rendered) {
+    return null;
+  }
+
   return (
     <Modal
-      visible={visible}
+      visible={modalVisible}
       transparent
-      animationType="fade"
+      animationType="none"
+      statusBarTranslucent
       onRequestClose={onClose}
+      onDismiss={handleNativeDismiss}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <View style={styles.fill}>
+        <Animated.View
+          style={[styles.backdrop, { opacity: backdropOpacity }]}
+          pointerEvents="box-none"
+          renderToHardwareTextureAndroid>
+          <Pressable style={styles.backdropPress} onPress={onClose} />
+        </Animated.View>
         <View style={styles.sheetWrap} pointerEvents="box-none">
-          <Pressable
+          <Animated.View
+            renderToHardwareTextureAndroid
             style={[
-              styles.sheet,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-            onPress={() => {}}
-          >
-            <Text
+              styles.sheetSlide,
+              { opacity: backdropOpacity, transform: [{ translateY }] },
+            ]}>
+            <Pressable
               style={[
-                styles.eyebrow,
-                typography.eyebrow,
-                { color: colors.textSecondary },
+                styles.sheet,
+                { backgroundColor: colors.surface, borderColor: colors.border },
               ]}
+              onPress={() => {}}
             >
-              Add Entry
-            </Text>
-            {OPTIONS.map(option => (
-              <Pressable
-                key={option.kind}
-                style={({ pressed }) => [
-                  styles.row,
-                  pressed && { opacity: 0.6 },
+              <Text
+                style={[
+                  styles.eyebrow,
+                  typography.eyebrow,
+                  { color: colors.textSecondary },
                 ]}
-                onPress={() => handleSelect(option.kind)}
               >
-                <View
-                  style={[
-                    styles.iconCircle,
-                    option.kind === 'Expense' && {
-                      backgroundColor: colors.dangerSoft,
-                    },
-                    option.kind === 'Income' && {
-                      backgroundColor: colors.successSoft,
-                    },
-                    option.kind === 'LiabilityRepayment' && {
-                      backgroundColor: colors.primary,
-                    },
-                    option.kind === 'ReceivableIncome' && [
-                      styles.iconCircleOutline,
-                      { borderColor: colors.border },
-                    ],
-                    option.kind === 'Withdraw' && {
-                      backgroundColor: colors.primarySoft,
-                    },
-                    option.kind === 'Transfer' && [
-                      styles.iconCircleOutline,
-                      { borderColor: colors.border },
-                    ],
+                Add Entry
+              </Text>
+              {OPTIONS.map(option => (
+                <Pressable
+                  key={option.kind}
+                  style={({ pressed }) => [
+                    styles.row,
+                    pressed && { opacity: 0.6 },
                   ]}
+                  onPress={() => handleSelect(option.kind)}
                 >
-                  {option.kind === 'Expense' && (
-                    <Minus size={18} color={colors.danger} strokeWidth={2.5} />
-                  )}
-                  {option.kind === 'Income' && (
-                    <Plus size={18} color={colors.success} strokeWidth={2.5} />
-                  )}
-                  {option.kind === 'LiabilityRepayment' && (
-                    <ArrowUpRight
-                      size={18}
-                      color={colors.primaryText}
-                      strokeWidth={2.5}
-                    />
-                  )}
-                  {option.kind === 'ReceivableIncome' && (
-                    <ArrowDownLeft
-                      size={18}
-                      color={colors.text}
-                      strokeWidth={2.5}
-                    />
-                  )}
-                  {option.kind === 'Withdraw' && (
-                    <Banknote
-                      size={18}
-                      color={colors.primary}
-                      strokeWidth={2.5}
-                    />
-                  )}
-                  {option.kind === 'Transfer' && (
-                    <Repeat size={18} color={colors.text} strokeWidth={2.5} />
-                  )}
-                </View>
-                <View style={styles.rowText}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>
-                    {option.title}
-                  </Text>
-                  <Text
+                  <View
                     style={[
-                      styles.rowSubtitle,
-                      { color: colors.textSecondary },
+                      styles.iconCircle,
+                      option.kind === 'Expense' && {
+                        backgroundColor: colors.dangerSoft,
+                      },
+                      option.kind === 'Income' && {
+                        backgroundColor: colors.successSoft,
+                      },
+                      option.kind === 'LiabilityRepayment' && {
+                        backgroundColor: colors.primary,
+                      },
+                      option.kind === 'ReceivableIncome' && [
+                        styles.iconCircleOutline,
+                        { borderColor: colors.border },
+                      ],
+                      option.kind === 'Withdraw' && {
+                        backgroundColor: colors.primarySoft,
+                      },
+                      option.kind === 'Transfer' && [
+                        styles.iconCircleOutline,
+                        { borderColor: colors.border },
+                      ],
                     ]}
                   >
-                    {option.subtitle}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </Pressable>
+                    {option.kind === 'Expense' && (
+                      <Minus size={18} color={colors.danger} strokeWidth={2.5} />
+                    )}
+                    {option.kind === 'Income' && (
+                      <Plus size={18} color={colors.success} strokeWidth={2.5} />
+                    )}
+                    {option.kind === 'LiabilityRepayment' && (
+                      <ArrowUpRight
+                        size={18}
+                        color={colors.primaryText}
+                        strokeWidth={2.5}
+                      />
+                    )}
+                    {option.kind === 'ReceivableIncome' && (
+                      <ArrowDownLeft
+                        size={18}
+                        color={colors.text}
+                        strokeWidth={2.5}
+                      />
+                    )}
+                    {option.kind === 'Withdraw' && (
+                      <Banknote
+                        size={18}
+                        color={colors.primary}
+                        strokeWidth={2.5}
+                      />
+                    )}
+                    {option.kind === 'Transfer' && (
+                      <Repeat size={18} color={colors.text} strokeWidth={2.5} />
+                    )}
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>
+                      {option.title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.rowSubtitle,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {option.subtitle}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </Pressable>
+          </Animated.View>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  fill: {
     flex: 1,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  backdropPress: {
+    flex: 1,
   },
   sheetWrap: {
     flex: 1,
@@ -200,6 +231,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 110,
     paddingHorizontal: 24,
+  },
+  // Without an explicit width, this Animated.View (a plain flex item
+  // inside sheetWrap's alignItems:'center' cross axis) shrinks to fit its
+  // content instead of stretching — and its child (`sheet`, width:'100%')
+  // then has nothing but 0/auto to resolve that percentage against,
+  // collapsing the whole card into a sliver everything wraps inside of.
+  sheetSlide: {
+    width: '100%',
   },
   sheet: {
     width: '100%',

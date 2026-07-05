@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getAccounts,
@@ -36,14 +36,28 @@ export interface UseLoanAccountsDataResult {
   load: () => Promise<void>;
 }
 
-// `routeType` mirrors route.params?.type from the FAB's "Liability
-// Repayment"/"Receivable Income" shortcuts (App.tsx) — passed in rather
-// than the whole route object so this hook doesn't need to know about
-// navigation types at all.
+export interface UseLoanAccountsDataDeps {
+  // Only ever set for the FAB's "Liability Repayment"/"Receivable Income"
+  // shortcuts (App.tsx's AddEntrySheet) — undefined means no deep link is
+  // pending, same convention as useTransfer's routeParams.
+  routeParams: { type?: LoanAccountType } | undefined;
+  // Clears routeParams.type right after it's consumed (below), the same
+  // one-time-preset pattern useTransfer uses for withdrawMode/openTransfer.
+  // Without this, `type` being in a focus effect's own dependency array
+  // (the original implementation) meant EVERY type change — including the
+  // user's own SegmentedToggle taps, not just the FAB's initial preset —
+  // re-triggered the "does routeType still disagree with type?" check,
+  // forcing the toggle straight back and making it look stuck.
+  clearRouteParams: () => void;
+}
+
 export function useLoanAccountsData(
-  routeType: LoanAccountType | undefined,
+  deps: UseLoanAccountsDataDeps,
 ): UseLoanAccountsDataResult {
-  const [type, setType] = useState<LoanAccountType>(routeType ?? 'Liability');
+  const { routeParams, clearRouteParams } = deps;
+  const [type, setType] = useState<LoanAccountType>(
+    routeParams?.type ?? 'Liability',
+  );
   const [activeLiabilities, setActiveLiabilities] = useState<ActiveLoan[]>([]);
   const [activeReceivables, setActiveReceivables] = useState<ActiveLoan[]>([]);
   const [inactiveLoans, setInactiveLoans] = useState<InactiveLoan[]>([]);
@@ -69,29 +83,25 @@ export function useLoanAccountsData(
     setLoading(false);
   }, [type]);
 
-  // Reacts to the FAB's "Liability Repayment"/"Receivable Income"
-  // shortcuts navigating here with a fresh `type` param while this screen
-  // is already mounted from an earlier visit. Deliberately does NOT pair
-  // a separate "sync type from route params" effect with this
-  // focus-triggered load the way the original screen did — that split
-  // could fire load() twice in a row (once via the focus transition
-  // itself, with the still-stale `type`, then again once the type-sync
-  // effect's setType change produced a new `load` reference) every time
-  // the FAB shortcut was used on an already-mounted screen. Folding the
-  // sync into this same effect means a mismatched routeType only ever
-  // calls setType and returns — never calling load() with the wrong
-  // type — and the resulting re-render (with `type` now caught up)
-  // re-runs this same effect once more, at which point the condition is
-  // false and load() finally runs, exactly once, with the right type.
   useFocusEffect(
     useCallback(() => {
-      if (routeType && routeType !== type) {
-        setType(routeType);
-        return;
-      }
       load();
-    }, [routeType, type, load]),
+    }, [load]),
   );
+
+  // Consumes the FAB's one-time `type` preset exactly once, mirroring
+  // useTransfer's withdrawMode/openTransfer handling — clearRouteParams
+  // wipes routeParams.type immediately after, so this never fires again
+  // from a later SegmentedToggle tap (those only ever call the plain
+  // setType below, never touch routeParams) and never re-forces the type
+  // back on a later re-render.
+  useEffect(() => {
+    if (routeParams?.type) {
+      setType(routeParams.type);
+      clearRouteParams();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeParams?.type]);
 
   const loans = type === 'Liability' ? activeLiabilities : activeReceivables;
 

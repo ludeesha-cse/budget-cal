@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, notInArray } from 'drizzle-orm';
 import { db } from '../index';
 import {
   accountBalances,
@@ -116,6 +116,51 @@ export async function setDefaultCurrency(currencyId: number): Promise<void> {
   } catch (error) {
     console.error(
       `setDefaultCurrency: failed to move the default flag to currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/currencies/:id/confirm-default), keeping the same input/return
+// shape. Used only by the first-launch DefaultCurrencyScreen flow: multiple
+// simultaneously active currencies is a premium feature (see
+// canAddCurrency in utils/entitlementChecks.ts), so onboarding can't leave
+// a free user starting out with more than one active currency. Makes
+// `currencyId` the default AND the only active currency — except any
+// currency that already has real data (an account balance references it),
+// which is left untouched. That exception is what keeps this safe to run
+// on an existing install upgrading into this flow for the first time
+// (defaultCurrencyConfirmed starts false for every upgrade, not just fresh
+// installs): a currency someone already put real money in never gets
+// silently hidden out from under them, while a truly fresh install (no
+// account balances exist yet) collapses cleanly to just the chosen one.
+export async function confirmDefaultCurrency(currencyId: number): Promise<void> {
+  try {
+    await db.transaction(async tx => {
+      await tx
+        .update(currencies)
+        .set({ isDefault: false })
+        .where(eq(currencies.isDefault, true));
+      await tx
+        .update(currencies)
+        .set({ isDefault: true, active: true })
+        .where(eq(currencies.id, currencyId));
+
+      const inUseRows = await tx
+        .selectDistinct({ id: accountBalances.currencyId })
+        .from(accountBalances);
+      const keepActiveIds = [currencyId, ...inUseRows.map(row => row.id)];
+
+      await tx
+        .update(currencies)
+        .set({ active: false })
+        .where(notInArray(currencies.id, keepActiveIds));
+    });
+  } catch (error) {
+    console.error(
+      `confirmDefaultCurrency: failed to confirm currency id=${currencyId} as the default currency`,
       error,
     );
     throw error;

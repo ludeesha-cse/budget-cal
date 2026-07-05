@@ -49,6 +49,19 @@ function counterpartDeltaSign(type: LoanAccountType): 1 | -1 {
   return type === 'Liability' ? 1 : -1;
 }
 
+// accounts.name gets this prefixed form rather than the bare counterparty
+// name — anywhere an account name surfaces without loan-specific context
+// (NetWorth, a generic account picker, "Close {account.name}?"), a bare
+// "John" reads as an ordinary account and is easy to mistake for one.
+// loan_details.counterpartyName (and everywhere on the Liabilities &
+// Receivables screen itself, which already labels Liability vs.
+// Receivable) keeps the bare name — see createLoanAccount below.
+function loanAccountName(type: LoanAccountType, counterpartyName: string): string {
+  return type === 'Liability'
+    ? `Borrowed_from_${counterpartyName}`
+    : `Lend_to_${counterpartyName}`;
+}
+
 // Shifts a (account, currency) balance by `delta` by moving the stored
 // baseline, not by posting a transaction. Deliberate: getAccountBalance
 // computes "baseline − net transactions", so bumping the baseline moves
@@ -195,7 +208,7 @@ export async function createLoanAccount(
       const [account] = await tx
         .insert(accounts)
         .values({
-          name: params.counterpartyName.trim(),
+          name: loanAccountName(params.type, params.counterpartyName.trim()),
           type: params.type,
           active: true,
           createdAt: Date.now(),

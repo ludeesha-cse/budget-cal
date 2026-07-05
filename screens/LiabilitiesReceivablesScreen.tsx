@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Plus } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import Card from '../components/Card';
@@ -41,8 +42,15 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
   const { openPaywall } = usePaywall();
   const route =
     useRoute<RouteProp<SettingsStackParamList, 'LiabilitiesReceivables'>>();
+  const navigation =
+    useNavigation<
+      NativeStackNavigationProp<SettingsStackParamList, 'LiabilitiesReceivables'>
+    >();
 
-  const data = useLoanAccountsData(route.params?.type);
+  const data = useLoanAccountsData({
+    routeParams: route.params,
+    clearRouteParams: () => navigation.setParams({ type: undefined }),
+  });
   const {
     type,
     setType,

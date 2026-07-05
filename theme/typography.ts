@@ -1,20 +1,5 @@
 import { Dimensions, Platform, TextStyle } from 'react-native';
 
-// System fonts only — no bundled/custom font files. Avenir Next and Menlo
-// (iOS) / the generic 'sans-serif-medium'/'monospace' aliases (Android)
-// ship with every device already, so there's no font-linking step
-// (Info.plist entries, Android assets, react-native.config.js, a
-// rebuild) to get wrong. Swapped from the earlier Georgia/serif pairing
-// to match the "Executive Reserve" premium-fintech palette (see
-// theme/palettes.ts) — a clean geometric sans reads as modern/private-bank
-// rather than editorial-ledger. Key names (`serif`/`serifBold`) are kept
-// as-is even though neither points at an actual serif anymore, since
-// every screen references them (via the `typography` presets below)
-// rather than the literal font string — renaming would touch call sites
-// for zero visual benefit. Swapping in a bundled Google Font later is
-// still a contained change (this file, plus the linking step) if closer
-// fidelity to a specific typeface ever matters more than zero-setup
-// system fonts.
 export const fontFamily = {
   serif: Platform.select({
     ios: 'AvenirNext-Medium',
@@ -33,22 +18,9 @@ export const fontFamily = {
   }),
 };
 
-// Every fontSize in this file (and in each screen's own StyleSheet — see
-// the scaleFont() call sites throughout Dashboard/History/Reports/
-// SettingsHome/AppSettingsScreen) was authored against this width, a
-// reasonable mid-size phone. Scaling by the device's actual window width
-// keeps text at roughly the same PROPORTION of the screen on a small
-// phone (an iPhone SE at 375pt) as on a large one, instead of a fixed
-// pixel size that reads relatively huge on a small screen and small on a
-// big one.
 const BASE_WIDTH = 390;
 
-// Clamped to +/-18% so a tiny device can't shrink text into illegibility
-// and a tablet can't blow it up absurdly — this is a screen-size
-// adjustment, not the main driver of how big text ultimately renders
-// (the OS's own accessibility text-size setting, which every RN <Text>
-// already respects via allowFontScaling, does far more of that; this
-// only corrects for the device itself).
+
 const MIN_SCALE = 0.88;
 const MAX_SCALE = 1.15;
 
@@ -61,11 +33,6 @@ function screenScale(): number {
   return cachedScale;
 }
 
-// Scales a design fontSize for the current device's screen width. Safe to
-// call at module-eval time (as typography's own presets below do) since
-// Dimensions.get('window') is available before first render — RN
-// populates it from the native side synchronously at startup, unlike
-// layout measurements that need an actual mount.
 export function scaleFont(size: number): number {
   return Math.round(size * screenScale());
 }
@@ -99,6 +66,11 @@ export const typography = {
   amountLarge: {
     fontFamily: fontFamily.serifBold,
     fontSize: scaleFont(32),
+    fontWeight: '700',
+  } satisfies TextStyle,
+  amountMid: {
+    fontFamily: fontFamily.serifBold,
+    fontSize: scaleFont(16),
     fontWeight: '700',
   } satisfies TextStyle,
   // Row-level amounts ("-3,500", "+45,000"), percentages, and other

@@ -9,6 +9,7 @@ import {
   Animated,
   Dimensions,
   Keyboard,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -22,6 +23,8 @@ import { ChevronLeft } from 'lucide-react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
+import { MODAL_TRANSITION_MS } from '../theme/motion';
+import { useSlideSheet } from '../hooks/useSlideSheet';
 
 type Props = {
   visible: boolean;
@@ -54,82 +57,15 @@ type PickerHost = {
 export const BottomSheetPickerContext = createContext<PickerHost | null>(null);
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const ANIM_MS = 260;
 
-function useSlideSheet(visible: boolean, onFullyClosed?: () => void) {
-  const [rendered, setRendered] = useState(visible);
-  const [modalVisible, setModalVisible] = useState(visible);
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setRendered(true);
-      setModalVisible(true);
-      translateY.setValue(SCREEN_HEIGHT);
-      backdropOpacity.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else if (rendered) {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (!finished) {
-          return;
-        }
-        // Now that it's fully off screen, actually tell the native Modal
-        // to dismiss. iOS does this asynchronously — see handleNativeDismiss
-        // below, fired by RN once it's truly gone. Android's Modal doesn't
-        // implement onDismiss at all (see react-native's own Modal.js) but
-        // also tears the native modal down synchronously with this same
-        // prop flip, so it's safe to finish the close right here instead
-        // of waiting on a callback that will never come.
-        setModalVisible(false);
-        if (Platform.OS !== 'ios') {
-          setRendered(false);
-          onFullyClosed?.();
-        }
-      });
-    }
-    // Only ever reacts to `visible` flipping — `rendered` is read, not a
-    // dependency, since including it would re-fire this on the very
-    // setRendered(false) the closing branch just triggered.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
-  const handleNativeDismiss = () => {
-    setRendered(false);
-    onFullyClosed?.();
-  };
-
-  return {
-    rendered,
-    modalVisible,
-    translateY,
-    backdropOpacity,
-    handleNativeDismiss,
-  };
-}
-
+// PickerOverlay (below) is a second, layered sheet with the exact same
+// "slide up from the bottom" shape as useSlideSheet (hooks/useSlideSheet.ts)
+// but nested inside this same native Modal rather than a Modal of its
+// own, so it can't reuse that hook directly — same two-frame delay before
+// starting the opening animation, for the same reason (see that hook's
+// own comment): starting .start() in the same tick as the setState that
+// mounts this view races its first paint, eating most of the slide's
+// frames before there's anything on screen to show them.
 function useSlideAnimation(visible: boolean) {
   const [rendered, setRendered] = useState(visible);
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -140,28 +76,38 @@ function useSlideAnimation(visible: boolean) {
       setRendered(true);
       translateY.setValue(SCREEN_HEIGHT);
       backdropOpacity.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else if (rendered) {
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          Animated.parallel([
+            Animated.timing(translateY, {
+              toValue: 0,
+              duration: MODAL_TRANSITION_MS,
+              useNativeDriver: true,
+            }),
+            Animated.timing(backdropOpacity, {
+              toValue: 1,
+              duration: MODAL_TRANSITION_MS,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    if (rendered) {
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: SCREEN_HEIGHT,
-          duration: ANIM_MS,
+          duration: MODAL_TRANSITION_MS,
           useNativeDriver: true,
         }),
         Animated.timing(backdropOpacity, {
           toValue: 0,
-          duration: ANIM_MS,
+          duration: MODAL_TRANSITION_MS,
           useNativeDriver: true,
         }),
       ]).start(({ finished }) => {
@@ -176,20 +122,6 @@ function useSlideAnimation(visible: boolean) {
   return { rendered, translateY, backdropOpacity };
 }
 
-// Tracks the keyboard's own height as an Animated.Value, iOS only — used
-// to shift the sheet up above the keyboard (see its use in translateY
-// below). `KeyboardAvoidingView` was tried here first and doesn't work:
-// its automatic frame measurement doesn't reliably account for content
-// presented inside a <Modal>, which renders into a separate native root
-// than the rest of the app — a well-known RN gap, not something specific
-// to this sheet's own layout. Listening directly for keyboardWillShow/
-// Hide and animating a value ourselves sidesteps that measurement
-// entirely, and lets the motion match the keyboard's own reported
-// duration/curve instead of guessing one. Android is left at a
-// permanently-zero offset: its windowSoftInputMode is "adjustPan" (see
-// AndroidManifest.xml), which already pans the whole screen to keep the
-// focused field visible at the native level, so adding our own offset on
-// top would double up.
 function useKeyboardOffset() {
   const offset = useRef(new Animated.Value(0)).current;
 
@@ -200,7 +132,7 @@ function useKeyboardOffset() {
     const animateTo = (toValue: number, event: RNKeyboardEvent) => {
       Animated.timing(offset, {
         toValue,
-        duration: event.duration > 0 ? event.duration : ANIM_MS,
+        duration: event.duration > 0 ? event.duration : MODAL_TRANSITION_MS,
         useNativeDriver: true,
       }).start();
     };
@@ -217,6 +149,30 @@ function useKeyboardOffset() {
   }, [offset]);
 
   return offset;
+}
+
+const KEYBOARD_TRANSITION_MS = 450;
+
+function useSmoothAndroidKeyboardResize() {
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+    const configure = () =>
+      LayoutAnimation.configureNext(
+        LayoutAnimation.create(
+          KEYBOARD_TRANSITION_MS,
+          LayoutAnimation.Types.easeInEaseOut,
+          LayoutAnimation.Properties.opacity,
+        ),
+      );
+    const showSub = Keyboard.addListener('keyboardDidShow', configure);
+    const hideSub = Keyboard.addListener('keyboardDidHide', configure);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 }
 
 type PickerOverlayProps = {
@@ -250,15 +206,18 @@ function PickerOverlay({
       <Animated.View
         style={[styles.backdrop, { opacity: backdropOpacity }]}
         pointerEvents="box-none"
+        renderToHardwareTextureAndroid
       >
         <Pressable style={styles.backdropPress} onPress={onRequestClose} />
       </Animated.View>
       <Animated.View
+        renderToHardwareTextureAndroid
         style={[
           styles.pickerSheet,
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
+            opacity: backdropOpacity,
             transform: [{ translateY }],
           },
         ]}
@@ -336,9 +295,7 @@ function BottomSheetModal({
     handleNativeDismiss,
   } = useSlideSheet(visible, onFullyClosed);
   const keyboardOffset = useKeyboardOffset();
-  // Whichever <CollapsiblePicker> (if any) is currently being picked — see
-  // BottomSheetPickerContext above. Rendered as its own stacked sheet (see
-  // PickerOverlay) in front of this one, which stays open underneath it.
+  useSmoothAndroidKeyboardResize();
   const [activePicker, setActivePicker] = useState<PickerConfig | null>(null);
   const pickerHost = useMemo<PickerHost>(
     () => ({ openPicker: config => setActivePicker(config) }),
@@ -363,6 +320,7 @@ function BottomSheetModal({
       visible={modalVisible}
       transparent
       animationType="none"
+      statusBarTranslucent
       onRequestClose={onClose}
       onDismiss={handleNativeDismiss}
     >
@@ -370,6 +328,7 @@ function BottomSheetModal({
         <Animated.View
           style={[styles.backdrop, { opacity: backdropOpacity }]}
           pointerEvents="box-none"
+          renderToHardwareTextureAndroid
         >
           {/* Dismisses the keyboard, same as every screen's old
                 modalBackdrop press handler — deliberately does NOT close
@@ -381,15 +340,18 @@ function BottomSheetModal({
           />
         </Animated.View>
         <Animated.View
+          renderToHardwareTextureAndroid
           style={[
             styles.sheet,
             {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              // Subtracting keyboardOffset here (rather than adding
-              // padding somewhere) is what actually slides the sheet up
-              // above the keyboard on iOS — see useKeyboardOffset's own
-              // comment for why this replaced KeyboardAvoidingView.
+              // Also fades in with the backdrop (not just sliding), so a
+              // freshly-mounted native view has an opacity gate as well as
+              // a position one — see the Android note on backdropOpacity's
+              // declaration in useSlideSheet.ts for why the position alone
+              // isn't a safe enough guard against a flash on first paint.
+              opacity: backdropOpacity,
               transform: [
                 { translateY: Animated.subtract(translateY, keyboardOffset) },
               ],

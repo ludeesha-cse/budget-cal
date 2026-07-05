@@ -139,6 +139,12 @@ async function runCurrencyMigration(
       code: currency.code,
       name: currency.name,
       isDefault: currency.isDefault,
+      // Only the seed default starts active — multiple active currencies
+      // is a premium feature (see canAddCurrency in
+      // utils/entitlementChecks.ts), so a fresh install shouldn't start
+      // free users out with every currency already enabled. The rest stay
+      // available to enable later via DefaultCurrencyScreen/CurrenciesScreen.
+      active: currency.isDefault,
       createdAt: now,
     })),
   );

@@ -13,6 +13,7 @@ export const HARDCODED_ENTITLEMENT: 'free' | 'premium' = 'free';
 export const FREE_TIER_LIMITS = {
   accountsPerType: 1,
   userCategories: 5,
+  activeCurrencies: 1,
 } as const;
 
 // Account types a free user may create at all. Anything absent from this

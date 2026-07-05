@@ -65,3 +65,19 @@ export function canAddCategory(
   }
   return { allowed: true };
 }
+
+export function canAddCurrency(
+  activeCurrencyCount: number,
+  tier: EntitlementTier,
+): EntitlementCheckResult {
+  if (tier === 'premium') {
+    return { allowed: true };
+  }
+  if (activeCurrencyCount >= FREE_TIER_LIMITS.activeCurrencies) {
+    return {
+      allowed: false,
+      reason: `The free tier allows only ${FREE_TIER_LIMITS.activeCurrencies} active currency. Upgrade to use multiple currencies.`,
+    };
+  }
+  return { allowed: true };
+}

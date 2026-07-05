@@ -15,6 +15,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { usePaywall } from '../contexts/PaywallContext';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
@@ -22,6 +24,8 @@ function CurrenciesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
+  const { tier } = useEntitlement();
+  const { openPaywall } = usePaywall();
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
 
@@ -139,6 +143,11 @@ function CurrenciesScreen(): React.JSX.Element {
         onClose={() => setPickerVisible(false)}
         disabledCurrencies={disabledCurrencies}
         onChanged={load}
+        entitlement={{
+          activeCurrencyCount: activeCurrencies.length,
+          tier,
+          openPaywall,
+        }}
       />
     </View>
   );

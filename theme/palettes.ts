@@ -199,7 +199,7 @@ const RESERVE: Palette = {
     background: '#0B0F19',
     surface: '#152240',
     card: '#152240',
-    border: '#1E293B',
+    border: '#495e7f',
     text: '#F1F5F9',
     textSecondary: '#94A3B8',
     primary: '#00c8be',

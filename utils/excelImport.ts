@@ -131,7 +131,7 @@ function readSheetRows(
 // array rather than throwing, so a single pass over a 300-row sheet
 // collects every problem instead of stopping at the first one.
 // ---------------------------------------------------------------------
-
+// Encapsulation 
 class RowValidator {
   constructor(
     private readonly sheet: SheetName,
