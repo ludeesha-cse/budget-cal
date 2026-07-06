@@ -6,9 +6,6 @@ import { scaleFont, typography } from '../../theme/typography';
 import { formatAmount } from '../../utils/formatAmount';
 import type { ShortcutAccountRow } from '../../hooks/useAccountShortcuts';
 
-// Only the first couple of accounts show on the dashboard itself —
-// "Manage" (in the orchestrator's section header) is what the full list
-// is for.
 const SHORTCUT_ACCOUNT_COUNT = 2;
 
 type Props = {

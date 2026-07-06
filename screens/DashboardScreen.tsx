@@ -4,20 +4,19 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import ScreenBackground from '../components/ScreenBackground';
-import Card from '../components/Card';
 import PendingReviewBanner from '../components/dashboard/PendingReviewBanner';
 import BudgetSummaryCard from '../components/dashboard/BudgetSummaryCard';
 import CategoryBreakdownList from '../components/dashboard/CategoryBreakdownList';
 import AccountShortcuts from '../components/dashboard/AccountShortcuts';
 import DueSoonSection from '../components/dashboard/DueSoonSection';
 import CashDebtSummary from '../components/dashboard/CashDebtSummary';
+import LiabilitiesReceivablesSummary from '../components/dashboard/LiabilitiesReceivablesSummary';
 import type { DashboardStackParamList, RootTabParamList } from '../navigation/types';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useDismissibleBanner } from '../hooks/useDismissibleBanner';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
 import { formatEyebrowDate } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
-import { formatCurrencyTotals } from '../utils/currencyTotals';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
@@ -54,7 +53,7 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           <Text style={[typography.eyebrow, styles.eyebrow, { color: colors.primary }]}>
             {formatEyebrowDate(getCurrentDateString())}
           </Text>
-          <Text style={[typography.screenTitle, { color: colors.text }]}>Ledger</Text>
+          <Text style={[typography.screenTitle, { color: colors.text }]}>Dashboard</Text>
         </View>
 
         {!data.loading && data.pendingOccurrenceCount > 0 && !banner.dismissed && (
@@ -200,14 +199,10 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             <Text style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
               Liabilities &amp; Receivables
             </Text>
-            <Card colors={colors} style={styles.card}>
-              <Text style={[styles.row, { color: colors.danger }]}>
-                Total owed: {formatCurrencyTotals(data.liabilityTotals)}
-              </Text>
-              <Text style={[styles.row, { color: colors.success }]}>
-                Total owed to you: {formatCurrencyTotals(data.receivableTotals)}
-              </Text>
-            </Card>
+            <LiabilitiesReceivablesSummary
+              liabilityTotals={data.liabilityTotals}
+              receivableTotals={data.receivableTotals}
+            />
           </>
         )}
       </ScrollView>
@@ -263,14 +258,6 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: scaleFont(13),
     fontWeight: '700',
-  },
-  card: {
-    padding: 16,
-    marginBottom: 10,
-  },
-  row: {
-    fontSize: scaleFont(15),
-    marginBottom: 6,
   },
 });
 

@@ -28,26 +28,22 @@ export function useSlideSheet(
       translateY.setValue(SCREEN_HEIGHT);
       backdropOpacity.setValue(0);
 
-      let raf2 = 0;
       const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          Animated.parallel([
-            Animated.timing(translateY, {
-              toValue: 0,
-              duration: MODAL_TRANSITION_MS,
-              useNativeDriver: true,
-            }),
-            Animated.timing(backdropOpacity, {
-              toValue: 1,
-              duration: MODAL_TRANSITION_MS,
-              useNativeDriver: true,
-            }),
-          ]).start();
-        });
+        Animated.parallel([
+          Animated.timing(translateY, {
+            toValue: 0,
+            duration: MODAL_TRANSITION_MS,
+            useNativeDriver: true,
+          }),
+          Animated.timing(backdropOpacity, {
+            toValue: 1,
+            duration: MODAL_TRANSITION_MS,
+            useNativeDriver: true,
+          }),
+        ]).start();
       });
       return () => {
         cancelAnimationFrame(raf1);
-        cancelAnimationFrame(raf2);
       };
     }
 

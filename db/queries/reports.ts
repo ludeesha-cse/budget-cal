@@ -10,7 +10,7 @@ import {
 
 export type SearchTransactionsParams = {
   query?: string;
-  tagIds?: number[]; // AND, not OR — a matching transaction must carry every one of these
+  tagIds?: number[]; 
   categoryId?: number;
   accountId?: number;
   limit?: number;
@@ -19,26 +19,6 @@ export type SearchTransactionsParams = {
 const DEFAULT_SEARCH_LIMIT = 200;
 
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/transactions/search?..., keeping the same input/return
-// shape.
-//
-// Deliberately a plain LIKE over lower()'d text, not SQLite FTS5 — see the
-// Stage 15 spec: at this app's data scale (a personal tracker, not a
-// company ledger) FTS5's shadow table and sync triggers buy nothing a
-// LIKE query doesn't already do fast enough. `query` matches description,
-// category name, and account name so "BOC" (an account name) or "Food"
-// (a category name) surfaces transactions even when neither word appears
-// in the description itself.
-//
-// tagIds intersection (AND) is computed in JS rather than SQL HAVING —
-// same "small table, filter in JS" convention as getRecurringRules and
-// getSavingsGoals elsewhere in this file: fetch every transactionTags row
-// for the requested tags, group by transactionId, and keep only the
-// transactions whose tag set is a superset of every requested tagId.
-// Searches every transaction regardless of date — there is no
-// month/year restriction anywhere in this function, by design (see
-// HistoryListScreen, which is what switches into "searching all
-// transactions" mode when this is called).
 export async function searchTransactions(params: SearchTransactionsParams) {
   try {
     const limit = params.limit ?? DEFAULT_SEARCH_LIMIT;
@@ -131,29 +111,6 @@ export async function searchTransactions(params: SearchTransactionsParams) {
   }
 }
 
-// Stage 16a: statistics reports.
-//
-// These four functions are the ONLY reporting reads in this file, and
-// they read from `transactions` exclusively — deliberately never
-// `transfers`, `credit_card_payoffs`, `loan_payments`, or
-// `savings_contributions`. None of those tables is spending or income:
-// a transfer/credit-card payoff moves money between accounts the user
-// already owns, a loan payment is debt movement already reflected in the
-// loan account's own balance, and a savings contribution never touches a
-// real balance at all (Stage 14's addContribution is explicitly a no-op
-// against account_balances/transactions). Folding any of them into a
-// report would double-count money that's already accounted for through
-// its own dedicated flow. This looks like an omission if you're scanning
-// for "why doesn't this report include transfers" — it's intentional.
-//
-// Every function here also takes `includeExcluded` (default false): when
-// false, excludeFromBudget transactions are left out, same as
-// getMonthlyTotal/getMonthlyIncome/getCategorySpent; when true, they're
-// folded back in. One parameterized WHERE clause, not two query bodies.
-
-// Shared by all four report queries below — date range + currency +
-// the includeExcluded toggle, as plain-english conditions rather than
-// duplicated inline in each function.
 function reportWhereConditions(
   startDate: string,
   endDate: string,
@@ -225,13 +182,6 @@ export type CategorySpendingRow = {
 };
 
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/reports/by-category?startDate=&endDate=&currencyId=&includeExcluded=,
-// keeping the same return shape. Expense-only — an Income entry has no
-// place in a spending-by-category breakdown. percentage is computed
-// against this query's own grand total (every category's total summed),
-// which is exactly getReportSummary's totalExpenses for the same
-// parameters — the two are meant to be read together, and the category
-// totals + percentages are designed to sum back to that one number.
 export async function getSpendingByCategory(
   startDate: string,
   endDate: string,
@@ -258,10 +208,6 @@ export async function getSpendingByCategory(
     const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
     return rows.map(row => ({
       categoryId: row.categoryId,
-      // Every Expense requires a category by app convention, so this
-      // fallback should never actually be seen — kept only so a legacy
-      // or hand-edited row with a dangling categoryId doesn't crash the
-      // report with a null label.
       categoryName: row.categoryName ?? 'Uncategorized',
       total: row.total,
       percentage: grandTotal > 0 ? (row.total / grandTotal) * 100 : 0,
@@ -281,14 +227,6 @@ export type AccountTypeSpendingRow = {
 };
 
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/reports/by-account-type?startDate=&endDate=&currencyId=&includeExcluded=,
-// keeping the same return shape. Expense-only, same reasoning as
-// getSpendingByCategory. Only Bank/Cash/CryptoWallet/CreditCard accounts
-// can ever appear here — Liability/Receivable accounts never carry an
-// ordinary Expense transaction in the first place (see
-// NON_TRANSACTABLE_ACCOUNT_TYPES throughout the UI layer), so there's
-// nothing to filter out here that could accidentally include loan
-// activity.
 export async function getSpendingByAccountType(
   startDate: string,
   endDate: string,
@@ -327,20 +265,6 @@ export type MonthlyTrendRow = {
 };
 
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/reports/trend?months=&currencyId=&includeExcluded=,
-// keeping the same return shape.
-//
-// Zero-fills months with no activity at all: the underlying query only
-// ever returns a row for a (month, entryType) pair that actually has a
-// matching transaction, so a month with zero transactions simply never
-// appears in `rows` below. Silently omitting it from the result would
-// look identical to "no data was requested for that month" once this is
-// charted (Stage 16b) — there'd be a gap in the x-axis instead of a
-// visible zero, which misrepresents "nothing happened" as "unknown."
-// Building the result by mapping over the caller's own `months` array
-// (rather than over `rows`) is what guarantees every requested month
-// comes back, in the caller's own order, with an explicit 0 wherever
-// nothing was found.
 export async function getMonthlyTrend(
   months: string[],
   currencyId: number,
@@ -355,11 +279,6 @@ export async function getMonthlyTrend(
     const lastMonth = sortedMonths[sortedMonths.length - 1];
     const conditions = [
       gte(transactions.date, `${firstMonth}-01`),
-      // '-31' is never a real calendar date for every month, but it's
-      // only ever used here as a lexical upper bound on a 'YYYY-MM-DD'
-      // string — every real date within lastMonth sorts before it
-      // regardless of that month's actual length, so this is safe
-      // without needing getDaysInMonth just to build a comparison string.
       lte(transactions.date, `${lastMonth}-31`),
       eq(transactions.currencyId, currencyId),
     ];
