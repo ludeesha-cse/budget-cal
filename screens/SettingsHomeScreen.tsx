@@ -46,7 +46,6 @@ import Card from '../components/Card';
 import { typography, scaleFont } from '../theme/typography';
 import {
   getAllDataForExport,
-  importData,
   type ImportMode,
 } from '../db/queries';
 import { exportDataToExcel } from '../utils/excelExport';
@@ -55,6 +54,9 @@ import {
   type ValidationError,
   type ValidationResult,
 } from '../utils/excelImport';
+import {
+  useImportData as useImportDataMutation,
+} from '../hooks/queries';
 
 type SettingsHomeNavigationProp = NativeStackNavigationProp<
   SettingsStackParamList,
@@ -88,6 +90,12 @@ type SettingsSection = {
 };
 
 function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const importData = useImportDataMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   // null outside __DEV__ (or if the provider is somehow missing), so

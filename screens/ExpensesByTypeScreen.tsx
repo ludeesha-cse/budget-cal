@@ -1,68 +1,60 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
 import ProgressBar from '../components/common/ProgressBar';
 import CurrencyTabs from '../components/common/CurrencyTabs';
 import {
-  getExpenseCurrenciesForMonth,
-  getExpensesByType,
-  type ExpenseCurrencyOption,
-} from '../db/queries';
+  useExpenseCurrenciesForMonth,
+  useExpensesByType,
+} from '../hooks/queries';
 import { getCurrentMonthString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 
-type ExpenseRow = Awaited<ReturnType<typeof getExpensesByType>>[number];
-
 function ExpensesByTypeScreen(): React.JSX.Element {
   const { colors } = useTheme();
-  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
-  const [currencies, setCurrencies] = useState<ExpenseCurrencyOption[]>([]);
-  // null until the first load resolves a starting tab, or permanently
-  // null if there's no expense activity at all this month (see load()).
+  // null until the currencies query resolves a starting tab, or
+  // permanently null if there's no expense activity at all this month.
   const [currencyId, setCurrencyId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    setLoading(true);
-    const month = getCurrentMonthString();
-    const activeCurrencies = await getExpenseCurrenciesForMonth(month);
-    setCurrencies(activeCurrencies);
+  const month = getCurrentMonthString();
 
-    const resolvedCurrencyId =
-      currencyId != null && activeCurrencies.some(c => c.id === currencyId)
-        ? currencyId
-        : (activeCurrencies[0]?.id ?? null);
+  // Both reads are transactional-cached and keyed by (month, currency),
+  // so flipping between currency tabs is free after each has been seen
+  // once — where the old load() re-queried on every tab change AND on
+  // every screen focus.
+  const { data: currencies, isPending: currenciesPending } =
+    useExpenseCurrenciesForMonth(month);
+
+  const resolvedCurrencyId = useMemo(() => {
+    if (!currencies) {
+      return currencyId;
+    }
+    if (currencyId != null && currencies.some(c => c.id === currencyId)) {
+      return currencyId;
+    }
+    return currencies[0]?.id ?? null;
+  }, [currencies, currencyId]);
+
+  useEffect(() => {
     if (resolvedCurrencyId !== currencyId) {
       setCurrencyId(resolvedCurrencyId);
     }
+  }, [resolvedCurrencyId, currencyId]);
 
-    if (resolvedCurrencyId == null) {
-      setExpenses([]);
-      setLoading(false);
-      return;
-    }
-
-    const rows = await getExpensesByType(month, resolvedCurrencyId);
-    setExpenses(rows);
-    setLoading(false);
-  }, [currencyId]);
-
-  // Re-runs on focus and whenever `load` itself changes identity — which
-  // happens whenever currencyId changes (see load's own dependency array)
-  // — so switching the currency tab reloads too. Same pattern as
-  // CategoryBudgetsScreen's own load-on-change effect.
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
+  const { data: expenses, isPending: expensesPending } = useExpensesByType(
+    month,
+    resolvedCurrencyId,
   );
+  const loading =
+    currenciesPending || (resolvedCurrencyId != null && expensesPending);
 
-  const currencyCode = currencies.find(c => c.id === currencyId)?.code ?? '';
-  const total = expenses.reduce((sum, row) => sum + row.total, 0);
-  const sorted = [...expenses].sort((a, b) => b.total - a.total);
+  const currencyCode =
+    (currencies ?? []).find(c => c.id === currencyId)?.code ?? '';
+  const rows = expenses ?? [];
+  const total = rows.reduce((sum, row) => sum + row.total, 0);
+  const sorted = [...rows].sort((a, b) => b.total - a.total);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -73,9 +65,9 @@ function ExpensesByTypeScreen(): React.JSX.Element {
         THIS MONTH
       </Text>
 
-      {currencies.length > 1 && (
+      {(currencies ?? []).length > 1 && (
         <CurrencyTabs
-          currencies={currencies}
+          currencies={currencies ?? []}
           value={currencyId}
           onChange={setCurrencyId}
           style={styles.currencyTabs}

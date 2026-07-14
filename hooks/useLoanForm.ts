@@ -1,7 +1,5 @@
 import {
-  createLoanAccount,
   getActiveAccountCountByType,
-  reactivateLoanAccount,
   type LoanAccountType,
 } from '../db/queries';
 import type { PaywallRequest } from '../contexts/PaywallContext';
@@ -16,6 +14,10 @@ import type {
   LoanAccountRow,
   LoanCurrencyRow,
 } from './useLoanAccountsData';
+import {
+  useCreateLoanAccount as useCreateLoanAccountMutation,
+  useReactivateLoanAccount as useReactivateLoanAccountMutation,
+} from './queries';
 
 export type LoanFormValues = {
   // Set only by picking a closed account from the name suggestions, which
@@ -66,7 +68,13 @@ export interface UseLoanFormDeps {
   counterpartAccounts: LoanAccountRow[];
   tier: EntitlementTier;
   openPaywall: (request: PaywallRequest) => void;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
 }
 
 // Add a Liability/Receivable, built on useEntityFormModal (Step 6) —
@@ -81,6 +89,13 @@ export interface UseLoanFormDeps {
 // branches on it to call reactivateLoanAccount instead of
 // createLoanAccount.
 export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const createLoanAccount = useCreateLoanAccountMutation();
+  const reactivateLoanAccount = useReactivateLoanAccountMutation();
   const {
     type,
     loans,

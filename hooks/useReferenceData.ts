@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useMemo } from 'react';
+import { useAccountList, useCategories, useTags } from './queries';
 import { getAccounts, getCategories, getTags } from '../db/queries';
 
 // Liability/Receivable accounts are managed exclusively through the loan
@@ -22,10 +22,15 @@ export interface UseReferenceDataResult {
 }
 
 // Shared by TransactionForm and IncomeForm (and anything else that needs
-// the same "pickable accounts + categories + tags" trio): refetches on
-// every focus, not just on mount, so anything added/edited/deleted
-// elsewhere (Settings' Accounts/Categories/Tags screens) shows up here
-// immediately without the app needing a reload.
+// the same "pickable accounts + categories + tags" trio).
+//
+// All three of these are reference rosters, so they now come from the
+// long reference cache instead of three fresh reads on every focus.
+// Anything added/edited/deleted on the Settings Accounts/Categories/Tags
+// screens still shows up here immediately without an app reload — the
+// mutation behind that edit invalidates the roster it changed, which is
+// a stronger guarantee than the old refetch-on-focus (that only caught
+// the change once the user navigated back here).
 //
 // Deliberately returns only the raw filtered lists, not a selected id —
 // each form still owns its own accountId/categoryId state and reacts to
@@ -33,26 +38,20 @@ export interface UseReferenceDataResult {
 // to a default, since what counts as "the right default" (and whether a
 // category is even relevant at all) differs per form.
 export function useReferenceData(): UseReferenceDataResult {
-  const [accounts, setAccounts] = useState<AccountRow[]>([]);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [tags, setTags] = useState<TagRow[]>([]);
+  const { data: accountRows } = useAccountList();
+  const { data: categories } = useCategories();
+  // Only the available options — never a caller's own selectedTagIds, so
+  // a tag added/deleted elsewhere shows up here without disturbing
+  // whatever's already checked on the form.
+  const { data: tags } = useTags();
 
-  useFocusEffect(
-    useCallback(() => {
-      getAccounts().then(rows => {
-        setAccounts(
-          rows.filter(
-            a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
-          ),
-        );
-      });
-      getCategories().then(setCategories);
-      // Only refreshes the available options — never touches a caller's
-      // own selectedTagIds, so a tag added/deleted elsewhere shows up
-      // here without disturbing whatever's already checked on the form.
-      getTags().then(setTags);
-    }, []),
+  const accounts = useMemo(
+    () =>
+      (accountRows ?? []).filter(
+        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
+      ),
+    [accountRows],
   );
 
-  return { accounts, categories, tags };
+  return { accounts, categories: categories ?? [], tags: tags ?? [] };
 }

@@ -1,18 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
 import CurrencyTabs from '../components/common/CurrencyTabs';
 import {
-  getBudgetCurrencyOptions,
-  getCategories,
-  getCategoryBudgetsForMonth,
-  getSpendingByCategory,
-  upsertCategoryBudget,
-  type CurrencyOption,
-} from '../db/queries';
+  useBudgetCurrencyOptions,
+  useCategories,
+  useCategoryBudgetsForMonth,
+  useSpendingByCategory,
+} from '../hooks/queries';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
@@ -24,18 +21,22 @@ import ProgressBar from '../components/common/ProgressBar';
 import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
 import { useEditGate } from '../hooks/useEditGate';
-
-type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
+import {
+  useUpsertCategoryBudget as useUpsertCategoryBudgetMutation,
+} from '../hooks/queries';
 
 function CategoryBudgetsScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const upsertCategoryBudget = useUpsertCategoryBudgetMutation();
   const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [amounts, setAmounts] = useState<Record<number, string>>({});
-  const [spentByCategory, setSpentByCategory] = useState<Record<number, number>>({});
-  const [currencyOptions, setCurrencyOptions] = useState<CurrencyOption[]>([]);
-  // null until the first load resolves a starting tab — see the same
+  // null until the options query resolves a starting tab — see the same
   // pattern in useBudgetSettingsData/useReportData.
   const [currencyId, setCurrencyId] = useState<number | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -48,19 +49,20 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     onChange: setAmounts,
   });
 
-  // load() (below) runs on every focus, including a plain tab-switch-
-  // away-and-back with no month/currency change — without this guard it
-  // would clobber an in-progress, unsaved edit the moment the user so
-  // much as glanced at another tab. Read as a ref (not a load()
-  // dependency) so toggling edit mode doesn't itself trigger a reload.
+  // The amounts field used to be clobbered by load() firing on every
+  // focus, including a plain tab-switch-away-and-back with no month or
+  // currency change — this ref is what protected an in-progress, unsaved
+  // edit from that. It is still needed for the same reason: a background
+  // refetch (or an invalidation from a write elsewhere) can deliver new
+  // budget rows while the user is mid-edit, and those must not overwrite
+  // what is being typed. Read as a ref, not a dependency, so toggling
+  // edit mode doesn't itself re-seed the fields.
   const isEditingRef = useRef(false);
   useEffect(() => {
     isEditingRef.current = editGate.isEditing;
   }, [editGate.isEditing]);
 
   const selectedMonth = `${year}-${month}`;
-  const currencyCode =
-    currencyOptions.find(option => option.id === currencyId)?.code ?? '';
 
   // All app currencies are offered as tabs here (not just ones with
   // existing spending) — unlike ExpensesByTypeScreen/Reports, this screen
@@ -68,70 +70,78 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   // a currency before ever spending in it (e.g. budgeting ahead for a
   // trip). getBudgetCurrencyOptions() already returns default-currency
   // first, so the initial tab lands on the default currency.
-  const load = useCallback(async () => {
-    setSavedMessage(null);
-    const [allCategories, options] = await Promise.all([
-      getCategories(),
-      getBudgetCurrencyOptions(),
-    ]);
-    setCategories(allCategories);
-    setCurrencyOptions(options);
+  const { data: categories } = useCategories();
+  const { data: currencyOptions } = useBudgetCurrencyOptions();
 
-    const resolvedCurrencyId =
-      currencyId != null && options.some(c => c.id === currencyId)
-        ? currencyId
-        : (options[0]?.id ?? null);
+  const resolvedCurrencyId = useMemo(() => {
+    if (!currencyOptions) {
+      return currencyId;
+    }
+    if (currencyId != null && currencyOptions.some(c => c.id === currencyId)) {
+      return currencyId;
+    }
+    return currencyOptions[0]?.id ?? null;
+  }, [currencyOptions, currencyId]);
+
+  useEffect(() => {
     if (resolvedCurrencyId !== currencyId) {
       setCurrencyId(resolvedCurrencyId);
     }
+  }, [resolvedCurrencyId, currencyId]);
 
-    if (resolvedCurrencyId == null) {
-      if (!isEditingRef.current) {
-        setAmounts({});
-      }
-      setSpentByCategory({});
+  const currencyCode =
+    (currencyOptions ?? []).find(option => option.id === currencyId)?.code ?? '';
+
+  const { data: existingBudgets } = useCategoryBudgetsForMonth(
+    selectedMonth,
+    resolvedCurrencyId,
+  );
+
+  // Seeds the editable amount fields from whatever this month/currency
+  // pair has saved — the same assignment load() used to make, now driven
+  // by the query resolving. Every (month, currency) pair is its own cache
+  // entry, so switching tabs or months re-reads nothing already seen.
+  useEffect(() => {
+    if (isEditingRef.current) {
       return;
     }
-
-    const existingBudgets = await getCategoryBudgetsForMonth(
-      selectedMonth,
-      resolvedCurrencyId,
-    );
     const byCategory: Record<number, string> = {};
-    for (const budget of existingBudgets) {
+    for (const budget of existingBudgets ?? []) {
       byCategory[budget.categoryId] = String(budget.amount);
     }
-    if (!isEditingRef.current) {
-      setAmounts(byCategory);
-    }
+    setAmounts(byCategory);
+  }, [existingBudgets, selectedMonth, resolvedCurrencyId]);
 
+  const [startDate, endDate] = useMemo(() => {
     const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
     const lastDay = clampDayToMonth(yearNum, monthNum, 31);
-    const startDate = `${selectedMonth}-01`;
-    const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
-    const spendingRows = await getSpendingByCategory(
-      startDate,
-      endDate,
-      resolvedCurrencyId,
-    );
-    const spendByCategory: Record<number, number> = {};
-    for (const row of spendingRows) {
+    return [
+      `${selectedMonth}-01`,
+      `${selectedMonth}-${String(lastDay).padStart(2, '0')}`,
+    ];
+  }, [selectedMonth]);
+
+  const { data: spendingRows } = useSpendingByCategory(
+    startDate,
+    endDate,
+    resolvedCurrencyId,
+  );
+
+  const spentByCategory = useMemo(() => {
+    const byCategory: Record<number, number> = {};
+    for (const row of spendingRows ?? []) {
       if (row.categoryId != null) {
-        spendByCategory[row.categoryId] = row.total;
+        byCategory[row.categoryId] = row.total;
       }
     }
-    setSpentByCategory(spendByCategory);
-  }, [selectedMonth, currencyId]);
+    return byCategory;
+  }, [spendingRows]);
 
-  // Re-runs on focus and whenever `load` itself changes identity — which
-  // happens whenever selectedMonth or currencyId changes (see load's own
-  // dependency array) — so switching the month or the currency tab both
-  // reload.
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  // Clearing the "saved" banner used to happen inside load(); it belongs
+  // to the month/currency selection, not to any database read.
+  useEffect(() => {
+    setSavedMessage(null);
+  }, [selectedMonth, resolvedCurrencyId]);
 
   const handleAmountChange = (categoryId: number, value: string) => {
     setAmounts(current => ({ ...current, [categoryId]: value }));
@@ -166,7 +176,9 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     );
     editGate.finishEdit();
     setSavedMessage('Category budgets saved');
-    load();
+    // No load() here any more: upsertCategoryBudget's mutation
+    // invalidated every budget query this write affects, and awaiting it
+    // above waited for those refetches.
   };
 
   const handleCancel = () => {
@@ -196,9 +208,9 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         onYearChange={setYear}
       />
 
-      {currencyOptions.length > 1 && (
+      {(currencyOptions ?? []).length > 1 && (
         <CurrencyTabs
-          currencies={currencyOptions}
+          currencies={currencyOptions ?? []}
           value={currencyId}
           onChange={setCurrencyId}
           style={styles.currencyTabs}
@@ -220,10 +232,10 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         </View>
       )}
 
-      {categories.length === 0 ? (
+      {(categories ?? []).length === 0 ? (
         <EmptyState message="No categories yet." />
       ) : (
-        categories.map(item => {
+        (categories ?? []).map(item => {
           const budgetAmount = Number(amounts[item.id] ?? 0);
           const spent = spentByCategory[item.id] ?? 0;
           const hasBudget = (amounts[item.id] ?? '').trim() !== '' && budgetAmount > 0;

@@ -1,17 +1,13 @@
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
 import EmptyState from '../components/common/EmptyState';
 import ActionButtons from '../components/common/ActionButtons';
 import {
-  addCategory,
-  deleteCategory,
   getCategories,
   getUserCategoryCount,
-  updateCategory,
 } from '../db/queries';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
@@ -22,27 +18,33 @@ import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntityFormModal } from '../hooks/useEntityFormModal';
+import { useCategories } from '../hooks/queries';
+import {
+  useAddCategory as useAddCategoryMutation,
+  useDeleteCategory as useDeleteCategoryMutation,
+  useUpdateCategory as useUpdateCategoryMutation,
+} from '../hooks/queries';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
 function CategoriesScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addCategory = useAddCategoryMutation();
+  const deleteCategory = useDeleteCategoryMutation();
+  const updateCategory = useUpdateCategoryMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-
-  const load = useCallback(async () => {
-    const rows = await getCategories();
-    setCategories(rows);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  // Was a getCategories() read on every screen focus; now the shared
+  // reference-cached roster, refreshed by this screen's own add/rename/
+  // delete mutations rather than by coming back to it.
+  const { data: categories } = useCategories();
 
   const {
     visible: formVisible,
@@ -104,7 +106,6 @@ function CategoriesScreen(): React.JSX.Element {
         });
       });
     },
-    onSaved: load,
     errorTitle: 'Cannot save category',
   });
 
@@ -116,12 +117,14 @@ function CategoriesScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteCategory(id);
-          await load();
+          // No load() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete category'),
     );
   };
 
-  const hasReserved = categories.some(c => c.isSystemReserved);
+  const hasReserved = (categories ?? []).some(c => c.isSystemReserved);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -136,7 +139,7 @@ function CategoriesScreen(): React.JSX.Element {
 
       <FlatList
         style={styles.list}
-        data={categories}
+        data={categories ?? []}
         keyExtractor={item => String(item.id)}
         renderItem={({ item, index }) => {
           const { bg, fg } = avatarColorsFor(index, colors.chart);

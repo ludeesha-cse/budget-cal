@@ -13,7 +13,7 @@ import { Check, Info } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
 import CurrencyTabs from '../components/common/CurrencyTabs';
-import { deleteBudget, settleCreditCardAccount, upsertBudget } from '../db/queries';
+
 import { useBudgetSettingsData } from '../hooks/useBudgetSettingsData';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
@@ -24,8 +24,21 @@ import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import {
+  useDeleteBudget as useDeleteBudgetMutation,
+  useSettleCreditCardAccount as useSettleCreditCardAccountMutation,
+  useUpsertBudget as useUpsertBudgetMutation,
+} from '../hooks/queries';
 
 function BudgetSettingsScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const deleteBudget = useDeleteBudgetMutation();
+  const settleCreditCardAccount = useSettleCreditCardAccountMutation();
+  const upsertBudget = useUpsertBudgetMutation();
   const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
@@ -44,7 +57,6 @@ function BudgetSettingsScreen(): React.JSX.Element {
     currentBudgetId,
     allBudgets,
     creditCards,
-    reload,
   } = useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
 
   const parsedAmount = Number(amount);
@@ -66,7 +78,9 @@ function BudgetSettingsScreen(): React.JSX.Element {
     Keyboard.dismiss();
     await upsertBudget(selectedMonth, currencyId, parsedAmount);
     setSavedMessage('Budget saved');
-    reload();
+    // No reload() here any more: the mutation already invalidated every
+    // budget query this write affects, and awaiting it waits for those
+    // refetches — a second read would be redundant.
   };
 
   const handleDelete = () => {
@@ -84,7 +98,6 @@ function BudgetSettingsScreen(): React.JSX.Element {
           onPress: async () => {
             await deleteBudget(currentBudgetId);
             setAmount('');
-            reload();
           },
         },
       ],
@@ -101,7 +114,6 @@ function BudgetSettingsScreen(): React.JSX.Element {
           text: 'Settle',
           onPress: async () => {
             await settleCreditCardAccount(id);
-            reload();
           },
         },
       ],

@@ -1,40 +1,15 @@
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
-import { getNetWorthByCurrency, NetWorthByCurrency } from '../utils/netWorth';
+import { useNetWorthData } from '../hooks/useNetWorthData';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 
 function NetWorthScreen(): React.JSX.Element {
   const { colors } = useTheme();
-  const [netWorthByCurrency, setNetWorthByCurrency] = useState<
-    Record<string, NetWorthByCurrency>
-  >({});
-  const [loading, setLoading] = useState(true);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      getNetWorthByCurrency()
-        .then(result => {
-          if (!cancelled) {
-            setNetWorthByCurrency(result);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setLoading(false);
-          }
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, []),
-  );
+  const { netWorthByCurrency, loading } = useNetWorthData();
 
   return (
     <ScreenBackground colors={colors}>

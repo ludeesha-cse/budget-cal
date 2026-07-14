@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
 import {
-  addContribution,
-  deleteContribution,
   getContributions,
-  updateContribution,
 } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
 import { useConfirmDelete } from './useConfirmDelete';
 import { useAsyncAction } from './useAsyncAction';
+import {
+  useAddContribution as useAddContributionMutation,
+  useDeleteContribution as useDeleteContributionMutation,
+  useUpdateContribution as useUpdateContributionMutation,
+} from './queries';
 
 export type SavingsContributionRow = Awaited<
   ReturnType<typeof getContributions>
@@ -47,13 +49,27 @@ export interface UseContributionFormResult {
 
 // Combines the add-mini-form and the edit-inline-form for a goal's
 // contributions, plus delete — all three mutations funnel through the
-// same `onSaved(goalId)` callback so the caller can refresh both the
+// same `onSaved?.(goalId)` callback so the caller can refresh both the
 // goals list (totals) and that one goal's own contribution cache
 // together, mirroring the original screen's
 // `Promise.all([load(), reloadContributionsFor(goalId)])`.
 export function useContributionForm(
-  onSaved: (goalId: number) => Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: (goalId: number) => Promise<void>,
 ): UseContributionFormResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addContribution = useAddContributionMutation();
+  const deleteContribution = useDeleteContributionMutation();
+  const updateContribution = useUpdateContributionMutation();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
 
@@ -103,7 +119,7 @@ export function useContributionForm(
         note: contributionNote.trim() || undefined,
       });
       setAddingContributionFor(null);
-      await onSaved(goalId);
+      await onSaved?.(goalId);
     }, 'Could not add contribution');
   };
 
@@ -135,7 +151,7 @@ export function useContributionForm(
         note: editNote.trim() || undefined,
       });
       setEditingContributionId(null);
-      await onSaved(goalId);
+      await onSaved?.(goalId);
     }, 'Could not update contribution');
   };
 
@@ -150,7 +166,7 @@ export function useContributionForm(
       () =>
         runAction(async () => {
           await deleteContribution(contribution.id);
-          await onSaved(goalId);
+          await onSaved?.(goalId);
         }, 'Could not delete contribution'),
     );
   };

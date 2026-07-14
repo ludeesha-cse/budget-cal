@@ -8,7 +8,7 @@
 // development: flip it and reload. hooks/useEntitlement.ts also exposes
 // a __DEV__-only in-app toggle (see SettingsHomeScreen) for flipping it
 // live without editing this file or rebuilding.
-export const HARDCODED_ENTITLEMENT: 'free' | 'premium' = 'free';
+export const HARDCODED_ENTITLEMENT: 'free' | 'premium' = 'premium';
 
 export const FREE_TIER_LIMITS = {
   accountsPerType: 1,

@@ -28,6 +28,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { QueryClientProvider } from '@tanstack/react-query';
 import {
   ChartColumn,
   House,
@@ -37,6 +38,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { runMigrations } from './db';
+import { createQueryClient } from './db/queryClient';
 import { ensureDefaultAccount, getAppMeta } from './db/queries';
 import DashboardScreen from './screens/DashboardScreen';
 import HistoryListScreen from './screens/HistoryListScreen';
@@ -504,6 +506,11 @@ function AppNavigator(): React.JSX.Element {
 function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<Error | null>(null);
+  // Created exactly once for the app's lifetime — passing the factory
+  // (not createQueryClient()) means React only calls it on the first
+  // render, so a re-render can never swap in a fresh, empty cache and
+  // silently drop everything that was already loaded.
+  const [queryClient] = useState(createQueryClient);
 
   useEffect(() => {
     runMigrations()
@@ -530,16 +537,22 @@ function App(): React.JSX.Element {
     );
   }
 
+  // QueryClientProvider goes outside the existing provider stack rather
+  // than replacing any part of it: the navigation root, and every
+  // provider above it, keep working exactly as before — they can now
+  // just also read from the cache.
   return (
-    <EntitlementProvider>
-      <PaywallProvider>
-        <AuthProvider>
-          <ThemeProvider>
-            <AppShell />
-          </ThemeProvider>
-        </AuthProvider>
-      </PaywallProvider>
-    </EntitlementProvider>
+    <QueryClientProvider client={queryClient}>
+      <EntitlementProvider>
+        <PaywallProvider>
+          <AuthProvider>
+            <ThemeProvider>
+              <AppShell />
+            </ThemeProvider>
+          </AuthProvider>
+        </PaywallProvider>
+      </EntitlementProvider>
+    </QueryClientProvider>
   );
 }
 

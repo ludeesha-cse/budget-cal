@@ -30,7 +30,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const filters = useTransactionHistoryFilters();
   const { month, year, isSearchMode, debouncedQuery, activeTagFilterIds } = filters;
 
-  const { rows, loading, tagsByTransactionId, defaultCurrencyId, reload } =
+  const { rows, loading, tagsByTransactionId, defaultCurrencyId } =
     useTransactionHistoryData({
       month,
       year,
@@ -39,8 +39,8 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
       activeTagFilterIds,
     });
 
-  const editTransferModal = useEditTransferModal(reload);
-  const { handleDelete, handleDeleteTransfer } = useTransactionActions(reload);
+  const editTransferModal = useEditTransferModal();
+  const { handleDelete, handleDeleteTransfer } = useTransactionActions();
 
   return (
     <ScreenBackground colors={colors} edges={['top']}>

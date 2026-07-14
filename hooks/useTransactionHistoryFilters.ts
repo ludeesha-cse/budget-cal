@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useEffect, useState } from 'react';
+import { useTags } from './queries';
 import { getTags } from '../db/queries';
 import { getCurrentMonthString, getCurrentYearString } from '../utils/date';
 
@@ -26,13 +26,16 @@ export interface UseTransactionHistoryFiltersResult {
 // activeTagFilterIds, ever resets month/year — that's what makes
 // "clear the search" restore the previous month/year selection for
 // free, with no special-case code needed anywhere.
+//
+// The tag roster is the only database read here, and it now comes from
+// the reference cache instead of a fresh getTags() on every focus.
 export function useTransactionHistoryFilters(): UseTransactionHistoryFiltersResult {
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [availableTags, setAvailableTags] = useState<TagRow[]>([]);
   const [activeTagFilterIds, setActiveTagFilterIds] = useState<number[]>([]);
+  const { data: availableTags } = useTags();
 
   // Search mode kicks in the moment there's something to search or
   // filter by — a non-empty query OR at least one active tag chip —
@@ -44,12 +47,6 @@ export function useTransactionHistoryFilters(): UseTransactionHistoryFiltersResu
     const handle = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(handle);
   }, [searchQuery]);
-
-  useFocusEffect(
-    useCallback(() => {
-      getTags().then(setAvailableTags);
-    }, []),
-  );
 
   const toggleTagFilter = (tagId: number) => {
     setActiveTagFilterIds(current =>
@@ -67,7 +64,7 @@ export function useTransactionHistoryFilters(): UseTransactionHistoryFiltersResu
     searchQuery,
     setSearchQuery,
     debouncedQuery,
-    availableTags,
+    availableTags: availableTags ?? [],
     activeTagFilterIds,
     toggleTagFilter,
     isSearchMode,

@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
 import {
-  createInstallmentPlan,
-  updateInstallmentPlan,
   type NewInstallmentPlanParams,
 } from '../db/queries';
 import type { PaywallRequest } from '../contexts/PaywallContext';
@@ -20,6 +18,10 @@ import type {
   InstallmentCurrencyRow,
   InstallmentPlanRow,
 } from './useInstallmentPlansData';
+import {
+  useCreateInstallmentPlan as useCreateInstallmentPlanMutation,
+  useUpdateInstallmentPlan as useUpdateInstallmentPlanMutation,
+} from './queries';
 
 export type InstallmentMode = 'principal' | 'monthly';
 
@@ -69,7 +71,13 @@ export interface UseInstallmentFormDeps {
   currencies: InstallmentCurrencyRow[];
   tier: EntitlementTier;
   openPaywall: (request: PaywallRequest) => void;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
 }
 
 // Add/Edit Installment Plan, built on useEntityFormModal (Step 6).
@@ -80,6 +88,13 @@ export interface UseInstallmentFormDeps {
 export function useInstallmentForm(
   deps: UseInstallmentFormDeps,
 ): UseInstallmentFormResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const createInstallmentPlan = useCreateInstallmentPlanMutation();
+  const updateInstallmentPlan = useUpdateInstallmentPlanMutation();
   const { categories, currencies, tier, openPaywall, onSaved } = deps;
 
   const form = useEntityFormModal<

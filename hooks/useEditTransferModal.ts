@@ -1,7 +1,10 @@
-import { updateTransfer } from '../db/queries';
+
 import { useTargetedModal } from './useTargetedModal';
 import type { UseTargetedModalResult } from './useTargetedModal';
 import type { TransferRow } from './useTransactionHistoryData';
+import {
+  useUpdateTransfer as useUpdateTransferMutation,
+} from './queries';
 
 export type EditTransferFormValues = {
   amount: string;
@@ -25,8 +28,20 @@ export interface UseEditTransferModalResult
 // matching the convention established for every other hook built on it
 // (Steps 13/14).
 export function useEditTransferModal(
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseEditTransferModalResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const updateTransfer = useUpdateTransferMutation();
   const modal = useTargetedModal<TransferRow, EditTransferFormValues>({
     initialValues: transfer => ({
       amount: String(transfer.amount),

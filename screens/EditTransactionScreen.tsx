@@ -8,10 +8,12 @@ import TransactionForm, {
 import {
   getTagsForTransaction,
   getTransactionById,
-  setTransactionTags,
-  updateTransaction,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
+import {
+  useSetTransactionTags as useSetTransactionTagsMutation,
+  useUpdateTransaction as useUpdateTransactionMutation,
+} from '../hooks/queries';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'EditTransaction'>;
 
@@ -19,6 +21,13 @@ function EditTransactionScreen({
   route,
   navigation,
 }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const setTransactionTags = useSetTransactionTagsMutation();
+  const updateTransaction = useUpdateTransactionMutation();
   const { colors } = useTheme();
   const { id } = route.params;
   const [transaction, setTransaction] = useState<

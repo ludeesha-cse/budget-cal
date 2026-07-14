@@ -1,17 +1,24 @@
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Pencil, Plus, Tag as TagIcon, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
 import EmptyState from '../components/common/EmptyState';
 import ActionButtons from '../components/common/ActionButtons';
-import { addTag, deleteTag, getTags, updateTag } from '../db/queries';
+import {
+  getTags,
+} from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntityFormModal } from '../hooks/useEntityFormModal';
+import { useTags } from '../hooks/queries';
+import {
+  useAddTag as useAddTagMutation,
+  useDeleteTag as useDeleteTagMutation,
+  useUpdateTag as useUpdateTagMutation,
+} from '../hooks/queries';
 
 type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 
@@ -19,21 +26,21 @@ type TagRow = Awaited<ReturnType<typeof getTags>>[number];
 // real difference is there's no entitlement gate here, since tags are a
 // free-tier feature (Stage 15 spec) unlike categories.
 function TagsScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addTag = useAddTagMutation();
+  const deleteTag = useDeleteTagMutation();
+  const updateTag = useUpdateTagMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
-  const [tags, setTags] = useState<TagRow[]>([]);
-
-  const load = useCallback(async () => {
-    const rows = await getTags();
-    setTags(rows);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  // Was a getTags() read on every screen focus; now the shared
+  // reference-cached roster, refreshed by this screen's own add/rename/
+  // delete mutations rather than by coming back to it.
+  const { data: tags } = useTags();
 
   const {
     visible: formVisible,
@@ -52,7 +59,6 @@ function TagsScreen(): React.JSX.Element {
     toParams: value => value.trim(),
     onCreate: trimmedName => addTag(trimmedName),
     onUpdate: (id, trimmedName) => updateTag(id, trimmedName),
-    onSaved: load,
     errorTitle: 'Cannot save tag',
   });
 
@@ -67,7 +73,9 @@ function TagsScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteTag(tag.id);
-          await load();
+          // No load() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete tag'),
     );
   };
@@ -85,7 +93,7 @@ function TagsScreen(): React.JSX.Element {
 
       <FlatList
         style={styles.list}
-        data={tags}
+        data={tags ?? []}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
           <Card colors={colors} style={styles.row}>

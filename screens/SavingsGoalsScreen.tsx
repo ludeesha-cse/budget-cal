@@ -22,11 +22,13 @@ import {
 import { useSavingsGoalForm } from '../hooks/useSavingsGoalForm';
 import { useContributionForm } from '../hooks/useContributionForm';
 import {
-  deleteSavingsGoal,
   getContributions,
-  setSavingsGoalStatus,
 } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
+import {
+  useDeleteSavingsGoal as useDeleteSavingsGoalMutation,
+  useSetSavingsGoalStatus as useSetSavingsGoalStatusMutation,
+} from '../hooks/queries';
 
 const FILTER_OPTIONS: SegmentedToggleOption<SavingsGoalFilter>[] = [
   { key: 'active', label: 'Active' },
@@ -34,19 +36,30 @@ const FILTER_OPTIONS: SegmentedToggleOption<SavingsGoalFilter>[] = [
 ];
 
 function SavingsGoalsScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const deleteSavingsGoal = useDeleteSavingsGoalMutation();
+  const setSavingsGoalStatus = useSetSavingsGoalStatusMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
 
-  const { currencies, loading, filter, setFilter, visibleGoals, reload } =
+  const { currencies, loading, filter, setFilter, visibleGoals } =
     useSavingsGoalsData();
 
   const contributionsDetail = useLazyExpandableDetail(getContributions);
 
-  const goalForm = useSavingsGoalForm(currencies, reload);
+  const goalForm = useSavingsGoalForm(currencies);
 
+  // The goal list itself is refreshed by the contribution mutation's own
+  // invalidation; the only thing left for this callback is the expanded
+  // row's lazily-fetched contribution history, which sits outside the
+  // query cache (see useLazyExpandableDetail).
   const contributionForm = useContributionForm(async (goalId: number) => {
-    await Promise.all([reload(), contributionsDetail.refresh(goalId)]);
+    await contributionsDetail.refresh(goalId);
   });
 
   // Doesn't cleanly fit useSavingsGoalsData/useSavingsGoalForm/
@@ -73,7 +86,9 @@ function SavingsGoalsScreen(): React.JSX.Element {
           onPress: () =>
             runAction(async () => {
               await setSavingsGoalStatus(goal.id, status);
-              await reload();
+              // No reload() here any more: the mutation above already
+              // invalidated every query this write affects, and awaiting it
+              // waits for those refetches — a second read would be redundant.
             }, 'Could not update goal'),
         },
       ],
@@ -88,7 +103,9 @@ function SavingsGoalsScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteSavingsGoal(goal.id);
-          await reload();
+        // No reload() here any more: the mutation above already
+        // invalidated every query this write affects, and awaiting it
+        // waits for those refetches — a second read would be redundant.
         }, 'Could not delete goal'),
     );
   };

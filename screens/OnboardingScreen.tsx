@@ -16,13 +16,19 @@ import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import { HELP_TOPICS, type HelpTopic } from '../config/helpTopics';
-import { setOnboardingCompleted } from '../db/queries';
+import { useSetOnboardingCompleted as useSetOnboardingCompletedMutation } from '../hooks/queries';
 
 type Props = {
   onDone: () => void;
 };
 
 function OnboardingScreen({ onDone }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const setOnboardingCompleted = useSetOnboardingCompletedMutation();
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
@@ -72,7 +78,10 @@ function OnboardingScreen({ onDone }: Props): React.JSX.Element {
       console.error('[onboarding] could not save completion', error);
       setFinishing(false);
     }
-  }, [finishing, onDone]);
+    // setOnboardingCompleted is the mutation hook's callable — stable
+    // across renders (useCallback + useMemo inside useDbMutation), so
+    // listing it here does not re-create this callback each render.
+  }, [finishing, onDone, setOnboardingCompleted]);
 
   return (
     <ScreenBackground colors={colors} edges={['top', 'bottom']}>

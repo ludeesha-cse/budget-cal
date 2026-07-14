@@ -152,3 +152,125 @@ export async function getNetWorthByCurrency(): Promise<
     throw error;
   }
 }
+
+// ---------------------------------------------------------------------
+// Pure counterpart of getNetWorthByCurrency, for callers that already
+// hold the rows.
+//
+// Added with the TanStack Query caching layer. Net worth is an
+// aggregation over data other screens already cache — the account
+// roster, the one batched all-account-balances read, active loans with
+// their live totals owed, and per-currency remaining installment
+// balances — so under the caching rules it is a calculation, not a read
+// that earns a cache entry of its own. Caching the aggregate separately
+// would in fact be the one way to make it disagree with its own inputs.
+//
+// The arithmetic is unchanged from the async version above, including
+// its two subtleties: the asset side uses each balance row's live
+// `currentBalance` (never the stored opening baseline), and
+// liability/receivable figures include accrued-but-unpaid interest via
+// the caller's totalOwed map. `currentBalance` from getAllAccountBalances
+// is the same quantity getAccountBalance returns — see that function's
+// own comment, which spells out that openingBalance - netSpent collapses
+// to openingBalance + netBalanceEffect, which is exactly what it stores.
+// ---------------------------------------------------------------------
+
+type NetWorthAccount = { id: number; type: string; active: boolean };
+type NetWorthBalance = {
+  accountId: number;
+  currencyId: number;
+  currencyCode: string;
+  currentBalance: number;
+};
+type NetWorthLoan = { accountId: number; currencyCode: string };
+type NetWorthCurrency = { id: number; code: string };
+
+export function buildNetWorthByCurrency(params: {
+  accounts: NetWorthAccount[];
+  balances: NetWorthBalance[];
+  liabilities: NetWorthLoan[];
+  receivables: NetWorthLoan[];
+  totalOwedByAccountId: Record<number, number>;
+  currencies: NetWorthCurrency[];
+  remainingInstallmentsByCurrencyId: Record<number, number>;
+}): Record<string, NetWorthByCurrency> {
+  const {
+    accounts,
+    balances,
+    liabilities,
+    receivables,
+    totalOwedByAccountId,
+    currencies,
+    remainingInstallmentsByCurrencyId,
+  } = params;
+
+  const totals: Record<string, NetWorthByCurrency> = {};
+
+  // Only active accounts are counted. A closed account can only be
+  // closed with a zero balance in every currency (see closeAccount's
+  // gate), so an inactive account never contributes a nonzero figure
+  // anyway.
+  const typeByAccountId = new Map(
+    accounts.filter(a => a.active).map(a => [a.id, a.type]),
+  );
+
+  for (const balance of balances) {
+    const accountType = typeByAccountId.get(balance.accountId);
+    if (accountType === undefined) {
+      continue;
+    }
+    if (ASSET_ACCOUNT_TYPES.includes(accountType)) {
+      addTo(totals, balance.currencyCode, 'assets', balance.currentBalance);
+    } else if (accountType === CREDIT_CARD_TYPE) {
+      // Stored balance is the negative of what's owed (see
+      // getCreditCardDebt) — flip it back to a positive debt figure.
+      addTo(
+        totals,
+        balance.currencyCode,
+        'creditCardDebt',
+        -balance.currentBalance,
+      );
+    }
+  }
+
+  for (const loan of receivables) {
+    addTo(
+      totals,
+      loan.currencyCode,
+      'assets',
+      totalOwedByAccountId[loan.accountId] ?? 0,
+    );
+  }
+  for (const loan of liabilities) {
+    addTo(
+      totals,
+      loan.currencyCode,
+      'liabilities',
+      totalOwedByAccountId[loan.accountId] ?? 0,
+    );
+  }
+
+  for (const currency of currencies) {
+    const remaining = remainingInstallmentsByCurrencyId[currency.id] ?? 0;
+    // Only adds an entry when there's actually something to show —
+    // otherwise a currency with installment plans but no cash accounts
+    // at all (an edge case, but not an impossible one) would be the only
+    // way a brand-new currencyCode key ever appeared here, and a
+    // currency with zero of everything shouldn't show up in net worth
+    // just because it exists in the currencies table.
+    if (remaining !== 0) {
+      addTo(totals, currency.code, 'remainingInstallments', remaining);
+    }
+  }
+
+  for (const currencyCode of Object.keys(totals)) {
+    const row = totals[currencyCode];
+    row.netWorth =
+      row.assets -
+      row.liabilities -
+      row.creditCardDebt -
+      row.remainingInstallments;
+  }
+
+  return totals;
+}

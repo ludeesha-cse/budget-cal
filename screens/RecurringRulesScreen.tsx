@@ -21,10 +21,12 @@ import {
 } from '../hooks/useRecurringRulesData';
 import { useRecurringRuleForm } from '../hooks/useRecurringRuleForm';
 import {
-  deleteRecurringRule,
   getOccurrenceHistory,
-  setRecurringRuleActive,
 } from '../db/queries';
+import {
+  useDeleteRecurringRule as useDeleteRecurringRuleMutation,
+  useSetRecurringRuleActive as useSetRecurringRuleActiveMutation,
+} from '../hooks/queries';
 
 const LIST_TYPE_OPTIONS: SegmentedToggleOption<RecurringRuleListType>[] = [
   { key: 'Income', label: 'Income rules' },
@@ -32,6 +34,13 @@ const LIST_TYPE_OPTIONS: SegmentedToggleOption<RecurringRuleListType>[] = [
 ];
 
 function RecurringRulesScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const deleteRecurringRule = useDeleteRecurringRuleMutation();
+  const setRecurringRuleActive = useSetRecurringRuleActiveMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
@@ -43,7 +52,6 @@ function RecurringRulesScreen(): React.JSX.Element {
     categories,
     loading,
     visibleRules,
-    load,
   } = useRecurringRulesData();
 
   // Occurrence history is fetched lazily on first expand — most rules
@@ -51,7 +59,7 @@ function RecurringRulesScreen(): React.JSX.Element {
   // SavingsGoalsScreen's contributions, so no refresh() call is needed.
   const historyDetail = useLazyExpandableDetail(getOccurrenceHistory);
 
-  const ruleForm = useRecurringRuleForm(accounts, categories, load);
+  const ruleForm = useRecurringRuleForm(accounts, categories);
 
   // Doesn't cleanly fit useRecurringRulesData/useRecurringRuleForm, so —
   // mirroring AccountsScreen's and InstallmentPlansScreen's own
@@ -60,7 +68,9 @@ function RecurringRulesScreen(): React.JSX.Element {
   const handleToggleActive = async (rule: RecurringRuleRow) => {
     await runAction(async () => {
       await setRecurringRuleActive(rule.id, !rule.active);
-      await load();
+      // No reload() here any more: the mutation above already
+      // invalidated every query this write affects, and awaiting it
+      // waits for those refetches — a second read would be redundant.
     }, 'Could not update rule');
   };
 
@@ -75,7 +85,9 @@ function RecurringRulesScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteRecurringRule(rule.id);
-          await load();
+        // No reload() here any more: the mutation above already
+        // invalidated every query this write affects, and awaiting it
+        // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete rule'),
     );
   };

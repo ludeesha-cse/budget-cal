@@ -23,7 +23,13 @@ export interface UseTargetedModalConfig<TTarget, TValues> {
   // runs anyway.
   validate: (values: TValues, target: TTarget) => string | null;
   onSubmit: (target: TTarget, values: TValues) => Promise<unknown>;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
 }
 
 export interface UseTargetedModalResult<TTarget, TValues> {
@@ -107,7 +113,7 @@ export function useTargetedModal<TTarget, TValues>(
     try {
       await onSubmit(currentTarget, currentValues);
       setState(null);
-      await onSaved();
+      await onSaved?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

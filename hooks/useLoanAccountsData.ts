@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  useAccountList,
+  useActiveCurrencies,
+  useActiveLoanAccounts,
+  useInactiveLoanAccounts,
+  useLoanTotalOwedByAccountId,
+} from './queries';
 import {
   getAccounts,
   getActiveCurrencies,
   getActiveLoanAccounts,
   getInactiveLoanAccounts,
-  getLoanTotalOwed,
   type LoanAccountType,
 } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
-import { useKeyedFetch } from './useKeyedFetch';
 
 export type ActiveLoan = Awaited<ReturnType<typeof getActiveLoanAccounts>>[number];
 export type InactiveLoan = Awaited<
@@ -33,7 +37,6 @@ export interface UseLoanAccountsDataResult {
   // stored) per active loan account, keyed by accountId.
   totalOwedByAccountId: Record<string | number, number>;
   loans: ActiveLoan[];
-  load: () => Promise<void>;
 }
 
 export interface UseLoanAccountsDataDeps {
@@ -51,6 +54,11 @@ export interface UseLoanAccountsDataDeps {
   clearRouteParams: () => void;
 }
 
+// Now four cached queries plus one cached total-owed per active loan,
+// instead of a five-way Promise.all on every focus. Note the toggle
+// (`type`) still only affects WHICH inactive list is queried — both
+// active lists are always fetched, exactly as before, and flipping the
+// toggle now costs nothing at all once each side has been seen once.
 export function useLoanAccountsData(
   deps: UseLoanAccountsDataDeps,
 ): UseLoanAccountsDataResult {
@@ -58,36 +66,16 @@ export function useLoanAccountsData(
   const [type, setType] = useState<LoanAccountType>(
     routeParams?.type ?? 'Liability',
   );
-  const [activeLiabilities, setActiveLiabilities] = useState<ActiveLoan[]>([]);
-  const [activeReceivables, setActiveReceivables] = useState<ActiveLoan[]>([]);
-  const [inactiveLoans, setInactiveLoans] = useState<InactiveLoan[]>([]);
-  const [currencies, setCurrencies] = useState<LoanCurrencyRow[]>([]);
-  const [accounts, setAccounts] = useState<LoanAccountRow[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [liabilityRows, receivableRows, inactiveRows, currencyRows, accountRows] =
-      await Promise.all([
-        getActiveLoanAccounts('Liability'),
-        getActiveLoanAccounts('Receivable'),
-        getInactiveLoanAccounts(type),
-        getActiveCurrencies(),
-        getAccounts(),
-      ]);
-    setActiveLiabilities(liabilityRows);
-    setActiveReceivables(receivableRows);
-    setInactiveLoans(inactiveRows);
-    setCurrencies(currencyRows);
-    setAccounts(accountRows);
-    setLoading(false);
-  }, [type]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  const { data: activeLiabilities, isPending: liabilitiesPending } =
+    useActiveLoanAccounts('Liability');
+  const { data: activeReceivables, isPending: receivablesPending } =
+    useActiveLoanAccounts('Receivable');
+  const { data: inactiveLoans, isPending: inactivePending } =
+    useInactiveLoanAccounts(type);
+  const { data: currencies, isPending: currenciesPending } =
+    useActiveCurrencies();
+  const { data: accounts, isPending: accountsPending } = useAccountList();
 
   // Consumes the FAB's one-time `type` preset exactly once, mirroring
   // useTransfer's withdrawMode/openTransfer handling — clearRouteParams
@@ -105,31 +93,35 @@ export function useLoanAccountsData(
 
   const loans = type === 'Liability' ? activeLiabilities : activeReceivables;
 
-  // Refetched whenever either active-loan list actually changes (i.e.
-  // every load()), not on every render — memoized so useKeyedFetch's own
-  // `rows` dependency doesn't see a "new" array on renders where neither
-  // list changed.
-  const allActiveLoans = useMemo(
-    () => [...activeLiabilities, ...activeReceivables],
+  // Memoized so useLoanTotalOwedByAccountId's own dependency doesn't see
+  // a "new" array on renders where neither list actually changed.
+  const allActiveLoanIds = useMemo(
+    () =>
+      [...(activeLiabilities ?? []), ...(activeReceivables ?? [])].map(
+        loan => loan.accountId,
+      ),
     [activeLiabilities, activeReceivables],
   );
-  const totalOwedByAccountId = useKeyedFetch(
-    allActiveLoans,
-    loan => loan.accountId,
-    loan => getLoanTotalOwed(loan.accountId, getCurrentDateString()),
+  const totalOwedByAccountId = useLoanTotalOwedByAccountId(
+    allActiveLoanIds,
+    getCurrentDateString(),
   );
 
   return {
     type,
     setType,
-    activeLiabilities,
-    activeReceivables,
-    inactiveLoans,
-    currencies,
-    accounts,
-    loading,
+    activeLiabilities: activeLiabilities ?? [],
+    activeReceivables: activeReceivables ?? [],
+    inactiveLoans: inactiveLoans ?? [],
+    currencies: currencies ?? [],
+    accounts: accounts ?? [],
+    loading:
+      liabilitiesPending ||
+      receivablesPending ||
+      inactivePending ||
+      currenciesPending ||
+      accountsPending,
     totalOwedByAccountId,
-    loans,
-    load,
+    loans: loans ?? [],
   };
 }

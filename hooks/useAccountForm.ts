@@ -1,7 +1,5 @@
 import {
-  addAccountWithBalance,
   getActiveAccountCountByType,
-  updateAccount,
 } from '../db/queries';
 import type { PaywallRequest } from '../contexts/PaywallContext';
 import type { EntitlementTier } from './useEntitlement';
@@ -10,6 +8,10 @@ import { defaultCurrencyId } from '../utils/currencyHelpers';
 import { useEntityFormModal } from './useEntityFormModal';
 import type { UseEntityFormModalResult } from './useEntityFormModal';
 import type { AccountWithBalances, CurrencyRow } from './useAccounts';
+import {
+  useAddAccountWithBalance as useAddAccountWithBalanceMutation,
+  useUpdateAccount as useUpdateAccountMutation,
+} from './queries';
 
 export const ACCOUNT_TYPES = [
   'Cash',
@@ -52,7 +54,13 @@ export interface UseAccountFormDeps {
   currencies: CurrencyRow[];
   tier: EntitlementTier;
   openPaywall: (request: PaywallRequest) => void;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
 }
 
 // Add/Edit Account, built on useEntityFormModal (Step 6). Creating is
@@ -60,6 +68,13 @@ export interface UseAccountFormDeps {
 // stays fully usable regardless of tier, the same standing rule
 // CategoriesScreen's own useEntityFormModal migration follows.
 export function useAccountForm(deps: UseAccountFormDeps): UseAccountFormResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addAccountWithBalance = useAddAccountWithBalanceMutation();
+  const updateAccount = useUpdateAccountMutation();
   const { currencies, tier, openPaywall, onSaved } = deps;
 
   const form = useEntityFormModal<

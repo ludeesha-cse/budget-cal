@@ -62,7 +62,6 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     loading,
     totalOwedByAccountId,
     loans,
-    load,
   } = data;
 
   const counterpartAccounts = accounts.filter(
@@ -77,9 +76,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
     counterpartAccounts,
     tier,
     openPaywall,
-    onSaved: load,
   });
-  const settle = useSettleLoan(counterpartAccounts, load);
+  const settle = useSettleLoan(counterpartAccounts);
 
   return (
     <ScrollView

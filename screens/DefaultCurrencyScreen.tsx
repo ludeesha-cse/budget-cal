@@ -13,14 +13,16 @@ import ScreenBackground from '../components/ScreenBackground';
 import EmptyState from '../components/common/EmptyState';
 import AddCurrencySheets from '../components/currencies/AddCurrencySheets';
 import {
-  confirmDefaultCurrency,
   getCurrencies,
   getDefaultCurrency,
-  setDefaultCurrencyConfirmed,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { scaleFont, typography } from '../theme/typography';
+import {
+  useConfirmDefaultCurrency as useConfirmDefaultCurrencyMutation,
+  useSetDefaultCurrencyConfirmed as useSetDefaultCurrencyConfirmedMutation,
+} from '../hooks/queries';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 
@@ -29,6 +31,13 @@ type Props = {
 };
 
 function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const confirmDefaultCurrency = useConfirmDefaultCurrencyMutation();
+  const setDefaultCurrencyConfirmed = useSetDefaultCurrencyConfirmedMutation();
   const { colors } = useTheme();
   const runAction = useAsyncAction();
   const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);

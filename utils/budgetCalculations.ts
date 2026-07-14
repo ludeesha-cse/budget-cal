@@ -105,3 +105,66 @@ export async function getCategoryAverageLeftPerDay(
   }
   return amountLeft / getDaysRemainingInMonth(month);
 }
+
+// ---------------------------------------------------------------------
+// Pure counterparts of the four functions above, for callers that
+// already hold the rows.
+//
+// Added with the TanStack Query caching layer. The async versions above
+// each re-query the database for numbers a screen has usually already
+// fetched — getAmountLeft re-reads the budget and the month's total that
+// the dashboard is holding in cache, and getCategoryAmountLeft re-reads
+// the whole month's transactions once PER CATEGORY. Under the caching
+// rules those are calculations over already-fetched data, not reads
+// worth a cache entry of their own, so this is what the hooks use. The
+// async versions are unchanged for any caller that genuinely starts
+// from nothing.
+// ---------------------------------------------------------------------
+
+export function amountLeftFrom(
+  limitAmount: number | null | undefined,
+  spent: number,
+): number | null {
+  if (limitAmount == null) {
+    return null;
+  }
+  return limitAmount - spent;
+}
+
+// Same rule as getAverageLeftPerDay: only ever meaningful for the
+// current month, so any other month returns null rather than a figure
+// that would read as authoritative.
+export function averageLeftPerDayFrom(
+  month: string,
+  amountLeft: number | null,
+): number | null {
+  if (month !== getCurrentMonthString() || amountLeft === null) {
+    return null;
+  }
+  return amountLeft / getDaysRemainingInMonth(month);
+}
+
+// Byte-for-byte the same filter getCategorySpent applies, over rows the
+// caller already has: Expense-only, this category, this currency, and
+// never an excludeFromBudget row.
+export function categorySpentFrom(
+  rows: Array<{
+    categoryId: number | null;
+    entryType: string;
+    currencyId: number;
+    excludeFromBudget: boolean | null;
+    amount: number;
+  }>,
+  categoryId: number,
+  currencyId: number,
+): number {
+  return rows
+    .filter(
+      row =>
+        row.categoryId === categoryId &&
+        row.entryType === 'Expense' &&
+        row.currencyId === currencyId &&
+        !row.excludeFromBudget,
+    )
+    .reduce((sum, row) => sum + row.amount, 0);
+}

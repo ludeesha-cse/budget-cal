@@ -1,7 +1,10 @@
-import { updateAccountBalanceWithAudit } from '../db/queries';
+
 import { useTargetedModal } from './useTargetedModal';
 import type { UseTargetedModalResult } from './useTargetedModal';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
+import {
+  useUpdateAccountBalanceWithAudit as useUpdateAccountBalanceWithAuditMutation,
+} from './queries';
 
 export type UpdateBalanceTarget = {
   accountId: number;
@@ -43,8 +46,20 @@ export interface UseUpdateBalanceResult
 // convention useEntityFormModal's consumers (CategoriesScreen, etc.)
 // already use for validation failures.
 export function useUpdateBalance(
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseUpdateBalanceResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const updateAccountBalanceWithAudit = useUpdateAccountBalanceWithAuditMutation();
   const modal = useTargetedModal<UpdateBalanceTarget, UpdateBalanceValues>({
     initialValues: target => ({
       newValue: String(target.currentBalance),

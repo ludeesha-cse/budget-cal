@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { payInstallment } from '../db/queries';
+
 import { formatDateString } from '../utils/date';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useTargetedModal } from './useTargetedModal';
@@ -9,6 +9,9 @@ import type {
   InstallmentAccountRow,
   InstallmentPlanRow,
 } from './useInstallmentPlansData';
+import {
+  usePayInstallment as usePayInstallmentMutation,
+} from './queries';
 
 export type PayInstallmentValues = {
   accountId: string;
@@ -28,8 +31,20 @@ export interface UseInstallmentPayResult
 // useTargetedModal already tracks.
 export function useInstallmentPay(
   activeAccounts: InstallmentAccountRow[],
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseInstallmentPayResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const payInstallment = usePayInstallmentMutation();
   const modal = useTargetedModal<InstallmentPlanRow, PayInstallmentValues>({
     initialValues: () => ({
       accountId: activeAccounts[0] ? String(activeAccounts[0].id) : '',

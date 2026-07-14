@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useMemo, useState } from 'react';
+import { useAccountList, useCategories, useRecurringRules } from './queries';
 import { getAccounts, getCategories, getRecurringRules } from '../db/queries';
 
 export type RecurringRuleRow = Awaited<ReturnType<typeof getRecurringRules>>[number];
@@ -21,45 +21,40 @@ export interface UseRecurringRulesDataResult {
   categories: RecurringRuleCategoryRow[];
   loading: boolean;
   visibleRules: RecurringRuleRow[];
-  load: () => Promise<void>;
 }
 
+// Rules come from the transactional cache (see useRecurringRules' own
+// note on why rules do not fit the reference rule cleanly); accounts and
+// categories from the reference cache. `listType` is a local toggle over
+// rows already in hand.
 export function useRecurringRulesData(): UseRecurringRulesDataResult {
   // Which section of the list is showing — independent of the form's own
   // type toggle, so switching tabs never disturbs an open form.
   const [listType, setListType] = useState<RecurringRuleListType>('Income');
-  const [rules, setRules] = useState<RecurringRuleRow[]>([]);
-  const [accounts, setAccounts] = useState<RecurringRuleAccountRow[]>([]);
-  const [categories, setCategories] = useState<RecurringRuleCategoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: rules, isPending: rulesPending } = useRecurringRules(false);
+  const { data: accountRows, isPending: accountsPending } = useAccountList();
+  const { data: categories, isPending: categoriesPending } = useCategories();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [ruleRows, accountRows, categoryRows] = await Promise.all([
-      getRecurringRules(false),
-      getAccounts(),
-      getCategories(),
-    ]);
-    setRules(ruleRows);
-    setAccounts(
-      accountRows.filter(
+  const accounts = useMemo(
+    () =>
+      (accountRows ?? []).filter(
         a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
       ),
-    );
-    setCategories(categoryRows);
-    setLoading(false);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
+    [accountRows],
   );
 
   const visibleRules = useMemo(
-    () => rules.filter(r => r.ruleType === listType),
+    () => (rules ?? []).filter(r => r.ruleType === listType),
     [rules, listType],
   );
 
-  return { listType, setListType, rules, accounts, categories, loading, visibleRules, load };
+  return {
+    listType,
+    setListType,
+    rules: rules ?? [],
+    accounts,
+    categories: categories ?? [],
+    loading: rulesPending || accountsPending || categoriesPending,
+    visibleRules,
+  };
 }

@@ -11,7 +11,7 @@ import UpdateBalanceModal from '../components/accounts/UpdateBalanceModal';
 import PayOffCardModal from '../components/accounts/PayOffCardModal';
 import TransferModal from '../components/accounts/TransferModal';
 import type { SettingsStackParamList } from '../navigation/types';
-import { closeAccount, deleteAccount } from '../db/queries';
+
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -25,6 +25,10 @@ import { useAddCurrency } from '../hooks/useAddCurrency';
 import { useUpdateBalance } from '../hooks/useUpdateBalance';
 import { usePayOffCard } from '../hooks/usePayOffCard';
 import { useTransfer } from '../hooks/useTransfer';
+import {
+  useCloseAccount as useCloseAccountMutation,
+  useDeleteAccount as useDeleteAccountMutation,
+} from '../hooks/queries';
 
 // Excluded Liability/Receivable from account screen to avoid confusion
 const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
@@ -36,23 +40,29 @@ const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
 type Props = NativeStackScreenProps<SettingsStackParamList, 'Accounts'>;
 
 function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const closeAccount = useCloseAccountMutation();
+  const deleteAccount = useDeleteAccountMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
 
-  const { accounts, currencies, activeAccounts, load } = useAccounts();
-  const accountForm = useAccountForm({ currencies, tier, openPaywall, onSaved: load });
-  const addCurrency = useAddCurrency(load);
-  const updateBalance = useUpdateBalance(load);
-  const payOffCard = usePayOffCard(activeAccounts, load);
+  const { accounts, currencies, activeAccounts } = useAccounts();
+  const accountForm = useAccountForm({ currencies, tier, openPaywall });
+  const addCurrency = useAddCurrency();
+  const updateBalance = useUpdateBalance();
+  const payOffCard = usePayOffCard(activeAccounts);
   const transfer = useTransfer({
     accounts,
     routeParams: route.params,
     clearRouteParams: () =>
       navigation.setParams({ withdrawMode: undefined, openTransfer: undefined }),
-    onSaved: load,
   });
 
   const handleDelete = (id: number) => {
@@ -63,7 +73,9 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteAccount(id);
-          await load();
+        // No reload() here any more: the mutation above already
+        // invalidated every query this write affects, and awaiting it
+        // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete account'),
     );
   };
@@ -84,7 +96,9 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       () =>
         runAction(async () => {
           await closeAccount(account.id);
-          await load();
+        // No reload() here any more: the mutation above already
+        // invalidated every query this write affects, and awaiting it
+        // waits for those refetches — a second read would be redundant.
         }, 'Cannot close account'),
     );
   };

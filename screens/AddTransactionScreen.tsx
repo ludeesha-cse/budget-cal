@@ -9,10 +9,15 @@ import TransactionForm, {
 import IncomeForm, { IncomeFormSubmitValues } from '../components/IncomeForm';
 import Card from '../components/Card';
 import ScreenBackground from '../components/ScreenBackground';
-import { addIncome, addTransaction, setTransactionTags } from '../db/queries';
+
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import type { RootTabParamList } from '../navigation/types';
+import {
+  useAddIncome as useAddIncomeMutation,
+  useAddTransaction as useAddTransactionMutation,
+  useSetTransactionTags as useSetTransactionTagsMutation,
+} from '../hooks/queries';
 
 type AddScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Add'>;
 
@@ -36,6 +41,14 @@ const TABS: { key: AddTab; label: string }[] = [
 // (see LiabilitiesReceivablesScreen.tsx), so this was a duplicate entry
 // point, not a distinct capability.
 function AddScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addIncome = useAddIncomeMutation();
+  const addTransaction = useAddTransactionMutation();
+  const setTransactionTags = useSetTransactionTagsMutation();
   const { colors } = useTheme();
   const navigation = useNavigation<AddScreenNavigationProp>();
   const route = useRoute<RouteProp<RootTabParamList, 'Add'>>();

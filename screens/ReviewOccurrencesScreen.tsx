@@ -1,19 +1,22 @@
-import React, { useCallback, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Alert, Button, FlatList, StyleSheet, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
 import PendingOccurrenceCard from '../components/reviewOccurrences/PendingOccurrenceCard';
 import {
-  confirmOccurrence,
   getAccounts,
   getPendingOccurrences,
-  skipOccurrence,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useRowEditState } from '../hooks/useRowEditState';
+import {
+  useAccountList,
+  usePendingOccurrences,
+  useConfirmOccurrence as useConfirmOccurrenceMutation,
+  useSkipOccurrence as useSkipOccurrenceMutation,
+} from '../hooks/queries';
 
 const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
 
@@ -21,12 +24,32 @@ type PendingRow = Awaited<ReturnType<typeof getPendingOccurrences>>[number];
 type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 function ReviewOccurrencesScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const confirmOccurrence = useConfirmOccurrenceMutation();
+  const skipOccurrence = useSkipOccurrenceMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
-  const [rows, setRows] = useState<PendingRow[]>([]);
-  const [accounts, setAccounts] = useState<AccountRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Both reads are cached now. Pending occurrences are transactional
+  // (the list grows as due dates pass, with no write involved — see
+  // usePendingOccurrences); the account roster is reference. Confirming
+  // or skipping invalidates the recurring prefix, which is what refreshes
+  // this list without a manual reload.
+  const { data: pending, isPending: pendingLoading } = usePendingOccurrences();
+  const { data: accountRows, isPending: accountsLoading } = useAccountList();
+  const rows = useMemo<PendingRow[]>(() => pending ?? [], [pending]);
+  const accounts = useMemo<AccountRow[]>(
+    () =>
+      (accountRows ?? []).filter(
+        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
+      ),
+    [accountRows],
+  );
+  const loading = pendingLoading || accountsLoading;
 
   const {
     editedAmount,
@@ -38,32 +61,13 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
     buildParams,
   } = useRowEditState(rows);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [pending, accountRows] = await Promise.all([
-      getPendingOccurrences(),
-      getAccounts(),
-    ]);
-    setRows(pending);
-    setAccounts(
-      accountRows.filter(
-        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
-      ),
-    );
-    setLoading(false);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
-
   const handleConfirm = async (row: PendingRow) => {
     await runAction(async () => {
       const params = buildParams(row);
       await confirmOccurrence(params);
-      await load();
+      // No load() here any more: the mutation above already invalidated
+      // every query this write affects, and awaiting it waits for those
+      // refetches — a second read would be redundant.
     }, 'Could not confirm');
   };
 
@@ -75,7 +79,9 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await skipOccurrence(row.id);
-          await load();
+          // No load() here any more: the mutation above already invalidated
+          // every query this write affects, and awaiting it waits for those
+          // refetches — a second read would be redundant.
         }, 'Could not skip'),
     );
   };
@@ -99,7 +105,6 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
         );
       }
     }
-    await load();
     if (failures.length > 0) {
       Alert.alert(
         'Some occurrences could not be confirmed',

@@ -1,20 +1,20 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  useAccountList,
+  useActiveCurrencies,
+  useCategories,
+  useInstallmentPaymentsByPlan,
+  useInstallmentPlans,
+  type InstallmentPaymentRow,
+  type InstallmentPlanRow,
+} from './queries';
 import {
   getAccounts,
   getActiveCurrencies,
   getCategories,
-  getInstallmentPayments,
-  getInstallmentPlans,
 } from '../db/queries';
-import { useKeyedFetch } from './useKeyedFetch';
 
-export type InstallmentPlanRow = Awaited<
-  ReturnType<typeof getInstallmentPlans>
->[number];
-export type InstallmentPaymentRow = Awaited<
-  ReturnType<typeof getInstallmentPayments>
->[number];
+export type { InstallmentPlanRow, InstallmentPaymentRow };
 export type InstallmentCategoryRow = Awaited<
   ReturnType<typeof getCategories>
 >[number];
@@ -32,7 +32,6 @@ export interface UseInstallmentPlansDataResult {
   accounts: InstallmentAccountRow[];
   activeAccounts: InstallmentAccountRow[];
   paymentsByPlan: Record<string | number, InstallmentPaymentRow[]>;
-  load: () => Promise<void>;
   paidCountFor: (planId: number) => number;
   paidAmountFor: (planId: number) => number;
   remainingFor: (plan: InstallmentPlanRow) => number;
@@ -41,53 +40,40 @@ export interface UseInstallmentPlansDataResult {
   toggleExpanded: (planId: number) => void;
 }
 
+// Plans from the transactional cache; categories, currencies and the
+// account roster from the reference cache. Everything below the fetches
+// — paid count, paid amount, remaining, next amount due — is arithmetic
+// over rows already in hand and stays that way: an installment schedule
+// preview is a calculation, not a read worth caching.
 export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
-  const [plans, setPlans] = useState<InstallmentPlanRow[]>([]);
-  const [categories, setCategories] = useState<InstallmentCategoryRow[]>([]);
-  const [currencies, setCurrencies] = useState<InstallmentCurrencyRow[]>([]);
-  const [accounts, setAccounts] = useState<InstallmentAccountRow[]>([]);
   const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    const [planRows, categoryRows, currencyRows, accountRows] =
-      await Promise.all([
-        getInstallmentPlans(),
-        getCategories(),
-        getActiveCurrencies(),
-        getAccounts(),
-      ]);
-    setPlans(planRows);
-    setCategories(categoryRows);
-    setCurrencies(currencyRows);
-    setAccounts(accountRows);
-  }, []);
+  const { data: plans } = useInstallmentPlans();
+  const { data: categories } = useCategories();
+  const { data: currencies } = useActiveCurrencies();
+  const { data: accounts } = useAccountList();
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
+  const planIds = useMemo(() => (plans ?? []).map(p => p.id), [plans]);
+
+  // Keyed by plan id, one cached entry per plan — fetched for every plan
+  // up front (plan counts are small in a personal tracker). This
+  // deliberately stays eager rather than using the lazier
+  // fetch-once-and-cache useLazyExpandableDetail: that hook's per-id
+  // cache is never invalidated after its first fetch, so reusing it here
+  // would leave an already-expanded plan's history showing stale
+  // payments until manually collapsed and reopened — e.g. right after
+  // paying that same plan's next installment. Every figure below (paid
+  // count, remaining, next amount due) reads from this same map, so they
+  // are always correct without needing a plan's history to have ever
+  // been expanded. Unlike the old useKeyedFetch version, paying an
+  // installment now invalidates these by prefix instead of the whole
+  // batch being refetched whenever the plans array changed identity.
+  const paymentsByPlan = useInstallmentPaymentsByPlan(planIds);
+
+  const activeAccounts = useMemo(
+    () => (accounts ?? []).filter(a => a.active),
+    [accounts],
   );
-
-  // Keyed by plan id — fetched for every plan up front (plan counts are
-  // small in a personal tracker), refetching whenever `plans` itself
-  // changes (i.e. every load()). This deliberately stays an eager
-  // useKeyedFetch rather than the lazier fetch-once-and-cache
-  // useLazyExpandableDetail (Step 9) offers for a similar "tap a row to
-  // see its history" shape: that hook's per-id cache is never invalidated
-  // after its first fetch, so reusing it here would leave an
-  // already-expanded plan's history showing stale payments until manually
-  // collapsed and reopened — e.g. right after paying that same plan's
-  // next installment. Every other figure below (paid count, remaining,
-  // next amount due) is also read straight from this same eager map, so
-  // they're always correct without needing that plan's history to have
-  // ever been expanded.
-  const paymentsByPlan = useKeyedFetch(
-    plans,
-    p => p.id,
-    p => getInstallmentPayments(p.id),
-  );
-
-  const activeAccounts = accounts.filter(a => a.active);
 
   // paidCount + 1 is always the next unpaid installment number:
   // payInstallment only ever pays getNextUnpaidInstallmentNumber's
@@ -134,13 +120,12 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
   }, []);
 
   return {
-    plans,
-    categories,
-    currencies,
-    accounts,
+    plans: plans ?? [],
+    categories: categories ?? [],
+    currencies: currencies ?? [],
+    accounts: accounts ?? [],
     activeAccounts,
     paymentsByPlan,
-    load,
     paidCountFor,
     paidAmountFor,
     remainingFor,

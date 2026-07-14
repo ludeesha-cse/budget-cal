@@ -1,6 +1,9 @@
 import { useCallback, useState } from 'react';
-import { addCurrencyToAccount } from '../db/queries';
+
 import { useAsyncAction } from './useAsyncAction';
+import {
+  useAddCurrencyToAccount as useAddCurrencyToAccountMutation,
+} from './queries';
 
 export interface UseAddCurrencyResult {
   // Which account's inline "+ Add Currency" form is expanded, or null if
@@ -19,8 +22,20 @@ export interface UseAddCurrencyResult {
 // (which owns the list itself) since `onSaved` is the only thing this
 // hook needs from it.
 export function useAddCurrency(
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseAddCurrencyResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addCurrencyToAccount = useAddCurrencyToAccountMutation();
   const runAction = useAsyncAction();
   const [addCurrencyAccountId, setAddCurrencyAccountId] = useState<
     number | null
@@ -60,10 +75,19 @@ export function useAddCurrency(
         setAddCurrencyAccountId(null);
         setAddCurrencyCurrencyId('');
         setAddCurrencyBalance('');
-        await onSaved();
+        await onSaved?.();
       }, 'Cannot add currency');
     },
-    [addCurrencyCurrencyId, addCurrencyBalance, runAction, onSaved],
+    // addCurrencyToAccount is the mutation hook's callable — stable
+    // across renders (useCallback + useMemo inside useDbMutation), so
+    // listing it here does not re-create this callback each render.
+    [
+      addCurrencyCurrencyId,
+      addCurrencyBalance,
+      runAction,
+      onSaved,
+      addCurrencyToAccount,
+    ],
   );
 
   return {

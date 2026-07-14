@@ -34,7 +34,13 @@ export interface UseEntityFormModalConfig<
   // has no edit flow) — openEdit simply should never be called in that
   // case, so this is never reached.
   onUpdate?: (id: number, params: TParams) => Promise<unknown>;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
   // Title shown on the Alert if onCreate/onUpdate rejects — kept
   // per-screen (rather than one generic string) so each entity keeps its
   // own exact wording ("Cannot save tag", "Cannot add currency", ...).
@@ -154,7 +160,7 @@ export function useEntityFormModal<
         await onCreate(params);
       }
       close();
-      await onSaved();
+      await onSaved?.();
     }, errorTitle);
   }, [values, editingId, onUpdate, onCreate, onSaved, errorTitle, toParams, validate, runAction, close]);
 

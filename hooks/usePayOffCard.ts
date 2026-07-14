@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
-import { payOffCreditCard } from '../db/queries';
+
 import { formatDateString } from '../utils/date';
 import { creditCardDebt } from '../utils/balanceMath';
 import { useTargetedModal } from './useTargetedModal';
 import type { UseTargetedModalResult } from './useTargetedModal';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
+import {
+  usePayOffCreditCard as usePayOffCreditCardMutation,
+} from './queries';
 
 // Only ordinary asset accounts can fund a card payoff — paying a credit
 // card off with another credit card, a liability, or a receivable isn't
@@ -50,8 +53,20 @@ export interface UsePayOffCardResult
 // inline `error` string.
 export function usePayOffCard(
   activeAccounts: AccountWithBalances[],
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UsePayOffCardResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const payOffCreditCard = usePayOffCreditCardMutation();
   const modal = useTargetedModal<PayOffTarget, PayOffValues>({
     initialValues: target => {
       const eligiblePayingAccounts = activeAccounts.filter(

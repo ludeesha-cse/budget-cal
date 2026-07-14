@@ -6,11 +6,15 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useEntityFormModal } from '../../hooks/useEntityFormModal';
-import { addCurrency, setCurrencyActive } from '../../db/queries';
+
 import type { getCurrencies } from '../../db/queries';
 import type { PaywallRequest } from '../../contexts/PaywallContext';
 import type { EntitlementTier } from '../../hooks/useEntitlement';
 import { canAddCurrency } from '../../utils/entitlementChecks';
+import {
+  useAddCurrency as useAddCurrencyMutation,
+  useSetCurrencyActive as useSetCurrencyActiveMutation,
+} from '../../hooks/queries';
 
 type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
 type CurrencyFormValues = { code: string; name: string };
@@ -29,7 +33,13 @@ type Props = {
   disabledCurrencies: CurrencyRow[];
   // Called after a currency is enabled or created, so the parent can
   // re-read its list. The picker closes itself on enable.
-  onChanged: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onChanged?: () => void | Promise<void>;
   // Gates both "enable an existing currency" and "add a brand-new
   // currency" behind canAddCurrency. Omitted by the first-launch
   // DefaultCurrencyScreen on purpose — that flow always collapses to a
@@ -66,6 +76,13 @@ function AddCurrencySheets({
   onChanged,
   entitlement,
 }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const addCurrency = useAddCurrencyMutation();
+  const setCurrencyActive = useSetCurrencyActiveMutation();
   const { colors } = useTheme();
   const runAction = useAsyncAction();
 
@@ -152,7 +169,7 @@ function AddCurrencySheets({
           onPurchaseSuccess: () => {
             runAction(async () => {
               await setCurrencyActive(currencyId, true);
-              await onChanged();
+              await onChanged?.();
             }, 'Cannot enable currency');
           },
         });
@@ -162,7 +179,7 @@ function AddCurrencySheets({
 
     runAction(async () => {
       await setCurrencyActive(currencyId, true);
-      await onChanged();
+      await onChanged?.();
       onClose();
     }, 'Cannot enable currency');
   };

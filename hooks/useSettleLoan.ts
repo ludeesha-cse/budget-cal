@@ -1,8 +1,11 @@
-import { settleLoan } from '../db/queries';
+
 import { getCurrentDateString } from '../utils/date';
 import { useTargetedModal } from './useTargetedModal';
 import type { UseTargetedModalResult } from './useTargetedModal';
 import type { ActiveLoan, LoanAccountRow } from './useLoanAccountsData';
+import {
+  useSettleLoan as useSettleLoanMutation,
+} from './queries';
 
 export type SettleLoanValues = {
   paymentAmount: string;
@@ -24,8 +27,20 @@ export interface UseSettleLoanResult
 // rather than a separate Alert.
 export function useSettleLoan(
   counterpartAccounts: LoanAccountRow[],
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseSettleLoanResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const settleLoan = useSettleLoanMutation();
   const modal = useTargetedModal<ActiveLoan, SettleLoanValues>({
     initialValues: () => ({
       paymentAmount: '',

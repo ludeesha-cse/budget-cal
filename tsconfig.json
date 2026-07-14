@@ -1,3 +1,7 @@
 {
-  "extends": "@react-native/typescript-config"
+  "extends": "@react-native/typescript-config",
+  // _to_delete/ is this project's graveyard for scratch files that are
+  // waiting on a manual `rm` — never part of the app, so never
+  // typechecked.
+  "exclude": ["_to_delete", "node_modules"]
 }

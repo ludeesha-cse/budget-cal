@@ -1,65 +1,67 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Crown, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
 import AddCurrencySheets from '../components/currencies/AddCurrencySheets';
-import {
-  deleteCurrency,
-  getCurrencies,
-  setCurrencyActive,
-  setDefaultCurrency,
-} from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
-
-type CurrencyRow = Awaited<ReturnType<typeof getCurrencies>>[number];
+import { useAllCurrencies } from '../hooks/queries';
+import {
+  useDeleteCurrency as useDeleteCurrencyMutation,
+  useSetCurrencyActive as useSetCurrencyActiveMutation,
+  useSetDefaultCurrency as useSetDefaultCurrencyMutation,
+} from '../hooks/queries';
 
 function CurrenciesScreen(): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const deleteCurrency = useDeleteCurrencyMutation();
+  const setCurrencyActive = useSetCurrencyActiveMutation();
+  const setDefaultCurrency = useSetDefaultCurrencyMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
-  const [allCurrencies, setAllCurrencies] = useState<CurrencyRow[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
-
-  const load = useCallback(async () => {
-    const rows = await getCurrencies();
-    setAllCurrencies(rows);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  // Was a getCurrencies() read on every screen focus; now the shared
+  // reference-cached roster. Every write on this screen goes through a
+  // mutation that invalidates it, so the list is still correct the
+  // instant a currency is added, disabled, deleted or made default.
+  const { data: allCurrencies } = useAllCurrencies();
 
   const activeCurrencies = useMemo(
-    () => allCurrencies.filter(c => c.active),
+    () => (allCurrencies ?? []).filter(c => c.active),
     [allCurrencies],
   );
   const disabledCurrencies = useMemo(
-    () => allCurrencies.filter(c => !c.active),
+    () => (allCurrencies ?? []).filter(c => !c.active),
     [allCurrencies],
   );
 
   const handleSetDefault = async (currencyId: number) => {
     await runAction(async () => {
       await setDefaultCurrency(currencyId);
-      await load();
+      // No load() here any more: the mutation above already
+      // invalidated every query this write affects, and awaiting it
+      // waits for those refetches — a second read would be redundant.
     }, 'Cannot set default currency');
   };
 
   const handleDisable = (currencyId: number) => {
     runAction(async () => {
       await setCurrencyActive(currencyId, false);
-      await load();
+      // No load() here any more: the mutation above already
+      // invalidated every query this write affects, and awaiting it
+      // waits for those refetches — a second read would be redundant.
     }, 'Cannot disable currency');
   };
 
@@ -71,7 +73,9 @@ function CurrenciesScreen(): React.JSX.Element {
       () =>
         runAction(async () => {
           await deleteCurrency(currencyId);
-          await load();
+          // No load() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete currency'),
     );
   };
@@ -142,7 +146,6 @@ function CurrenciesScreen(): React.JSX.Element {
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
         disabledCurrencies={disabledCurrencies}
-        onChanged={load}
         entitlement={{
           activeCurrencyCount: activeCurrencies.length,
           tier,

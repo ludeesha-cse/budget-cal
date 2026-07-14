@@ -1,11 +1,13 @@
 import {
-  createSavingsGoal,
-  updateSavingsGoal,
   type NewSavingsGoalParams,
 } from '../db/queries';
 import { useEntityFormModal } from './useEntityFormModal';
 import type { UseEntityFormModalResult } from './useEntityFormModal';
 import type { SavingsGoalCurrencyRow, SavingsGoalRow } from './useSavingsGoalsData';
+import {
+  useCreateSavingsGoal as useCreateSavingsGoalMutation,
+  useUpdateSavingsGoal as useUpdateSavingsGoalMutation,
+} from './queries';
 
 export type SavingsGoalFormValues = {
   name: string;
@@ -28,8 +30,21 @@ export interface UseSavingsGoalFormResult
 // had no tier check anywhere in its submit path.
 export function useSavingsGoalForm(
   currencies: SavingsGoalCurrencyRow[],
-  onSaved: () => void | Promise<void>,
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>,
 ): UseSavingsGoalFormResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const createSavingsGoal = useCreateSavingsGoalMutation();
+  const updateSavingsGoal = useUpdateSavingsGoalMutation();
   const form = useEntityFormModal<
     SavingsGoalRow,
     SavingsGoalFormValues,

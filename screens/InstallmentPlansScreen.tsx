@@ -8,7 +8,7 @@ import EmptyState from '../components/common/EmptyState';
 import InstallmentPlanCard from '../components/installments/InstallmentPlanCard';
 import InstallmentFormFields from '../components/installments/InstallmentFormFields';
 import InstallmentPayModal from '../components/installments/InstallmentPayModal';
-import { deleteInstallmentPlan, unpayInstallment } from '../db/queries';
+
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -23,6 +23,10 @@ import type {
 import { useInstallmentForm } from '../hooks/useInstallmentForm';
 import { useInstallmentPay, usePayPlanDeepLink } from '../hooks/useInstallmentPay';
 import type { SettingsStackParamList } from '../navigation/types';
+import {
+  useDeleteInstallmentPlan as useDeleteInstallmentPlanMutation,
+  useUnpayInstallment as useUnpayInstallmentMutation,
+} from '../hooks/queries';
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
@@ -31,6 +35,13 @@ type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 // components. Field-level concerns all live in one of those hooks or
 // components now — this file only ever decides which one to call.
 function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const deleteInstallmentPlan = useDeleteInstallmentPlanMutation();
+  const unpayInstallment = useUnpayInstallmentMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
@@ -44,7 +55,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     currencies,
     activeAccounts,
     paymentsByPlan,
-    load,
     paidCountFor,
     remainingFor,
     nextAmountDueFor,
@@ -52,8 +62,8 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     toggleExpanded,
   } = data;
 
-  const form = useInstallmentForm({ categories, currencies, tier, openPaywall, onSaved: load });
-  const pay = useInstallmentPay(activeAccounts, load);
+  const form = useInstallmentForm({ categories, currencies, tier, openPaywall });
+  const pay = useInstallmentPay(activeAccounts);
   usePayPlanDeepLink(route, navigation, plans, pay.open);
 
   const handleDelete = (id: number) => {
@@ -64,7 +74,9 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       () =>
         runAction(async () => {
           await deleteInstallmentPlan(id);
-          await load();
+          // No load() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete plan'),
     );
   };
@@ -77,7 +89,9 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
       () =>
         runAction(async () => {
           await unpayInstallment(payment.id);
-          await load();
+          // No load() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
         }, 'Cannot undo payment'),
     );
   };

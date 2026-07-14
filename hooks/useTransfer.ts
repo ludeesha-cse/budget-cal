@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { createTransfer, getTransferableAccounts } from '../db/queries';
+import {
+  getTransferableAccounts,
+} from '../db/queries';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { useAsyncAction } from './useAsyncAction';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
+import {
+  useCreateTransfer as useCreateTransferMutation,
+} from './queries';
 
 export type TransferableAccountRow = Awaited<
   ReturnType<typeof getTransferableAccounts>
@@ -23,7 +28,13 @@ export interface UseTransferDeps {
   // both undefined means no deep link is pending.
   routeParams: { withdrawMode?: boolean; openTransfer?: boolean } | undefined;
   clearRouteParams: () => void;
-  onSaved: () => void | Promise<void>;
+  // Optional since the TanStack Query refactor: a caller used to pass
+  // its screen's load() here purely to re-read the database after a
+  // successful write. The mutation hooks now invalidate every affected
+  // query themselves, so that job is done — this is left for callers
+  // that still need to do something ELSE once a save lands (reset
+  // local UI state, navigate away).
+  onSaved?: () => void | Promise<void>;
 }
 
 export interface UseTransferResult {
@@ -60,6 +71,12 @@ export interface UseTransferResult {
 // FAB's Withdraw/Transfer deep link (route.params), since opening the
 // sheet is this hook's own responsibility either way.
 export function useTransfer(deps: UseTransferDeps): UseTransferResult {
+  // Write paths go through the caching layer's mutation hooks: each
+  // one runs the same db/queries function as before and then
+  // invalidates every query its write can affect (see
+  // hooks/queries/invalidation.ts). The call sites below are
+  // unchanged — these hooks take the wrapped function's own arguments.
+  const createTransfer = useCreateTransferMutation();
   const { accounts, routeParams, clearRouteParams, onSaved } = deps;
   const runAction = useAsyncAction();
 
@@ -166,10 +183,21 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
           date,
         });
         setVisible(false);
-        await onSaved();
+        await onSaved?.();
       }, 'Cannot transfer');
     },
-    [runAction, fromAccountId, toAccountId, currencyId, date, onSaved],
+    // createTransfer is the mutation hook's callable — stable across
+    // renders (useCallback + useMemo inside useDbMutation), so listing it
+    // here does not re-create this callback each render.
+    [
+      runAction,
+      fromAccountId,
+      toAccountId,
+      currencyId,
+      date,
+      onSaved,
+      createTransfer,
+    ],
   );
 
   const handleTransferSubmit = useCallback(() => {
