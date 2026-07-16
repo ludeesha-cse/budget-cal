@@ -36,11 +36,16 @@ function EditTransferModal({ modal }: Props): React.JSX.Element {
       {transfer && (
         <>
           <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
-            Accounts and currency ({transfer.currencyCode}) stay the same as the
-            original transfer — delete and recreate it to change those.
+            {transfer.isCrossCurrency
+              ? `Accounts and currencies (${transfer.currencyCode} → ${transfer.toCurrencyCode}) stay the same as the original transfer — delete and recreate it to change those.`
+              : `Accounts and currency (${transfer.currencyCode}) stay the same as the original transfer — delete and recreate it to change those.`}
           </Text>
 
-          <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
+          <Text style={[styles.label, { color: colors.text }]}>
+            {transfer.isCrossCurrency
+              ? `Amount sent (${transfer.currencyCode})`
+              : 'Amount'}
+          </Text>
           <TextInput
             style={[
               styles.input,
@@ -54,6 +59,35 @@ function EditTransferModal({ modal }: Props): React.JSX.Element {
             placeholder="0.00"
             placeholderTextColor={colors.textSecondary}
           />
+
+          {/* Both halves of a converted transfer are editable together.
+              Changing only one would leave the two sides describing
+              different amounts of money for the same event. */}
+          {transfer.isCrossCurrency && (
+            <>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Amount received ({transfer.toCurrencyCode})
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                ]}
+                value={values.convertedAmount}
+                onChangeText={modal.setConvertedAmount}
+                keyboardType="numeric"
+                returnKeyType="done"
+                inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+                placeholder="0.00"
+                placeholderTextColor={colors.textSecondary}
+              />
+              {modal.rateHint && (
+                <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
+                  {modal.rateHint}
+                </Text>
+              )}
+            </>
+          )}
 
           <Text style={[styles.label, { color: colors.text }]}>Date</Text>
           <View style={styles.dateRow}>

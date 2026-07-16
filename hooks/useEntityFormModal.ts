@@ -50,6 +50,13 @@ export interface UseEntityFormModalConfig<
 export interface UseEntityFormModalResult<TRow, TValues> {
   visible: boolean;
   editingId: number | null;
+  // The row openEdit was called with, or null while adding. Kept
+  // alongside editingId (rather than expecting callers to look the row
+  // up again in a list they may not have) for wrappers that need to
+  // compare the form's new values against what the row said BEFORE the
+  // edit — useSavingsGoalForm does exactly that to warn when moving a
+  // goal to an account that cannot cover what it has saved.
+  editingRow: TRow | null;
   values: TValues;
   setValues: React.Dispatch<React.SetStateAction<TValues>>;
   error: string | null;
@@ -92,11 +99,13 @@ export function useEntityFormModal<
   const runAction = useAsyncAction();
   const [visible, setVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingRow, setEditingRow] = useState<TRow | null>(null);
   const [values, setValues] = useState<TValues>(initialValues);
   const [error, setError] = useState<string | null>(null);
 
   const openAdd = useCallback(() => {
     setEditingId(null);
+    setEditingRow(null);
     setValues(initialValues);
     setError(null);
     setVisible(true);
@@ -105,6 +114,7 @@ export function useEntityFormModal<
   const openEdit = useCallback(
     (row: TRow) => {
       setEditingId(row.id);
+      setEditingRow(row);
       setValues(populateFromRow(row));
       setError(null);
       setVisible(true);
@@ -115,6 +125,7 @@ export function useEntityFormModal<
   const close = useCallback(() => {
     setVisible(false);
     setEditingId(null);
+    setEditingRow(null);
     setValues(initialValues);
     setError(null);
   }, [initialValues]);
@@ -167,6 +178,7 @@ export function useEntityFormModal<
   return {
     visible,
     editingId,
+    editingRow,
     values,
     setValues,
     error,

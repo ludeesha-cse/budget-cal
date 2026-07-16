@@ -11,6 +11,7 @@ import UpdateBalanceModal from '../components/accounts/UpdateBalanceModal';
 import PayOffCardModal from '../components/accounts/PayOffCardModal';
 import TransferModal from '../components/accounts/TransferModal';
 import type { SettingsStackParamList } from '../navigation/types';
+import { getSavingsGoalsForAccount } from '../db/queries';
 
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
@@ -80,6 +81,14 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
     );
   };
 
+  // Closing an account DELETES every savings goal saving into it — a
+  // goal is defined by the account holding its money, and there is no
+  // sensible state for one whose account is gone. So the goals are
+  // fetched first and named in the prompt: "this deletes 2 goals" with
+  // the names spelled out is a decision someone can actually make,
+  // whereas discovering it afterwards is not. The query layer refuses
+  // the close unless this flag is passed, so the warning cannot be
+  // bypassed by another caller (see closeAccount in db/queries/accounts.ts).
   const handleClose = (account: AccountWithBalances) => {
     const isZeroBalance = account.balances.every(b => b.balance === 0);
     if (!isZeroBalance) {
@@ -89,18 +98,31 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       );
       return;
     }
-    confirmDelete(
-      'Close account',
-      `Close ${account.name}? You can reopen it later from Stage 9's reuse flow.`,
-      'Close',
-      () =>
-        runAction(async () => {
-          await closeAccount(account.id);
-        // No reload() here any more: the mutation above already
-        // invalidated every query this write affects, and awaiting it
-        // waits for those refetches — a second read would be redundant.
-        }, 'Cannot close account'),
-    );
+    runAction(async () => {
+      const linkedGoals = await getSavingsGoalsForAccount(account.id);
+      const goalWarning =
+        linkedGoals.length > 0
+          ? `\n\nThis will also permanently delete ${
+              linkedGoals.length === 1 ? 'this savings goal' : 'these savings goals'
+            } and their funding history: ${linkedGoals
+              .map(goal => goal.name)
+              .join(', ')}. This cannot be undone.`
+          : '';
+      confirmDelete(
+        linkedGoals.length > 0 ? 'Close account and delete goals?' : 'Close account',
+        `Close ${account.name}? You can reopen it later from Stage 9's reuse flow.${goalWarning}`,
+        linkedGoals.length > 0 ? 'Close and delete' : 'Close',
+        () =>
+          runAction(async () => {
+            await closeAccount(account.id, {
+              deleteLinkedSavingsGoals: linkedGoals.length > 0,
+            });
+          // No reload() here any more: the mutation above already
+          // invalidated every query this write affects, and awaiting it
+          // waits for those refetches — a second read would be redundant.
+          }, 'Cannot close account'),
+      );
+    }, 'Cannot close account');
   };
 
   return (

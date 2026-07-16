@@ -50,6 +50,17 @@ const BUDGET_FIGURES: QueryKey[] = [
 
 const LOAN_POSITIONS: QueryKey[] = [k.transactional.loans.all];
 const INSTALLMENT_POSITIONS: QueryKey[] = [k.transactional.installments.all];
+// A savings goal's displayed progress is now the smaller of what was
+// contributed and what its backing account actually holds (see
+// allocateGoalSavings in utils/savingsMath.ts). That makes goal
+// positions downstream of ACCOUNT_MONEY: anything that moves a balance
+// can move a goal's number, without touching a single savings row. So
+// SAVINGS_POSITIONS appears on every write below that shifts a balance —
+// spending, transfers, payoffs, settlements, installment payments,
+// confirmed recurring occurrences and balance corrections alike. Missing
+// one of those would leave a goal showing money that is no longer in the
+// account, which is precisely the failure this feature exists to
+// prevent.
 const SAVINGS_POSITIONS: QueryKey[] = [k.transactional.savingsGoals.all];
 const TRANSFER_LEDGER: QueryKey[] = [k.transactional.transfers.all];
 const RECURRING_STATE: QueryKey[] = [k.transactional.recurring.all];
@@ -59,6 +70,7 @@ const CATEGORY_ROSTER: QueryKey[] = [k.reference.categories.all];
 const TAG_ROSTER: QueryKey[] = [k.reference.tags.all];
 const CURRENCY_ROSTER: QueryKey[] = [k.reference.currencies.all];
 const SETTINGS: QueryKey[] = [k.reference.settings.all];
+const EXCHANGE_RATES: QueryKey[] = [k.reference.exchangeRates.all];
 
 export const invalidates = {
   // Adding, editing or deleting a transaction. Covers, in order of the
@@ -90,7 +102,7 @@ export const invalidates = {
   // neither any transaction list nor any category/overall budget. Both
   // accounts' balances (and the card debt derived from one of them) are
   // the entire blast radius.
-  creditCardPayoff: [...ACCOUNT_MONEY] as QueryKey[],
+  creditCardPayoff: [...ACCOUNT_MONEY, ...SAVINGS_POSITIONS] as QueryKey[],
 
   // A loan settlement updates both accounts' baselines and writes a
   // loan_payments row: both accounts' balances, plus that loan's own
@@ -98,7 +110,11 @@ export const invalidates = {
   // covers along with the loan-payment rows History merges in. Like a
   // payoff, it writes no transactions row, so no transaction list or
   // budget figure is invalidated.
-  loanSettlement: [...ACCOUNT_MONEY, ...LOAN_POSITIONS] as QueryKey[],
+  loanSettlement: [
+    ...ACCOUNT_MONEY,
+    ...LOAN_POSITIONS,
+    ...SAVINGS_POSITIONS,
+  ] as QueryKey[],
 
   // Creating or reactivating a loan account adds an account, so the
   // account roster moves too — unlike a settlement, which only changes
@@ -107,6 +123,7 @@ export const invalidates = {
     ...ACCOUNT_MONEY,
     ...LOAN_POSITIONS,
     ...ACCOUNT_ROSTER,
+    ...SAVINGS_POSITIONS,
   ] as QueryKey[],
 
   // A transfer shifts two account baselines and writes a transfers row.
@@ -114,7 +131,15 @@ export const invalidates = {
   // accounts is not spending, so no transaction list and no budget
   // figure is touched — only the two balances and the transfer ledger
   // History reads.
-  transferWrite: [...ACCOUNT_MONEY, ...TRANSFER_LEDGER] as QueryKey[],
+  //
+  // Savings goals go too, for two separate reasons at once: a transfer
+  // into a goal's account raises what that goal can show, and a savings
+  // transfer literally writes a contribution row of its own.
+  transferWrite: [
+    ...ACCOUNT_MONEY,
+    ...TRANSFER_LEDGER,
+    ...SAVINGS_POSITIONS,
+  ] as QueryKey[],
 
   // Creating, editing, closing or reopening an account changes both the
   // roster (name/type/active) and, for a new or reopened one, what
@@ -124,11 +149,19 @@ export const invalidates = {
     ...ACCOUNT_ROSTER,
     ...ACCOUNT_MONEY,
     ...TRANSFER_LEDGER,
+    // Closing an account can DELETE the goals saving into it, and a
+    // reopened or renamed one changes what a goal card displays.
+    ...SAVINGS_POSITIONS,
   ] as QueryKey[],
 
   // A balance correction posts a real transactions row (an audit entry),
   // so it is a transaction write in every sense plus the balance itself.
-  balanceCorrection: [...LEDGER, ...ACCOUNT_MONEY, ...BUDGET_FIGURES] as QueryKey[],
+  balanceCorrection: [
+    ...LEDGER,
+    ...ACCOUNT_MONEY,
+    ...BUDGET_FIGURES,
+    ...SAVINGS_POSITIONS,
+  ] as QueryKey[],
 
   // Saving or deleting a budget changes only the limit side. The spend
   // side is unaffected — no transaction moved — so the ledger is left
@@ -168,6 +201,10 @@ export const invalidates = {
     ...BUDGET_FIGURES,
     ...INSTALLMENT_POSITIONS,
     ...LOAN_POSITIONS,
+    ...SAVINGS_POSITIONS,
+    // Adding or removing a currency changes which currencies the
+    // exchange-rate screen has to list a rate for.
+    ...EXCHANGE_RATES,
   ] as QueryKey[],
 
   // Installment plan create/update/delete, and pay/unpay. Pay and unpay
@@ -179,6 +216,7 @@ export const invalidates = {
     ...LEDGER,
     ...ACCOUNT_MONEY,
     ...BUDGET_FIGURES,
+    ...SAVINGS_POSITIONS,
   ] as QueryKey[],
 
   // Recurring rule create/edit/activate/delete moves only the rule list
@@ -192,15 +230,31 @@ export const invalidates = {
     ...LEDGER,
     ...ACCOUNT_MONEY,
     ...BUDGET_FIGURES,
+    ...SAVINGS_POSITIONS,
   ] as QueryKey[],
   occurrenceSkip: [...RECURRING_STATE] as QueryKey[],
 
-  // Savings goals and contributions are deliberately self-contained:
-  // addContribution's own doc comment states a contribution is a log of
-  // intent, never a movement of money, and touches neither
-  // account_balances nor transactions. Invalidating balances here would
-  // contradict that.
+  // Editing a goal's own fields — name, target, target date, or which
+  // account it saves into. None of those move money, so balances are
+  // deliberately left alone; the goal's saved figure is re-derived from
+  // the balances already in cache.
   savingsGoalWrite: [...SAVINGS_POSITIONS] as QueryKey[],
+
+  // Funding a goal, or removing a contribution. This DOES move money —
+  // a savings transfer writes a real transfer row and shifts two account
+  // baselines — so it reaches everything a transfer reaches plus the
+  // goal itself. This is the entry that would have been wrong to copy
+  // from the old savingsGoalWrite: contributions used to move nothing.
+  savingsContributionWrite: [
+    ...SAVINGS_POSITIONS,
+    ...ACCOUNT_MONEY,
+    ...TRANSFER_LEDGER,
+  ] as QueryKey[],
+
+  // A rate is a setting. It changes what the transfer form PRE-FILLS and
+  // nothing else — no stored amount anywhere is derived from it — so
+  // this deliberately touches no money figure at all.
+  exchangeRateWrite: [...EXCHANGE_RATES] as QueryKey[],
 
   // Onboarding / default-currency-confirmed flags.
   settingsWrite: [...SETTINGS] as QueryKey[],

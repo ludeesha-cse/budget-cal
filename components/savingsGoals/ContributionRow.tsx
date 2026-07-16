@@ -1,110 +1,52 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import DateField from '../common/DateField';
-import NumericInputAccessory, {
-  NUMERIC_KEYBOARD_ACCESSORY_ID,
-} from '../NumericInputAccessory';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont } from '../../theme/typography';
 import { formatAmount } from '../../utils/formatAmount';
-import type { SavingsContributionRow } from '../../hooks/useContributionForm';
+import type { SavingsContributionRow } from '../../hooks/useSavingsTransferForm';
 
 type Props = {
   contribution: SavingsContributionRow;
   currencyCode: string;
-  isEditing: boolean;
-  editAmount: string;
-  onEditAmountChange: (value: string) => void;
-  editDate: string;
-  onEditDateChange: (value: string) => void;
-  editNote: string;
-  onEditNoteChange: (value: string) => void;
-  onCancelEdit: () => void;
-  onSaveEdit: () => void;
-  onStartEdit: () => void;
   onDelete: () => void;
 };
 
-// One contribution row, either its plain display form or its inline edit
-// form — only one row is ever being edited at a time (see
-// useContributionForm's editingContributionId).
+// One entry in a goal's funding history.
+//
+// THERE IS NO INLINE EDIT HERE ANY MORE, on purpose. A contribution used
+// to be a free-standing number the user could retype; it is now the
+// earmark attached to a real transfer, and the amount that matters is
+// the transfer's. Editing it here would mean either changing the earmark
+// without moving the money (the two would disagree) or quietly moving
+// money from a row that does not look like it moves money. So amounts
+// are edited on the transfer itself in History, which carries this row
+// with it — and Remove, below, reverses the transfer rather than
+// deleting a note about it.
 function ContributionRow({
   contribution,
   currencyCode,
-  isEditing,
-  editAmount,
-  onEditAmountChange,
-  editDate,
-  onEditDateChange,
-  editNote,
-  onEditNoteChange,
-  onCancelEdit,
-  onSaveEdit,
-  onStartEdit,
   onDelete,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-
-  if (isEditing) {
-    return (
-      <View style={[styles.contributionRow, { borderTopColor: colors.border }]}>
-        <TextInput
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.text, backgroundColor: colors.background },
-          ]}
-          value={editAmount}
-          onChangeText={onEditAmountChange}
-          keyboardType="numeric"
-          returnKeyType="done"
-          inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
-          placeholder="Amount"
-          placeholderTextColor={colors.textSecondary}
-        />
-        <DateField
-          value={editDate}
-          onChange={onEditDateChange}
-          renderTrigger={(label, onPress) => (
-            <Pressable style={[styles.smallPillButton, { borderColor: colors.border }]} onPress={onPress}>
-              <Text style={[styles.smallPillButtonText, { color: colors.text }]}>{label}</Text>
-            </Pressable>
-          )}
-        />
-        <TextInput
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.text, backgroundColor: colors.background },
-          ]}
-          value={editNote}
-          onChangeText={onEditNoteChange}
-          placeholder="Note (optional)"
-          placeholderTextColor={colors.textSecondary}
-        />
-        <View style={styles.rowActions}>
-          <Pressable style={[styles.smallPillButton, { borderColor: colors.border }]} onPress={onCancelEdit}>
-            <Text style={[styles.smallPillButtonText, { color: colors.text }]}>Cancel</Text>
-          </Pressable>
-          <Pressable style={[styles.smallPillButtonSolid, { backgroundColor: colors.primary }]} onPress={onSaveEdit}>
-            <Text style={[styles.smallPillButtonText, { color: colors.primaryText }]}>Save</Text>
-          </Pressable>
-        </View>
-        <NumericInputAccessory />
-      </View>
-    );
-  }
+  const isLinked = contribution.transferId != null;
 
   return (
     <View style={[styles.contributionRow, { borderTopColor: colors.border }]}>
       <Text style={{ color: colors.text }}>
         {contribution.date} — {formatAmount(contribution.amount, currencyCode)}
-        {contribution.note ? ` — ${contribution.note}` : ''}
+      </Text>
+      <Text style={[styles.source, { color: colors.textSecondary }]}>
+        {isLinked
+          ? `from ${contribution.fromAccountName ?? 'another account'}`
+          : 'logged before goals were tied to an account'}
       </Text>
       <View style={styles.rowActions}>
-        <Pressable style={[styles.smallPillButton, { borderColor: colors.border }]} onPress={onStartEdit}>
-          <Text style={[styles.smallPillButtonText, { color: colors.text }]}>Edit</Text>
-        </Pressable>
-        <Pressable style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]} onPress={onDelete}>
-          <Text style={[styles.smallPillButtonText, { color: colors.danger }]}>Delete</Text>
+        <Pressable
+          style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]}
+          onPress={onDelete}>
+          <Text style={[styles.smallPillButtonText, { color: colors.danger }]}>
+            {isLinked ? 'Remove' : 'Delete'}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -115,14 +57,10 @@ const styles = StyleSheet.create({
   contributionRow: {
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 6,
+    gap: 2,
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 16,
+  source: {
+    fontSize: scaleFont(12),
   },
   rowActions: {
     flexDirection: 'row',
@@ -133,12 +71,6 @@ const styles = StyleSheet.create({
   smallPillButton: {
     alignSelf: 'flex-start',
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  smallPillButtonSolid: {
-    alignSelf: 'flex-start',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,

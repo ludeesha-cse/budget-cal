@@ -35,7 +35,21 @@
  additional feature in future:
  - event and task plan option - another type of account. add that as the purpose for payment and add the value to the account as expense
  - Allow users to add a shortcut to show the selected account on the home screen for quick access. This can be done by long-pressing the account in the list and selecting "Add to Home Screen" or similar option.
- - add ram cache using tanstack query to reduce the number of queries to the database and improve performance. This can be done by caching frequently accessed data in memory and only querying the database when necessary.
 
- - for savings goal- allow users to add an existing account that you decide to save money in. And add a transfer option to transfer money from a selected account to the target account. This will help users to track their savings and make it easier to reach their savings goals. 
- when you have a plan to save 100000 lkr, in account A. Then you can transfer 10000 lkr from account B to account A, and the savings goal will be updated accordingly. This will also help users to keep track of their progress towards their savings goals and make it easier to reach them.
+
+ - [x] DONE — savings goals are now backed by a real account, funded only by transfers, and capped by that account's balance (oldest goal first when two share an account). Closing the account warns and deletes its goals.
+ - [x] DONE — cross-currency transfers: from/to currency pair on `transfers`, same-account conversion allowed, rates from config/exchangeRates.ts and editable in Settings > Exchange Rates, converted amount always user-editable. No budget impact.
+
+ Original notes for both, kept for reference:
+
+ - for savings goal- allow users to add an existing account that you decide to save money the money in. And add a option to transfer money from a selected account to the target account. This will help users to track their savings and make it easier to reach their savings goals. 
+ when you have a plan to save 100000 lkr in account A. Then you can transfer 10000 lkr from account B to account A, and add 10000 lkr to the savings goal while transferring money from account B to account A (include in history Acc A-> B description saving goal name). And do not allow users to add a savings goal without selecting an account to save the money in (for the already existing savings goals, use a bank account). This will help users to stay on track with their savings goals and avoid overspending. And if the account A money got spent, ex: you have 100000 lkr saved in account A for a saving goal and total of 150000 lkr in account A, and you spent 100000 lkr from account A for another expense, then the savings goal should be updated with the remaining amount. 
+ let's say Account A is the selected account to save the money for saving goal, and if the account balance > savings goal balance, then no issue. And if the account balance < savings goal balance(saved amount), then the savings goal balance should be updated with the remaining amount in the account. This will help users to stay on track with their savings goals and avoid overspending.
+ And if account A is closed, then warn the user that the savings goal will be deleted and ask for confirmation before proceeding. This will help users to avoid losing their savings goals and make it easier to manage their finances.
+
+ And allow user to edit the savings goal money saved account, follow the same logic as above. If the user changes the account to another account, then the savings goal balance should be updated with the remaining amount in the new account(if the new account has sufficient funds(saving goal balance < new account balance) - no need to update the savings goal balance). This will help users to stay on track with their savings goals and avoid overspending.
+
+- add error handling for ui buttons,
+- add a loading indicator for ui buttons, and disable the button while the action is being processed. This will help to prevent users from accidentally triggering multiple actions and improve the overall user experience.
+- limit free users only to have 1 bank and default cash in wallet account. 
+- add currency converted transactions, like If i want to withdraw 100 USD to my LKR account, then the transaction will be converted to LKR based on the (current exchange rate) (allow users to edit the converted ammounts manually) and the amount will be deducted from my USD account and added to my LKR account. This will help users to manage their finances across different currencies and make it easier to track their spending and savings.

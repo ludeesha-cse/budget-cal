@@ -1,44 +1,26 @@
 {
   "project_info": {
-    "project_number": "737589433916",
-    "project_id": "expenseease-75896",
-    "storage_bucket": "expenseease-75896.firebasestorage.app"
+    "project_number": "610731283609",
+    "project_id": "penny-worth-budget-cal",
+    "storage_bucket": "penny-worth-budget-cal.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:737589433916:android:307536a0df2bdae51f5539",
+        "mobilesdk_app_id": "1:610731283609:android:d78f3120f6121651ae9408",
         "android_client_info": {
-          "package_name": "com.budgettrackermobile"
+          "package_name": "com.penny_worth.app"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "737589433916-hiu8m46jj0cf8ap8gjmaoqes7jna3pdm.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.budgettrackermobile",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
-        {
-          "client_id": "737589433916-2rmbv7uj91a64nce8tkj1o1u2j3isj3a.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBgjkebwyfTqdN5t6q9Rt4OY8WiuETKX38"
+          "current_key": "AIzaSyDrX_Z5RZBjcc86MwgVXDwNOWIsi0vePbU"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "737589433916-2rmbv7uj91a64nce8tkj1o1u2j3isj3a.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

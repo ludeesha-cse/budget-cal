@@ -10,6 +10,7 @@ import {
   appSettings,
   categories,
   currencies,
+  savingsGoals,
   tags,
 } from './schema';
 import { DEFAULT_PALETTE_ID } from '../theme/palettes';
@@ -243,6 +244,115 @@ async function seedDefaultTags(): Promise<void> {
     .values(DEFAULT_TAGS.map(name => ({ name, createdAt: now })));
 }
 
+// Account types that can hold savings — same list as
+// SAVEABLE_ACCOUNT_TYPES in db/queries/savingsGoals.ts, repeated here
+// rather than imported so this startup path does not pull the whole
+// savings query module (and its transitive imports) into the migration
+// step.
+const SAVINGS_CAPABLE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
+
+// Gives every pre-existing savings goal the account it now requires.
+//
+// Savings goals used to be pure logs of intent with no account at all;
+// they are now backed by a real account whose balance caps their
+// progress. Migration 0025 adds the column, but no SQL default can pick
+// the RIGHT account for a particular goal, so the choice is made here on
+// the upgrade launch, in this order:
+//
+//   1. an open Bank account that already holds the goal's currency —
+//      the overwhelmingly common case, and the closest thing to what the
+//      user would have picked themselves;
+//   2. any open savings-capable account holding that currency;
+//   3. an open Bank account that does NOT hold the currency, with the
+//      missing balance row created at zero;
+//   4. any open savings-capable account, same zero-balance treatment.
+//
+// Steps 3 and 4 are the deliberate "force-assign" fallback: a goal with
+// no account is a goal the user cannot contribute to, so being attached
+// to a plausible account that starts at zero is strictly better than
+// being stranded. Such a goal reads as 0 saved until money is actually
+// in that account, which is the honest answer — the money for it was
+// never anywhere the app could see.
+//
+// Idempotent and cheap: gated on `account_id IS NULL`, so it does its
+// work once and short-circuits on every later app start. A goal it
+// cannot place at all (no open accounts whatsoever — practically
+// impossible, since ensureDefaultAccount seeds one) is left null and
+// surfaced in the UI as needing an account rather than being silently
+// broken.
+async function backfillSavingsGoalAccounts(): Promise<void> {
+  try {
+    const unassigned = await db.select().from(savingsGoals);
+    const needsAccount = unassigned.filter(goal => goal.accountId == null);
+    if (needsAccount.length === 0) {
+      return;
+    }
+    const openAccounts = (await db.select().from(accounts)).filter(
+      account =>
+        account.active &&
+        SAVINGS_CAPABLE_ACCOUNT_TYPES.includes(account.type),
+    );
+    if (openAccounts.length === 0) {
+      console.warn(
+        '[savings backfill] No open Bank/Cash/CryptoWallet account exists, so ' +
+          `${needsAccount.length} savings goal(s) could not be assigned one. ` +
+          'They will prompt for an account in the app.',
+      );
+      return;
+    }
+    const balanceRows = await db.select().from(accountBalances);
+    const holdersOf = (currencyId: number) =>
+      new Set(
+        balanceRows
+          .filter(row => row.currencyId === currencyId)
+          .map(row => row.accountId),
+      );
+
+    for (const goal of needsAccount) {
+      const holders = holdersOf(goal.currencyId);
+      const chosen =
+        openAccounts.find(a => a.type === 'Bank' && holders.has(a.id)) ??
+        openAccounts.find(a => holders.has(a.id)) ??
+        openAccounts.find(a => a.type === 'Bank') ??
+        openAccounts[0];
+      if (!holders.has(chosen.id)) {
+        // Step 3/4: the account does not hold this goal's currency yet.
+        // The zero row is what makes the pairing valid everywhere else
+        // in the app (validateGoalAccount and the transfer rules both
+        // require the holding to exist), and zero is the truthful
+        // starting balance.
+        await db
+          .insert(accountBalances)
+          .values({ accountId: chosen.id, currencyId: goal.currencyId, balance: 0 });
+        balanceRows.push({
+          id: -1,
+          accountId: chosen.id,
+          currencyId: goal.currencyId,
+          balance: 0,
+        });
+        console.warn(
+          `[savings backfill] Goal "${goal.name}" was assigned to ` +
+            `"${chosen.name}", which did not hold its currency — added that ` +
+            'currency to the account at a zero balance. Please verify.',
+        );
+      }
+      await db
+        .update(savingsGoals)
+        .set({ accountId: chosen.id })
+        .where(eq(savingsGoals.id, goal.id));
+    }
+  } catch (error) {
+    // Non-fatal by design, same reasoning as seedExchangeRates: a goal
+    // left without an account renders as needing one, which is a
+    // recoverable state the user can fix in two taps. Failing app
+    // startup over it would not be.
+    console.warn(
+      'backfillSavingsGoalAccounts: could not assign accounts to existing goals',
+      error,
+    );
+  }
+}
+
 export async function runMigrations(): Promise<void> {
   const legacyBalances = await captureLegacyAccountBalances();
   await migrate(db, migrations);
@@ -252,4 +362,16 @@ export async function runMigrations(): Promise<void> {
   await seedAppMeta();
   await seedAppSettings();
   await seedDefaultTags();
+  // Both of these depend on currencies existing, so they run after
+  // runCurrencyMigration rather than beside the other seeds.
+  //
+  // Imported lazily, not at the top of this file, on purpose: every
+  // module under db/queries/ imports `db` FROM here, so a static import
+  // in the other direction would make this the first cycle in the
+  // module graph — and the one module that must be safe to load before
+  // anything else is the one that creates the database handle. Resolving
+  // it at call time sidesteps that entirely.
+  const { seedExchangeRates } = await import('./queries/exchangeRates');
+  await seedExchangeRates();
+  await backfillSavingsGoalAccounts();
 }

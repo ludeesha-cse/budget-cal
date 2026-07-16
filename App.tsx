@@ -55,6 +55,7 @@ import LiabilitiesReceivablesScreen from './screens/LiabilitiesReceivablesScreen
 import CategoriesScreen from './screens/CategoriesScreen';
 import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
+import ExchangeRatesScreen from './screens/ExchangeRatesScreen';
 import InstallmentPlansScreen from './screens/InstallmentPlansScreen';
 import RecurringRulesScreen from './screens/RecurringRulesScreen';
 import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
@@ -167,6 +168,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="Currencies"
         component={CurrenciesScreen}
         options={{ title: 'Currencies' }}
+      />
+      <SettingsStack.Screen
+        name="ExchangeRates"
+        component={ExchangeRatesScreen}
+        options={{ title: 'Exchange Rates' }}
       />
       <SettingsStack.Screen
         name="AppSettings"

@@ -32,8 +32,15 @@ function TransferModal({ state }: Props): React.JSX.Element {
     toOptions,
     toAccountId,
     setToAccountId,
+    toCurrencyOptions,
+    toCurrencyId,
+    setToCurrencyId,
     amount,
     setAmount,
+    convertedAmount,
+    setConvertedAmount,
+    isCrossCurrency,
+    rateHint,
     date,
     setDate,
     canSave,
@@ -95,17 +102,53 @@ function TransferModal({ state }: Props): React.JSX.Element {
         <>
           <Text style={[styles.label, { color: colors.text }]}>To</Text>
           {toOptions.length === 0 ? (
-            <EmptyState message="No other account holds this currency yet." />
+            <EmptyState message="No account is able to receive a transfer yet." />
           ) : (
             <CollapsiblePicker
               displayLabel={labelForId(toOptions, toAccountId, 'name', 'Select account')}
               selectedValue={toAccountId}
               onValueChange={setToAccountId}
+              // The source account appears in this list too, which is
+              // how an in-place conversion (BOC USD -> BOC LKR) is
+              // expressed. The currency picker below then refuses to
+              // offer the same currency back, so the one pairing that
+              // moves nothing is unreachable rather than rejected on
+              // save.
               items={toOptions.map(a => ({
-                label: `${a.name} (${a.type})`,
+                label:
+                  String(a.id) === fromAccountId
+                    ? `${a.name} (same account — convert)`
+                    : `${a.name} (${a.type})`,
                 value: String(a.id),
               }))}
               label="To"
+            />
+          )}
+        </>
+      ) : null}
+
+      {toAccountId ? (
+        <>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Receive as
+          </Text>
+          {toCurrencyOptions.length === 0 ? (
+            <EmptyState message="This account holds no other currency to receive into. Add the currency to the account first." />
+          ) : (
+            <CollapsiblePicker
+              displayLabel={labelForId(
+                toCurrencyOptions.map(b => ({ ...b, id: b.currencyId })),
+                toCurrencyId,
+                'currencyCode',
+                'Select currency',
+              )}
+              selectedValue={toCurrencyId}
+              onValueChange={setToCurrencyId}
+              items={toCurrencyOptions.map(b => ({
+                label: `${b.currencyCode} — ${b.currencyName}`,
+                value: String(b.currencyId),
+              }))}
+              label="Receive as"
             />
           )}
         </>
@@ -131,6 +174,37 @@ function TransferModal({ state }: Props): React.JSX.Element {
         placeholder="0.00"
         placeholderTextColor={colors.textSecondary}
       />
+
+      {isCrossCurrency && (
+        <>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Converted amount
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            ]}
+            value={convertedAmount}
+            onChangeText={setConvertedAmount}
+            keyboardType="numeric"
+            returnKeyType="done"
+            inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+            placeholder="0.00"
+            placeholderTextColor={colors.textSecondary}
+          />
+          {/* The rate is a starting point, not a rule — banks differ
+              from each other and from any published figure, so this
+              line says which rate produced the number above and the
+              field stays editable. Whatever is in it when Transfer is
+              tapped is what gets stored. */}
+          {rateHint && (
+            <Text style={[styles.modalCurrent, { color: colors.textSecondary }]}>
+              {rateHint}
+            </Text>
+          )}
+        </>
+      )}
 
       <Text style={[styles.label, { color: colors.text }]}>Date</Text>
       <View style={styles.payOffDateRow}>

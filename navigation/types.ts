@@ -18,6 +18,7 @@ export type SettingsStackParamList = {
   Categories: undefined;
   CategoryBudgets: undefined;
   Currencies: undefined;
+  ExchangeRates: undefined;
   AppSettings: undefined;
   InstallmentPlans: { payPlanId?: number } | undefined;
   RecurringRules: undefined;

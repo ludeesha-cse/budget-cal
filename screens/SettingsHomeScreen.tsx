@@ -18,6 +18,7 @@ import {
   isErrorWithCode,
 } from '@react-native-documents/picker';
 import {
+  ArrowRightLeft,
   ChevronRight,
   CircleUser,
   CreditCard,
@@ -324,6 +325,12 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
           label: 'Currencies',
           icon: Banknote,
           onPress: () => navigation.navigate('Currencies'),
+        },
+        {
+          key: 'exchangeRates',
+          label: 'Exchange Rates',
+          icon: ArrowRightLeft,
+          onPress: () => navigation.navigate('ExchangeRates'),
         },
       ],
     },

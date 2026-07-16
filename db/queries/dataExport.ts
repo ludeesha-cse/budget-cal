@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../index';
 import { upsertAccountBalanceWithin } from './loans';
+import { seedExchangeRates } from './exchangeRates';
 import {
   accountBalances,
   accounts,
@@ -9,6 +10,7 @@ import {
   categoryBudgets,
   creditCardPayoffs,
   currencies,
+  exchangeRates,
   installmentPayments,
   installmentPlans,
   loanDetails,
@@ -77,6 +79,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       allRecurringOccurrences,
       allSavingsGoals,
       allSavingsContributions,
+      allExchangeRates,
     ] = await Promise.all([
       db.select().from(currencies),
       db.select().from(accounts),
@@ -97,6 +100,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       db.select().from(recurringOccurrences),
       db.select().from(savingsGoals),
       db.select().from(savingsContributions),
+      db.select().from(exchangeRates),
     ]);
 
     // Lookup maps resolve every foreign key to the human-readable value
@@ -117,6 +121,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       allRecurringRules.map(r => [r.id, r.name]),
     );
     const savingsGoalName = new Map(allSavingsGoals.map(g => [g.id, g.name]));
+    const transferById = new Map(allTransfers.map(t => [t.id, t]));
     const transactionById = new Map(allTransactions.map(t => [t.id, t]));
 
     // Tag names per transaction, comma-joined, for Transactions' own Tags
@@ -232,6 +237,13 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
           ToAccountName: accountName.get(t.toAccountId) ?? '',
           Amount: t.amount,
           CurrencyCode: currencyCode.get(t.currencyId) ?? '',
+          // The to-side falls back to the from-side for any row written
+          // before transfers could convert — those were same-currency by
+          // definition, so this exports what the row has always meant.
+          ToAmount: t.toAmount ?? t.amount,
+          ToCurrencyCode:
+            currencyCode.get(t.toCurrencyId ?? t.currencyId) ?? '',
+          Description: t.description ?? '',
           CreatedAt: toDateOnly(t.createdAt),
         }),
       ),
@@ -321,18 +333,40 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
           Name: g.name,
           TargetAmount: g.targetAmount,
           CurrencyCode: currencyCode.get(g.currencyId) ?? '',
+          AccountName:
+            g.accountId == null ? '' : accountName.get(g.accountId) ?? '',
           TargetDate: g.targetDate ?? '',
           Status: g.status,
           CreatedAt: toDateOnly(g.createdAt),
         }),
       ),
-      SavingsContributions: allSavingsContributions.map(
-        (c): ExportRow => ({
+      SavingsContributions: allSavingsContributions.map((c): ExportRow => {
+        // Which account funded this — resolved through the transfer the
+        // contribution points at, so the importer can re-pair the two
+        // sheets. Empty for a legacy contribution that never had a
+        // transfer behind it.
+        const backingTransfer =
+          c.transferId == null
+            ? undefined
+            : transferById.get(c.transferId);
+        return {
           GoalName: savingsGoalName.get(c.savingsGoalId) ?? '',
           Amount: c.amount,
           Date: c.date,
+          FromAccountName:
+            backingTransfer == null
+              ? ''
+              : accountName.get(backingTransfer.fromAccountId) ?? '',
           Note: c.note ?? '',
           CreatedAt: toDateOnly(c.createdAt),
+        };
+      }),
+      ExchangeRates: allExchangeRates.map(
+        (r): ExportRow => ({
+          CurrencyCode: currencyCode.get(r.currencyId) ?? '',
+          RatePerAnchor: r.ratePerAnchor,
+          IsCustom: r.isCustom ? 'true' : 'false',
+          UpdatedAt: toDateOnly(r.updatedAt),
         }),
       ),
     };
@@ -409,6 +443,13 @@ async function wipeAllDataWithin(tx: DbTransaction): Promise<void> {
   await tx.delete(accounts);
   await tx.delete(categories);
   await tx.delete(tags);
+  // Before currencies, which every rate row points at. A REPLACE import
+  // whose workbook has no ExchangeRates sheet is left with none at all
+  // for a moment — seedExchangeRates, run at the end of importData,
+  // puts the shipped defaults back for any currency that still has no
+  // rate, so an older workbook restores into a working state rather
+  // than one where every conversion asks to be typed by hand.
+  await tx.delete(exchangeRates);
   await tx.delete(currencies);
 }
 
@@ -717,6 +758,14 @@ export async function importData(
 
       // ---- Transfers: pure historical-record insert, no balance shift
       // — see the AccountBalances comment above. ----
+      //
+      // transferIdByKey is built as we go so SavingsContributions (far
+      // below) can re-link each restored contribution to the transfer
+      // that funded it. The key is the same set of fields a person would
+      // eyeball-match the two sheets with — goal-funding date, source
+      // account, destination account and amount — since neither sheet
+      // carries an id.
+      const transferIdByKey = new Map<string, number>();
       for (const row of data.Transfers ?? []) {
         const fromAccountId = accountIdByName.get(String(row.FromAccountName));
         const toAccountId = accountIdByName.get(String(row.ToAccountName));
@@ -724,14 +773,39 @@ export async function importData(
         if (fromAccountId == null || toAccountId == null || currencyId == null) {
           continue;
         }
-        await tx.insert(transfers).values({
-          fromAccountId,
-          toAccountId,
-          amount: Number(row.Amount),
-          currencyId,
-          date: String(row.Date),
-          createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
-        });
+        // A workbook exported before transfers could convert has neither
+        // to-side column. Falling back to the from side restores such a
+        // row as the same-currency transfer it always was, rather than
+        // dropping it.
+        const toCurrencyCode = String(row.ToCurrencyCode ?? '');
+        const toCurrencyId =
+          (toCurrencyCode ? currencyIdByCode.get(toCurrencyCode) : undefined) ??
+          currencyId;
+        const toAmount =
+          row.ToAmount === undefined || row.ToAmount === ''
+            ? Number(row.Amount)
+            : Number(row.ToAmount);
+        const [inserted] = await tx
+          .insert(transfers)
+          .values({
+            fromAccountId,
+            toAccountId,
+            amount: Number(row.Amount),
+            currencyId,
+            toCurrencyId,
+            toAmount,
+            description: String(row.Description ?? '') || null,
+            date: String(row.Date),
+            createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
+          })
+          .returning({ id: transfers.id });
+        const key = `${String(row.Date)}|${fromAccountId}|${toAccountId}|${toAmount}`;
+        // First writer wins: with two identical transfers on one day,
+        // the contribution can only be paired with one of them, and
+        // either choice restores the same numbers.
+        if (!transferIdByKey.has(key)) {
+          transferIdByKey.set(key, inserted.id);
+        }
       }
       rowCounts.Transfers = data.Transfers?.length ?? 0;
 
@@ -1055,12 +1129,22 @@ export async function importData(
           | 'active'
           | 'achieved'
           | 'abandoned';
+        // Absent in a workbook exported before goals were
+        // account-backed, and absent again if the named account did not
+        // survive the restore. Either way the goal comes back unlinked
+        // and backfillSavingsGoalAccounts assigns it one on the next app
+        // start — the same path every other legacy goal takes.
+        const accountName = String(row.AccountName ?? '');
+        const accountId = accountName
+          ? accountIdByName.get(accountName) ?? null
+          : null;
         const [created] = await tx
           .insert(savingsGoals)
           .values({
             name,
             targetAmount: Number(row.TargetAmount),
             currencyId,
+            accountId,
             targetDate: String(row.TargetDate ?? '') || null,
             status,
             createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
@@ -1070,25 +1154,105 @@ export async function importData(
       }
       rowCounts.SavingsGoals = data.SavingsGoals?.length ?? 0;
 
-      // ---- SavingsContributions: pure event-log insert, same as
-      // Transfers/LoanPayments/CreditCardPayoffs — never linked to any
-      // account or transaction (see savings_contributions' own schema
-      // comment), so there's nothing to dedupe or balance-shift here. ----
+      // ---- SavingsContributions: event-log insert, re-paired with the
+      // transfer that funded it wherever the two sheets agree. ----
+      //
+      // The pairing is BEST-EFFORT and deliberately so. Neither sheet
+      // carries an id, so the match is made on (date, source account,
+      // goal account, amount) — enough to be right in every ordinary
+      // file, and ambiguous in exactly the case a human reading the two
+      // sheets would also find ambiguous: two identical transfers into
+      // the same goal on the same day. A contribution that finds no
+      // partner is still restored, just unlinked — it counts toward the
+      // goal and can be deleted on its own, the same as a genuinely
+      // legacy contribution. The one thing an unlinked row loses is the
+      // "delete the transfer and the earmark goes with it" behaviour,
+      // which is a fair trade against dropping the row or inventing a
+      // link that might be wrong.
+      const usedTransferIds = new Set<number>();
       for (const row of data.SavingsContributions ?? []) {
-        const goalId = goalIdByName.get(String(row.GoalName));
+        const goalName = String(row.GoalName);
+        const goalId = goalIdByName.get(goalName);
         if (goalId == null) {
           continue;
+        }
+        const [goalRow] = await tx
+          .select({ accountId: savingsGoals.accountId })
+          .from(savingsGoals)
+          .where(eq(savingsGoals.id, goalId))
+          .limit(1);
+        const fromAccountName = String(row.FromAccountName ?? '');
+        const fromAccountId = fromAccountName
+          ? accountIdByName.get(fromAccountName)
+          : undefined;
+        let transferId: number | null = null;
+        if (fromAccountId != null && goalRow?.accountId != null) {
+          const key = `${String(row.Date)}|${fromAccountId}|${goalRow.accountId}|${Number(row.Amount)}`;
+          const candidate = transferIdByKey.get(key);
+          // Never link two contributions to one transfer — the schema's
+          // own unique index on transfer_id would reject the second
+          // insert and fail the whole import.
+          if (candidate != null && !usedTransferIds.has(candidate)) {
+            transferId = candidate;
+            usedTransferIds.add(candidate);
+          }
         }
         await tx.insert(savingsContributions).values({
           savingsGoalId: goalId,
           amount: Number(row.Amount),
           date: String(row.Date),
           note: String(row.Note ?? '') || null,
+          transferId,
           createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
         });
       }
       rowCounts.SavingsContributions = data.SavingsContributions?.length ?? 0;
+
+      // ---- ExchangeRates: get-or-update by currency, one row per
+      // currency (the schema's own unique key). A rate is a setting the
+      // user typed, so an imported one replaces whatever is there; a
+      // currency absent from the sheet keeps its shipped default. ----
+      for (const row of data.ExchangeRates ?? []) {
+        const currencyId = currencyIdByCode.get(String(row.CurrencyCode));
+        const rate = Number(row.RatePerAnchor);
+        if (currencyId == null || !Number.isFinite(rate) || rate <= 0) {
+          continue;
+        }
+        const isCustom = String(row.IsCustom ?? '').toLowerCase() === 'true';
+        const [existing] = await tx
+          .select()
+          .from(exchangeRates)
+          .where(eq(exchangeRates.currencyId, currencyId))
+          .limit(1);
+        if (existing) {
+          await tx
+            .update(exchangeRates)
+            .set({
+              ratePerAnchor: rate,
+              isCustom,
+              updatedAt: dateOnlyToEpoch(String(row.UpdatedAt ?? '')),
+            })
+            .where(eq(exchangeRates.id, existing.id));
+        } else {
+          await tx.insert(exchangeRates).values({
+            currencyId,
+            ratePerAnchor: rate,
+            isCustom,
+            updatedAt: dateOnlyToEpoch(String(row.UpdatedAt ?? '')),
+          });
+        }
+      }
+      rowCounts.ExchangeRates = data.ExchangeRates?.length ?? 0;
     });
+
+    // Outside the transaction, and deliberately after it: a REPLACE
+    // import from a workbook with no ExchangeRates sheet (every file
+    // exported before that sheet existed) has just wiped the rate table,
+    // and this puts a shipped default back for any currency still
+    // missing one. It never overwrites a rate the import restored —
+    // seedExchangeRates only inserts where no row exists — so a workbook
+    // that DID carry rates keeps exactly what it brought.
+    await seedExchangeRates();
 
     return rowCounts;
   } catch (error) {

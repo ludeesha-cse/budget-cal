@@ -25,6 +25,7 @@ import * as savingsGoalsModule from './savingsGoals';
 import * as tagsModule from './tags';
 import * as reportsModule from './reports';
 import * as dataExportModule from './dataExport';
+import * as exchangeRatesModule from './exchangeRates';
 
 export { getDbHitReport, resetDbHitReport, logDbHitReport } from './instrumentation';
 export type { DbHitReport } from './instrumentation';
@@ -56,7 +57,10 @@ export type {
 export type {
   CreateTransferParams,
   UpdateTransferParams,
+  TransferSides,
+  TransferListRow,
 } from './transfers';
+export type { ExchangeRateRow } from './exchangeRates';
 export type {
   ThemeMode,
   AppMeta,
@@ -72,7 +76,8 @@ export type {
 } from './recurring';
 export type {
   NewSavingsGoalParams,
-  NewContributionParams,
+  CreateSavingsTransferParams,
+  SavingsGoalListRow,
 } from './savingsGoals';
 export type {
   SearchTransactionsParams,
@@ -208,10 +213,15 @@ export const {
   updateSavingsGoal,
   setSavingsGoalStatus,
   deleteSavingsGoal,
-  addContribution,
+  createSavingsTransfer,
   getContributions,
-  updateContribution,
   deleteContribution,
+  getSavingsGoalsForAccount,
+  // --- exchangeRates ---
+  getExchangeRates,
+  getCurrencyRates,
+  setExchangeRate,
+  resetExchangeRate,
   // --- tags ---
   getTags,
   addTag,
@@ -245,4 +255,5 @@ export const {
   ...tagsModule,
   ...reportsModule,
   ...dataExportModule,
+  ...exchangeRatesModule,
 });

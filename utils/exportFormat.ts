@@ -40,7 +40,8 @@ export type SheetName =
   | 'RecurringRules'
   | 'RecurringOccurrences'
   | 'SavingsGoals'
-  | 'SavingsContributions';
+  | 'SavingsContributions'
+  | 'ExchangeRates';
 
 // Order here is the order sheets appear in the workbook. Meta first so
 // anyone opening the file — human or importer — immediately sees which
@@ -66,6 +67,7 @@ export const SHEET_ORDER: SheetName[] = [
   'RecurringOccurrences',
   'SavingsGoals',
   'SavingsContributions',
+  'ExchangeRates',
 ];
 
 // Column headers, in order, per sheet. Every reference to another table
@@ -115,12 +117,21 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
     'CreatedAt',
   ],
   CategoryBudgets: ['Month', 'CategoryName', 'CurrencyCode', 'Amount'],
+  // Amount/CurrencyCode are the FROM side; ToAmount/ToCurrencyCode the
+  // TO side. Both to-side columns were added when transfers gained
+  // cross-currency support, and the importer falls back to the from side
+  // when they are absent — so a workbook exported before that change
+  // still restores correctly, as a same-currency transfer, which is
+  // exactly what it was.
   Transfers: [
     'Date',
     'FromAccountName',
     'ToAccountName',
     'Amount',
     'CurrencyCode',
+    'ToAmount',
+    'ToCurrencyCode',
+    'Description',
     'CreatedAt',
   ],
   // Identified by AccountName rather than a separate "loan name" — the
@@ -198,15 +209,37 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
     'ConfirmedAmount',
     'ResolvedAt',
   ],
+  // AccountName is where the goal's money is held. Absent in a workbook
+  // exported before goals were account-backed; such a goal is restored
+  // unlinked and picked up by the same startup backfill that assigns an
+  // account to any other legacy goal (see backfillSavingsGoalAccounts).
   SavingsGoals: [
     'Name',
     'TargetAmount',
     'CurrencyCode',
+    'AccountName',
     'TargetDate',
     'Status',
     'CreatedAt',
   ],
-  SavingsContributions: ['GoalName', 'Amount', 'Date', 'Note', 'CreatedAt'],
+  // FromAccountName records which account funded this contribution, so
+  // the importer can re-link it to the matching Transfers row rather
+  // than restoring an orphaned earmark. See the SavingsContributions
+  // block in importData for how that match is made, and why it is
+  // best-effort rather than guaranteed.
+  SavingsContributions: [
+    'GoalName',
+    'Amount',
+    'Date',
+    'FromAccountName',
+    'Note',
+    'CreatedAt',
+  ],
+  // User-set conversion rates. Part of a full restore because a rate is
+  // something the user typed, not something derivable from their data —
+  // a currency missing from this sheet simply falls back to its shipped
+  // default (see config/exchangeRates.ts).
+  ExchangeRates: ['CurrencyCode', 'RatePerAnchor', 'IsCustom', 'UpdatedAt'],
 };
 
 // A cell can only ever be one of these three JS types — nullable DB

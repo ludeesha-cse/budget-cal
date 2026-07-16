@@ -275,12 +275,72 @@ export const transfers = sqliteTable('transfers', {
   toAccountId: int('to_account_id')
     .notNull()
     .references(() => accounts.id),
+  // THE FROM SIDE. `amount` and `currencyId` kept their original names
+  // rather than being renamed to from_amount/from_currency_id when the
+  // cross-currency stage added the to-side below: renaming a column in
+  // SQLite means a full table rebuild, and every existing row's meaning
+  // is unchanged either way (before the to-side existed, a transfer was
+  // same-currency by definition, so its single amount/currency WAS its
+  // from side). Read them as fromAmount/fromCurrencyId — the query layer
+  // exposes them under those names.
   amount: real('amount').notNull(),
   currencyId: int('currency_id')
     .notNull()
     .references(() => currencies.id),
+  // THE TO SIDE. Nullable in SQL only because SQLite cannot add a
+  // NOT NULL column to a populated table without a constant default,
+  // and there is no constant that means "whatever this row's from side
+  // says". Migration 0029 backfills both from the from-side columns
+  // immediately after adding them, so no row is ever actually left with
+  // a NULL here; every read still goes through `toCurrencyId ??
+  // currencyId` / `toAmount ?? amount` so a database restored from an
+  // older backup behaves identically to a migrated one.
+  //
+  // For a same-currency transfer these equal the from side. For a
+  // converted one (100 USD out, 34,000 LKR in) they are the other half
+  // of the pair, and the two amounts are NOT derived from each other at
+  // read time: the rate a person actually agreed to is stored, so
+  // editing the app's exchange-rate constants later never rewrites what
+  // a past transfer says it moved.
+  toCurrencyId: int('to_currency_id').references(() => currencies.id),
+  toAmount: real('to_amount'),
+  // Free text on a transfer. Ordinary transfers may leave it null; a
+  // savings transfer (see createSavingsTransfer) always sets it to the
+  // goal's name, which is what makes the goal identifiable in History
+  // without History having to know savings goals exist.
+  description: text('description'),
   date: text('date').notNull(), // 'YYYY-MM-DD'
   createdAt: int('created_at').notNull(),
+});
+
+// One row per currency, holding how much of the ANCHOR currency one unit
+// of it is worth ("units per anchor"): with LKR as the anchor, LKR is
+// 1 and USD is 340, meaning 1 USD = 340 LKR. Any pair is then
+// rate(from) / rate(to) — 6 currencies need 6 numbers rather than 30
+// pairwise ones, and a new currency only ever needs its own.
+//
+// Deliberately a table rather than constants alone: config/exchangeRates.ts
+// ships the defaults and seeds this table on first run, but a bank rate
+// is a moving local fact, so the Exchange Rates settings screen writes
+// user overrides here. `isCustom` records whether a row has been edited
+// away from its shipped default, which is the only thing "Reset to
+// default" needs to know.
+//
+// This table is NEVER read to display or recompute a past transfer. It
+// only ever pre-fills the converted amount in a form, which the user can
+// then overwrite (see the to-side comment on `transfers` above).
+export const exchangeRates = sqliteTable('exchange_rates', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  currencyId: int('currency_id')
+    .notNull()
+    .unique()
+    .references(() => currencies.id),
+  // How many anchor units one unit of this currency is worth. real, not
+  // int: a rate is genuinely fractional (1 LKR = 0.00294 USD) and there
+  // is no scaling convention that survives both directions of a pair.
+  ratePerAnchor: real('rate_per_anchor').notNull(),
+  isCustom: integer('is_custom', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: int('updated_at').notNull(),
 });
 
 // One row per installment plan (Stage 12a: schedule only, no payment
@@ -418,13 +478,19 @@ export const recurringOccurrences = sqliteTable(
   }),
 );
 
-// One row per savings goal (Stage 14). Deliberately has NO accountId and
-// NO currencyId link to any real money movement beyond its own display
-// currency — a goal (and its contributions below) is a log of intent,
-// never a payment. status defaults to 'active' and is changed in place
-// (never deleted-and-recreated) so "what was this goal for and did I
-// reach it" survives even once it's done, the same
+// One row per savings goal. status defaults to 'active' and is changed
+// in place (never deleted-and-recreated) so "what was this goal for and
+// did I reach it" survives even once it's done, the same
 // deactivate-don't-delete philosophy recurringRules already uses.
+//
+// HISTORY, BECAUSE IT REVERSES ITSELF: when goals were first built they
+// deliberately had NO account link — a goal was a log of intent and its
+// contributions moved no money at all. That is no longer true. A goal
+// now names a real account it saves INTO, contributions are created only
+// as the by-product of a real transfer into that account, and a goal's
+// saved figure can never exceed what that account actually holds. If you
+// find a comment anywhere still describing contributions as
+// "intent, never a payment", it predates this stage and is wrong.
 export const savingsGoals = sqliteTable('savings_goals', {
   id: int('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -432,6 +498,15 @@ export const savingsGoals = sqliteTable('savings_goals', {
   currencyId: int('currency_id')
     .notNull()
     .references(() => currencies.id),
+  // The real account this goal's money sits in. Required by the app
+  // (createSavingsGoal rejects a goal without one) but nullable in SQL,
+  // for the same SQLite reason as transfers.toCurrencyId above: there is
+  // no constant default that means "the right account for this
+  // particular goal". backfillSavingsGoalAccounts() in db/index.ts
+  // assigns one to every pre-existing goal on the upgrade launch, and a
+  // goal that somehow still has none renders as needing attention rather
+  // than silently reading zero.
+  accountId: int('account_id').references(() => accounts.id),
   targetDate: text('target_date'), // 'YYYY-MM-DD', nullable — a goal doesn't have to have a deadline
   status: text('status')
     .notNull()
@@ -440,23 +515,52 @@ export const savingsGoals = sqliteTable('savings_goals', {
   createdAt: int('created_at').notNull(),
 });
 
-// One row per logged contribution toward a savings goal (Stage 14).
-// CRITICAL: this table is never joined against accounts or
-// account_balances, and addContribution (db/queries.ts) never inserts
-// into `transactions` — a contribution records that the user has
-// mentally set money aside, not that money moved anywhere. The real
-// money backing a goal already sits in whatever real account it's in;
-// this table exists purely so progress toward the target can be shown.
-export const savingsContributions = sqliteTable('savings_contributions', {
-  id: int('id').primaryKey({ autoIncrement: true }),
-  savingsGoalId: int('savings_goal_id')
-    .notNull()
-    .references(() => savingsGoals.id),
-  amount: int('amount').notNull(),
-  date: text('date').notNull(), // 'YYYY-MM-DD'
-  note: text('note'),
-  createdAt: int('created_at').notNull(),
-});
+// One row per contribution toward a savings goal — now always the
+// by-product of a real transfer into the goal's account, never a
+// free-standing "I mentally set this aside" entry. createSavingsTransfer
+// is the only function that writes one, and it writes the transfer and
+// this row inside the same DB transaction.
+//
+// TWO THINGS THIS TABLE IS NOT:
+// 1. It is not the goal's displayed progress. Summing these rows gives
+//    the RAW contributed figure; what a goal actually shows is that
+//    total capped by what the goal's account holds (see
+//    allocateGoalSavings in utils/savingsMath.ts). Spending the money
+//    out of the account lowers the goal without touching a single row
+//    here, which is the whole point of deriving the cap instead of
+//    writing it down.
+// 2. It is not a second copy of the money movement. The transfer row is
+//    the money; this row is the earmark pointing at it.
+export const savingsContributions = sqliteTable(
+  'savings_contributions',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    savingsGoalId: int('savings_goal_id')
+      .notNull()
+      .references(() => savingsGoals.id),
+    amount: int('amount').notNull(),
+    date: text('date').notNull(), // 'YYYY-MM-DD'
+    note: text('note'),
+    // The transfer that put this money into the goal's account. Nullable
+    // for exactly one reason: contributions logged before this stage
+    // existed have no transfer behind them. Those legacy rows still
+    // count toward the goal and can still be deleted on their own; every
+    // NEW row has a transfer, and deleting or editing that transfer
+    // carries this row with it (see deleteTransfer/updateTransfer), so
+    // History and goal progress can never disagree about money that
+    // moved.
+    transferId: int('transfer_id').references(() => transfers.id),
+    createdAt: int('created_at').notNull(),
+  },
+  table => ({
+    // One transfer backs at most one contribution. Enforced here rather
+    // than in application code alone so a retry or a future second
+    // caller cannot credit the same transfer to a goal twice.
+    contributionTransferUnique: uniqueIndex('contribution_transfer_unique').on(
+      table.transferId,
+    ),
+  }),
+);
 
 // One row per tag (Stage 15). name is unique the same way categories.name
 // is — tags are a flat, user-managed vocabulary, not a hierarchy.

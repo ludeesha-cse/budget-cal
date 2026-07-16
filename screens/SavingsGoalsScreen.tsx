@@ -20,7 +20,7 @@ import {
   type SavingsGoalRow,
 } from '../hooks/useSavingsGoalsData';
 import { useSavingsGoalForm } from '../hooks/useSavingsGoalForm';
-import { useContributionForm } from '../hooks/useContributionForm';
+import { useSavingsTransferForm } from '../hooks/useSavingsTransferForm';
 import {
   getContributions,
 } from '../db/queries';
@@ -47,23 +47,32 @@ function SavingsGoalsScreen(): React.JSX.Element {
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
 
-  const { currencies, loading, filter, setFilter, visibleGoals } =
-    useSavingsGoalsData();
+  const {
+    currencies,
+    accountOptions,
+    loading,
+    filter,
+    setFilter,
+    visibleGoals,
+  } = useSavingsGoalsData();
 
   const contributionsDetail = useLazyExpandableDetail(getContributions);
 
-  const goalForm = useSavingsGoalForm(currencies);
+  const goalForm = useSavingsGoalForm(currencies, accountOptions);
 
-  // The goal list itself is refreshed by the contribution mutation's own
-  // invalidation; the only thing left for this callback is the expanded
-  // row's lazily-fetched contribution history, which sits outside the
-  // query cache (see useLazyExpandableDetail).
-  const contributionForm = useContributionForm(async (goalId: number) => {
-    await contributionsDetail.refresh(goalId);
-  });
+  // The goal list and the account balances are refreshed by the savings
+  // transfer mutation's own invalidation; the only thing left for this
+  // callback is the expanded row's lazily-fetched funding history, which
+  // sits outside the query cache (see useLazyExpandableDetail).
+  const transferForm = useSavingsTransferForm(
+    accountOptions,
+    async (goalId: number) => {
+      await contributionsDetail.refresh(goalId);
+    },
+  );
 
   // Doesn't cleanly fit useSavingsGoalsData/useSavingsGoalForm/
-  // useContributionForm, so — mirroring AccountsScreen's and
+  // useSavingsTransferForm, so — mirroring AccountsScreen's and
   // InstallmentPlansScreen's own orchestrator-level delete handlers —
   // this stays here rather than being forced into an unrelated hook.
   const handleSetStatus = (
@@ -98,7 +107,9 @@ function SavingsGoalsScreen(): React.JSX.Element {
   const handleDeleteGoal = (goal: SavingsGoalRow) => {
     confirmDelete(
       'Delete goal',
-      `Delete "${goal.name}"? This permanently removes it and its entire contribution history. If you just want to stop tracking it, abandon it instead. This cannot be undone.`,
+      `Delete "${goal.name}"? This removes the goal and its funding history.\n\nThe money itself stays exactly where it is — in ${
+        goal.accountName ?? 'its account'
+      } — and the transfers stay in History. Deleting a goal removes the earmark, not the money. If you just want to stop tracking it, abandon it instead.`,
       'Delete',
       () =>
         runAction(async () => {
@@ -114,12 +125,17 @@ function SavingsGoalsScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* This banner used to say the opposite — that contributions
+          never move money. Goals are now backed by a real account and
+          funded by real transfers, so the note has to say so; leaving
+          the old wording would have been the single most misleading
+          sentence in the app. */}
       <View style={[styles.infoBanner, { backgroundColor: colors.primarySoft }]}>
         <Info size={14} color={colors.primary} />
         <Text style={[styles.infoBannerText, { color: colors.text }]}>
-          Contributions track progress toward a goal — they don't move
-          money. Your money stays in your real accounts until you actually
-          spend it.
+          Each goal saves into a real account. Transfer money in to build it
+          up — and if you spend from that account, the goal drops to what's
+          actually left, then recovers when you put money back.
         </Text>
       </View>
 
@@ -152,7 +168,7 @@ function SavingsGoalsScreen(): React.JSX.Element {
               expanded={contributionsDetail.expandedId === goal.id}
               contributions={contributionsDetail.dataById[goal.id]}
               onToggleExpand={() => contributionsDetail.toggle(goal.id)}
-              contributionForm={contributionForm}
+              transferForm={transferForm}
               onEditGoal={() => goalForm.openEdit(goal)}
               onSetStatus={status => handleSetStatus(goal, status)}
               onDeleteGoal={() => handleDeleteGoal(goal)}

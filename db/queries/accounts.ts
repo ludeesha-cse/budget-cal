@@ -6,6 +6,8 @@ import {
   accounts,
   categories,
   currencies,
+  savingsContributions,
+  savingsGoals,
   transactions,
 } from '../schema';
 import {
@@ -213,6 +215,19 @@ export async function deleteAccount(id: number): Promise<Account[]> {
   if (referencing.length > 0) {
     throw new Error(
       'Cannot delete this account because it has existing transactions.',
+    );
+  }
+  // Unlike closeAccount, deletion offers no "and take the goals with it"
+  // escape hatch: deleting an account is already reserved for one
+  // created by mistake, and a mistaken account is not one that anybody
+  // has been saving into. Pointing the goal elsewhere first is a single
+  // edit, and it keeps that goal's history.
+  const linkedGoals = await getGoalsSavingIntoAccount(id);
+  if (linkedGoals.length > 0) {
+    throw new Error(
+      `Cannot delete this account because ${describeLinkedGoals(
+        linkedGoals,
+      )}. Point them at another account first.`,
     );
   }
   await db.delete(accountBalances).where(eq(accountBalances.accountId, id));
@@ -604,11 +619,56 @@ export async function getAccountTotalBalance(
   }
 }
 
+// The dependency between accounts and savings goals runs ONE WAY:
+// db/queries/savingsGoals.ts reads getAllAccountBalances from this file,
+// because a goal is defined against an account. So this file must not
+// import that one back — the two small reads below query the savings
+// tables directly instead of taking a module cycle to reuse a function.
+// If you find yourself adding `from './savingsGoals'` here, that is the
+// cycle re-forming.
+async function getGoalsSavingIntoAccount(
+  accountId: number,
+): Promise<{ id: number; name: string }[]> {
+  return db
+    .select({ id: savingsGoals.id, name: savingsGoals.name })
+    .from(savingsGoals)
+    .where(eq(savingsGoals.accountId, accountId));
+}
+
+// Reads better than "N savings goals save into it" repeated twice.
+function describeLinkedGoals(goals: { name: string }[]): string {
+  return `${goals.length} savings goal${
+    goals.length === 1 ? '' : 's'
+  } save into this account (${goals.map(goal => goal.name).join(', ')})`;
+}
+
 // NETWORK-READY: If a backend is added later, replace this with fetch(POST
 // /api/accounts/:id/close), keeping the same input/return shape. Throws
 // rather than silently proceeding if any currency balance is still
 // nonzero — closing is meant to be a hard gate, not a soft hide.
-export async function closeAccount(accountId: number): Promise<Account> {
+//
+// SAVINGS GOALS SAVING INTO THIS ACCOUNT ARE DESTROYED BY CLOSING IT,
+// and this function will not do that unless the caller explicitly says
+// so. A goal is defined by the account holding its money; there is no
+// meaningful state for a goal whose account is gone, and silently
+// leaving one pointing at a closed account would make it read zero
+// forever with no explanation. So the choice is surfaced instead of
+// guessed:
+//
+//   closeAccount(id)                                  -> throws, naming
+//                                                        the goals
+//   closeAccount(id, { deleteLinkedSavingsGoals: true }) -> closes and
+//                                                        deletes them
+//
+// AccountsScreen asks the user first, listing the goals by name, and
+// only then passes the flag. The refusal lives here rather than only in
+// that screen so no other caller — a future bulk action, a backend
+// replacement — can take goals down without a person having agreed to
+// it.
+export async function closeAccount(
+  accountId: number,
+  options?: { deleteLinkedSavingsGoals?: boolean },
+): Promise<Account> {
   try {
     const isZeroBalance = await getAccountTotalBalance(accountId);
     if (!isZeroBalance) {
@@ -616,11 +676,29 @@ export async function closeAccount(accountId: number): Promise<Account> {
         'This account still has a nonzero balance in at least one currency. Transfer the remainder elsewhere or log a transaction accounting for it before closing.',
       );
     }
-    const [updated] = await db
-      .update(accounts)
-      .set({ active: false })
-      .where(eq(accounts.id, accountId))
-      .returning();
+    const linkedGoals = await getGoalsSavingIntoAccount(accountId);
+    if (linkedGoals.length > 0 && !options?.deleteLinkedSavingsGoals) {
+      throw new Error(
+        `${describeLinkedGoals(linkedGoals)}. Closing it deletes them.`,
+      );
+    }
+    // One transaction so the account is never left closed with its goals
+    // still pointing at it, nor its goals deleted while the account
+    // stays open.
+    const goalIds = linkedGoals.map(goal => goal.id);
+    const [updated] = await db.transaction(async tx => {
+      if (goalIds.length > 0) {
+        await tx
+          .delete(savingsContributions)
+          .where(inArray(savingsContributions.savingsGoalId, goalIds));
+        await tx.delete(savingsGoals).where(inArray(savingsGoals.id, goalIds));
+      }
+      return tx
+        .update(accounts)
+        .set({ active: false })
+        .where(eq(accounts.id, accountId))
+        .returning();
+    });
     return updated;
   } catch (error) {
     console.error(`closeAccount: failed to close account id=${accountId}`, error);

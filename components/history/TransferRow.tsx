@@ -21,20 +21,49 @@ function TransferRow({ transfer, onPress, onDelete }: Props): React.JSX.Element 
       <HistoryRowDateBlock date={transfer.date} />
       <View style={styles.rowDetails}>
         <Text style={[styles.rowTitle, { color: colors.text }]}>
-          Transfer — {transfer.fromAccountName} → {transfer.toAccountName}
+          {/* A conversion inside one account reads as "BOC (USD → LKR)"
+              rather than "BOC → BOC", which would look like a bug. */}
+          {transfer.fromAccountId === transfer.toAccountId
+            ? `Transfer — ${transfer.fromAccountName} (${transfer.currencyCode} → ${transfer.toCurrencyCode})`
+            : `Transfer — ${transfer.fromAccountName} → ${transfer.toAccountName}`}
         </Text>
+        {/* Set to the savings goal's name for a savings transfer, which
+            is what makes the goal identifiable here without History
+            knowing that savings goals exist. */}
+        {transfer.description ? (
+          <Text
+            style={[styles.rowSubtitle, { color: colors.textSecondary }]}
+            numberOfLines={1}>
+            {transfer.description}
+          </Text>
+        ) : null}
         <View style={styles.badgeRow}>
           <View style={[styles.badge, { borderColor: colors.border }]}>
             <Text style={[typography.eyebrow, styles.badgeText, { color: colors.textSecondary }]}>
               TRANSFER
             </Text>
           </View>
+          {transfer.isCrossCurrency && (
+            <View style={[styles.badge, { borderColor: colors.primary }]}>
+              <Text style={[typography.eyebrow, styles.badgeText, { color: colors.primary }]}>
+                CONVERTED
+              </Text>
+            </View>
+          )}
         </View>
       </View>
       <View style={styles.rowActions}>
+        {/* Both sides are shown for a conversion: one number could only
+            ever be half the story, and which half would be arbitrary. */}
         <Text style={[typography.amountMono, styles.amount, { color: colors.text }]}>
           {formatAmount(transfer.amount, transfer.currencyCode)}
         </Text>
+        {transfer.isCrossCurrency && (
+          <Text
+            style={[typography.amountMono, styles.convertedAmount, { color: colors.textSecondary }]}>
+            → {formatAmount(transfer.toAmount, transfer.toCurrencyCode)}
+          </Text>
+        )}
         <Pressable hitSlop={8} style={styles.deleteButton} onPress={onDelete}>
           <Trash2 size={15} color={colors.danger} />
         </Pressable>
@@ -56,6 +85,10 @@ const styles = StyleSheet.create({
   rowTitle: {
     fontSize: scaleFont(15),
     fontWeight: '600',
+  },
+  rowSubtitle: {
+    fontSize: scaleFont(12.5),
+    marginTop: 2,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -79,6 +112,11 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: scaleFont(15),
     fontWeight: '700',
+  },
+  convertedAmount: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
+    marginTop: -2,
   },
   deleteButton: {
     padding: 2,

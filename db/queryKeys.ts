@@ -62,6 +62,22 @@ export const queryKeys = {
       all: [REFERENCE, 'settings'] as const,
       appMeta: [REFERENCE, 'settings', 'appMeta'] as const,
     },
+
+    // Reference, not transactional: an exchange rate is a setting the
+    // user types in, not a figure derived from their money. It changes
+    // only when they change it, and nothing that moves money can move
+    // it — which is exactly the reference rule. Note that a rate change
+    // deliberately does NOT invalidate any balance or transfer: past
+    // transfers store the amounts that were actually agreed and are
+    // never recomputed from a rate (see db/schema.ts on transfers).
+    exchangeRates: {
+      all: [REFERENCE, 'exchangeRates'] as const,
+      list: [REFERENCE, 'exchangeRates', 'list'] as const,
+      // Just the usable (currencyId, ratePerAnchor) pairs the transfer
+      // form converts with — a narrower read than `list`, which also has
+      // to carry rate-less currencies so they can be given a rate.
+      usable: [REFERENCE, 'exchangeRates', 'usable'] as const,
+    },
   },
 
   transactional: {
@@ -177,6 +193,11 @@ export const queryKeys = {
       list: [TRANSACTIONAL, 'savingsGoals', 'list'] as const,
       contributions: (savingsGoalId: number) =>
         [TRANSACTIONAL, 'savingsGoals', 'contributions', savingsGoalId] as const,
+      // Which goals would be destroyed by closing an account. Under the
+      // transactional root because it moves when a goal is created,
+      // deleted or repointed, not when the account roster changes.
+      forAccount: (accountId: number) =>
+        [TRANSACTIONAL, 'savingsGoals', 'forAccount', accountId] as const,
     },
 
     transfers: {

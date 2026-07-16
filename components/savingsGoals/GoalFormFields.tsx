@@ -67,6 +67,43 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
         />
       )}
 
+      {/* REQUIRED, and listed straight after the currency because the
+          two are one decision: an account can only back a goal in a
+          currency it already holds, so changing the currency above can
+          empty this list (and clears an account that no longer
+          qualifies). A goal with no account has nowhere for its money to
+          be, which is why this is not optional. */}
+      <Text style={[styles.label, { color: colors.text }]}>Saved in</Text>
+      {form.accountOptions.length === 0 ? (
+        <EmptyState
+          message={
+            values.currencyId == null
+              ? 'Pick a currency first.'
+              : 'No open Bank, Cash, or Crypto Wallet account holds this currency. Add it to an account first, or choose another currency.'
+          }
+        />
+      ) : (
+        <CollapsiblePicker
+          displayLabel={labelForId(
+            form.accountOptions,
+            values.accountId,
+            'name',
+            'Select account',
+          )}
+          selectedValue={values.accountId != null ? String(values.accountId) : ''}
+          onValueChange={value => form.setAccountId(Number(value))}
+          items={form.accountOptions.map(a => ({
+            label: `${a.name} (${a.type})`,
+            value: String(a.id),
+          }))}
+          label="Saved in"
+        />
+      )}
+      <Text style={[styles.helpText, { color: colors.textSecondary }]}>
+        This goal can never show more than this account actually holds. Spend
+        from it and the goal drops; put money back and it recovers.
+      </Text>
+
       <Text style={[styles.label, { color: colors.text }]}>Target date (optional)</Text>
       <View style={styles.rowActions}>
         <DateField
@@ -123,6 +160,11 @@ const styles = StyleSheet.create({
   smallPillButtonText: {
     fontSize: scaleFont(12.5),
     fontWeight: '600',
+  },
+  helpText: {
+    fontSize: scaleFont(12),
+    lineHeight: scaleFont(17),
+    marginTop: 6,
   },
   error: {
     marginTop: 12,

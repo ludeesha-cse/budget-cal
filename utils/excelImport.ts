@@ -656,6 +656,18 @@ export async function validateExcelFile(
         currencyCodeSet,
         'currency',
       );
+      // The to-side columns are optional on purpose: a workbook
+      // exported before transfers could convert has neither, and such a
+      // transfer was same-currency by definition — so a blank here means
+      // "same as the from side", not a missing value. Only a to-currency
+      // that is PRESENT but unrecognized is an error.
+      const toCurrencyCode = v.optionalResolvedName(
+        'ToCurrencyCode',
+        currencyCodeSet,
+        'currency',
+      );
+      const toAmount = v.optionalNumber('ToAmount');
+      const description = v.string('Description');
       const createdAt = v.string('CreatedAt');
       sheetRows.push({
         Date: date,
@@ -663,6 +675,9 @@ export async function validateExcelFile(
         ToAccountName: toAccountName,
         Amount: amount,
         CurrencyCode: currencyCode,
+        ToCurrencyCode: toCurrencyCode,
+        ToAmount: toAmount ?? '',
+        Description: description,
         CreatedAt: createdAt,
       });
     });
@@ -1052,6 +1067,15 @@ export async function validateExcelFile(
           message: `Status "${status}" must be one of: active, achieved, abandoned.`,
         });
       }
+      // Optional for the same reason ToCurrencyCode above is: a
+      // workbook exported before goals were account-backed has no such
+      // column, and the goal is assigned an account by the startup
+      // backfill instead of being rejected here.
+      const accountName = v.optionalResolvedName(
+        'AccountName',
+        accountNameSet,
+        'account',
+      );
       const createdAt = v.string('CreatedAt');
       if (name) {
         savingsGoalNameSet.add(name);
@@ -1060,6 +1084,7 @@ export async function validateExcelFile(
         Name: name,
         TargetAmount: targetAmount,
         CurrencyCode: currencyCode,
+        AccountName: accountName,
         TargetDate: targetDate,
         Status: status,
         CreatedAt: createdAt,
@@ -1088,18 +1113,72 @@ export async function validateExcelFile(
       );
       const amount = v.requiredNumber('Amount');
       const date = v.requiredDate('Date');
+      // Which account funded this. Optional — blank for a legacy
+      // contribution that had no transfer behind it, and for any
+      // workbook exported before that link existed. The apply step uses
+      // it to re-pair the contribution with its transfer where it can.
+      const fromAccountName = v.optionalResolvedName(
+        'FromAccountName',
+        accountNameSet,
+        'account',
+      );
       const note = v.string('Note');
       const createdAt = v.string('CreatedAt');
       sheetRows.push({
         GoalName: goalName,
         Amount: amount,
         Date: date,
+        FromAccountName: fromAccountName,
         Note: note,
         CreatedAt: createdAt,
       });
     });
     data.SavingsContributions = sheetRows;
     rowCounts.SavingsContributions = sheetRows.length;
+  }
+
+  // ---- ExchangeRates ----
+  // Absent from every workbook exported before this sheet existed, which
+  // is fine: each currency falls back to its shipped default rate.
+  if (present('ExchangeRates')) {
+    const { headers, rows } = readSheetRows(workbook, 'ExchangeRates');
+    checkRequiredHeaders(
+      'ExchangeRates',
+      headers,
+      ['CurrencyCode', 'RatePerAnchor'],
+      errors,
+    );
+    const sheetRows: ExportRow[] = [];
+    rows.forEach((row, i) => {
+      const v = new RowValidator('ExchangeRates', row, i + 2, errors);
+      const currencyCode = v.requiredResolvedName(
+        'CurrencyCode',
+        currencyCodeSet,
+        'currency',
+      );
+      const ratePerAnchor = v.requiredNumber('RatePerAnchor');
+      // Zero or negative is not a rate — it would make every conversion
+      // through this currency either Infinity or a negative amount, so
+      // it is rejected here rather than silently stored and then ignored
+      // by convertAmount at every call site.
+      if (ratePerAnchor <= 0) {
+        errors.push({
+          sheet: 'ExchangeRates',
+          row: i + 2,
+          message: `RatePerAnchor "${ratePerAnchor}" must be greater than zero.`,
+        });
+      }
+      const isCustom = v.boolean('IsCustom', false);
+      const updatedAt = v.string('UpdatedAt');
+      sheetRows.push({
+        CurrencyCode: currencyCode,
+        RatePerAnchor: ratePerAnchor,
+        IsCustom: isCustom ? 'true' : 'false',
+        UpdatedAt: updatedAt,
+      });
+    });
+    data.ExchangeRates = sheetRows;
+    rowCounts.ExchangeRates = sheetRows.length;
   }
 
   if (errors.length > 0) {

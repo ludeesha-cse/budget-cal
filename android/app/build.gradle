@@ -81,7 +81,7 @@ android {
 
     namespace "com.budgettrackermobile"
     defaultConfig {
-        applicationId "com.budgettrackermobile"
+        applicationId "com.penny_worth.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 4

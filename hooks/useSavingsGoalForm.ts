@@ -1,9 +1,13 @@
-import {
-  type NewSavingsGoalParams,
-} from '../db/queries';
+import { Alert } from 'react-native';
+import { type NewSavingsGoalParams } from '../db/queries';
+import { formatAmount } from '../utils/formatAmount';
 import { useEntityFormModal } from './useEntityFormModal';
 import type { UseEntityFormModalResult } from './useEntityFormModal';
-import type { SavingsGoalCurrencyRow, SavingsGoalRow } from './useSavingsGoalsData';
+import type {
+  SavingsGoalAccountOption,
+  SavingsGoalCurrencyRow,
+  SavingsGoalRow,
+} from './useSavingsGoalsData';
 import {
   useCreateSavingsGoal as useCreateSavingsGoalMutation,
   useUpdateSavingsGoal as useUpdateSavingsGoalMutation,
@@ -13,6 +17,7 @@ export type SavingsGoalFormValues = {
   name: string;
   targetAmount: string;
   currencyId: number | null;
+  accountId: number | null;
   targetDate: string | null;
 };
 
@@ -21,15 +26,35 @@ export interface UseSavingsGoalFormResult
   setName: (value: string) => void;
   setTargetAmount: (value: string) => void;
   setCurrencyId: (value: number) => void;
+  setAccountId: (value: number) => void;
   setTargetDate: (value: string | null) => void;
+  // Accounts that can actually hold this goal's money: open, of a
+  // savings-capable type, and already holding the selected currency.
+  // Recomputed as the currency changes, which is why it lives here
+  // rather than being passed in whole.
+  accountOptions: SavingsGoalAccountOption[];
 }
 
-// Add/Edit Savings Goal, built on useEntityFormModal (Step 6). Unlike
-// AccountsScreen/CategoriesScreen/InstallmentPlansScreen, creating a
-// savings goal is never entitlement-gated at all — the original screen
-// had no tier check anywhere in its submit path.
+// Add/Edit Savings Goal, built on useEntityFormModal (Step 6). Creating
+// a savings goal is never entitlement-gated — the original screen had no
+// tier check anywhere in its submit path.
+//
+// THE ACCOUNT IS NOW REQUIRED, and choosing it is the one genuinely new
+// decision in this form. Two things follow from it:
+//
+//   - the account list is filtered by the chosen CURRENCY, because a
+//     goal denominated in a currency its account does not hold would be
+//     permanently capped at zero. Changing the currency therefore clears
+//     an account that no longer qualifies rather than leaving an invalid
+//     pairing on screen;
+//   - moving an EXISTING goal to an account that holds less than the
+//     goal has saved is allowed, but confirmed first. It is not an
+//     error — someone repointing a goal at an account they are about to
+//     fund is doing something reasonable — but it does visibly drop the
+//     goal's number, so it should never happen without being asked.
 export function useSavingsGoalForm(
   currencies: SavingsGoalCurrencyRow[],
+  accounts: SavingsGoalAccountOption[],
   // Optional since the TanStack Query refactor: a caller used to pass
   // its screen's load() here purely to re-read the database after a
   // successful write. The mutation hooks now invalidate every affected
@@ -38,13 +63,12 @@ export function useSavingsGoalForm(
   // local UI state, navigate away).
   onSaved?: () => void | Promise<void>,
 ): UseSavingsGoalFormResult {
-  // Write paths go through the caching layer's mutation hooks: each
-  // one runs the same db/queries function as before and then
-  // invalidates every query its write can affect (see
-  // hooks/queries/invalidation.ts). The call sites below are
-  // unchanged — these hooks take the wrapped function's own arguments.
   const createSavingsGoal = useCreateSavingsGoalMutation();
   const updateSavingsGoal = useUpdateSavingsGoalMutation();
+
+  const defaultCurrencyId =
+    currencies.find(c => c.isDefault)?.id ?? currencies[0]?.id ?? null;
+
   const form = useEntityFormModal<
     SavingsGoalRow,
     SavingsGoalFormValues,
@@ -53,18 +77,17 @@ export function useSavingsGoalForm(
     initialValues: {
       name: '',
       targetAmount: '',
-      currencyId: currencies.find(c => c.isDefault)?.id ?? currencies[0]?.id ?? null,
+      currencyId: defaultCurrencyId,
+      accountId: null,
       targetDate: null,
     },
     populateFromRow: goal => ({
       name: goal.name,
       targetAmount: String(goal.targetAmount),
       currencyId: goal.currencyId,
+      accountId: goal.accountId,
       targetDate: goal.targetDate,
     }),
-    // Mirrors the original's own checks — target date is genuinely
-    // optional (per its own "(optional)" label), so it's deliberately
-    // left out of this gate.
     validate: values => {
       if (!values.name.trim()) {
         return 'Enter a name';
@@ -76,12 +99,16 @@ export function useSavingsGoalForm(
       if (values.currencyId == null) {
         return 'Select a currency';
       }
+      if (values.accountId == null) {
+        return 'Choose an account to save this money in';
+      }
       return null;
     },
     toParams: values => ({
       name: values.name.trim(),
       targetAmount: Number(values.targetAmount),
       currencyId: values.currencyId!,
+      accountId: values.accountId!,
       targetDate: values.targetDate ?? undefined,
     }),
     onUpdate: (id, params) => updateSavingsGoal(id, params),
@@ -95,11 +122,80 @@ export function useSavingsGoalForm(
     value: SavingsGoalFormValues[K],
   ) => form.setValues(current => ({ ...current, [key]: value }));
 
+  const accountOptions = accounts.filter(
+    account =>
+      form.values.currencyId != null &&
+      account.currencyIds.includes(form.values.currencyId),
+  );
+
+  // Changing the currency can strip the chosen account of its
+  // eligibility. Clearing it here (rather than letting submit fail) is
+  // what makes the two pickers behave like one decision.
+  const setCurrencyId = (value: number) =>
+    form.setValues(current => {
+      const stillEligible =
+        current.accountId != null &&
+        accounts.some(
+          a => a.id === current.accountId && a.currencyIds.includes(value),
+        );
+      return {
+        ...current,
+        currencyId: value,
+        accountId: stillEligible ? current.accountId : null,
+      };
+    });
+
+  // Wraps submit so an account change that would visibly cap an existing
+  // goal is confirmed rather than applied silently. A brand-new goal has
+  // nothing saved yet, so it never triggers this.
+  const submit = async () => {
+    const goal = form.editingRow;
+    const nextAccountId = form.values.accountId;
+    if (!goal || nextAccountId == null || nextAccountId === goal.accountId) {
+      await form.submit();
+      return;
+    }
+    const nextAccount = accounts.find(a => a.id === nextAccountId);
+    const currencyId = form.values.currencyId;
+    const availableThere =
+      nextAccount && currencyId != null
+        ? nextAccount.balanceByCurrencyId[currencyId] ?? 0
+        : 0;
+    // Compared against the RAW contributed figure, not the currently
+    // displayed one: the question is what this goal would show once it
+    // is pointed at the new account, and its full earmark is what would
+    // be competing for that account's balance.
+    if (availableThere >= goal.rawContributed) {
+      await form.submit();
+      return;
+    }
+    Alert.alert(
+      'That account holds less than this goal has saved',
+      `${nextAccount?.name ?? 'That account'} holds ${formatAmount(
+        availableThere,
+        goal.currencyCode,
+      )}, but "${goal.name}" has ${formatAmount(
+        goal.rawContributed,
+        goal.currencyCode,
+      )} saved. The goal will show ${formatAmount(
+        availableThere,
+        goal.currencyCode,
+      )} until that account holds more. Nothing is deleted — move money in and the goal comes back up.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Move it anyway', onPress: () => form.submit() },
+      ],
+    );
+  };
+
   return {
     ...form,
+    submit,
+    accountOptions,
     setName: value => setField('name', value),
     setTargetAmount: value => setField('targetAmount', value),
-    setCurrencyId: value => setField('currencyId', value),
+    setCurrencyId,
+    setAccountId: value => setField('accountId', value),
     setTargetDate: value => setField('targetDate', value),
   };
 }

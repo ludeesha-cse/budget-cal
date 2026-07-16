@@ -1,105 +1,74 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Plus } from 'lucide-react-native';
-import AddContributionForm from './AddContributionForm';
+import { ArrowRightLeft } from 'lucide-react-native';
 import ContributionRow from './ContributionRow';
+import TransferToGoalForm from './TransferToGoalForm';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont } from '../../theme/typography';
-import type { UseContributionFormResult, SavingsContributionRow } from '../../hooks/useContributionForm';
+import type {
+  SavingsContributionRow,
+  UseSavingsTransferFormResult,
+} from '../../hooks/useSavingsTransferForm';
 import type { SavingsGoalRow } from '../../hooks/useSavingsGoalsData';
 
 type Props = {
   goal: SavingsGoalRow;
   contributions: SavingsContributionRow[] | undefined;
-  contributionForm: UseContributionFormResult;
+  transferForm: UseSavingsTransferFormResult;
   onEditGoal: () => void;
   onSetStatus: (status: 'active' | 'achieved' | 'abandoned') => void;
   onDeleteGoal: () => void;
 };
 
-// The expanded details section of a goal card — contribution history,
-// add/edit contribution forms, and the goal-level action pills (Edit
-// Goal / Mark Achieved / Abandon / Reactivate / Delete).
+// The expanded details section of a goal card — funding history, the
+// Transfer & Save form, and the goal-level action pills (Edit Goal /
+// Mark Achieved / Abandon / Reactivate / Delete).
 function GoalDetails({
   goal,
   contributions,
-  contributionForm,
+  transferForm,
   onEditGoal,
   onSetStatus,
   onDeleteGoal,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const {
-    addingContributionFor,
-    contributionAmount,
-    setContributionAmount,
-    contributionDate,
-    setContributionDate,
-    contributionNote,
-    setContributionNote,
-    openAddContribution,
-    closeAddContribution,
-    submitAddContribution,
-    editingContributionId,
-    editAmount,
-    setEditAmount,
-    editDate,
-    setEditDate,
-    editNote,
-    setEditNote,
-    startEditContribution,
-    cancelEditContribution,
-    submitEditContribution,
-    handleDeleteContribution,
-  } = contributionForm;
 
   return (
     <View style={styles.detailsSection}>
-      <Text style={[styles.subheading, { color: colors.text }]}>Contributions</Text>
+      <Text style={[styles.subheading, { color: colors.text }]}>
+        Money moved into this goal
+      </Text>
       {!contributions ? (
         <Text style={{ color: colors.textSecondary }}>Loading...</Text>
       ) : contributions.length === 0 ? (
-        <Text style={{ color: colors.textSecondary }}>No contributions logged yet.</Text>
+        <Text style={{ color: colors.textSecondary }}>
+          Nothing transferred in yet.
+        </Text>
       ) : (
         contributions.map(contribution => (
           <ContributionRow
             key={contribution.id}
             contribution={contribution}
             currencyCode={goal.currencyCode}
-            isEditing={editingContributionId === contribution.id}
-            editAmount={editAmount}
-            onEditAmountChange={setEditAmount}
-            editDate={editDate}
-            onEditDateChange={setEditDate}
-            editNote={editNote}
-            onEditNoteChange={setEditNote}
-            onCancelEdit={cancelEditContribution}
-            onSaveEdit={() => submitEditContribution(goal.id)}
-            onStartEdit={() => startEditContribution(contribution)}
-            onDelete={() => handleDeleteContribution(goal.id, contribution)}
+            onDelete={() => transferForm.handleDeleteContribution(goal, contribution)}
           />
         ))
       )}
 
+      {/* A goal with no usable account can't receive money — the card
+          above already tells the user to pick one, so the button that
+          would fail is simply not offered. */}
       {goal.status === 'active' &&
-        (addingContributionFor === goal.id ? (
-          <AddContributionForm
-            amount={contributionAmount}
-            onAmountChange={setContributionAmount}
-            date={contributionDate}
-            onDateChange={setContributionDate}
-            note={contributionNote}
-            onNoteChange={setContributionNote}
-            onCancel={closeAddContribution}
-            onSubmit={() => submitAddContribution(goal.id)}
-          />
+        !goal.needsAccount &&
+        (transferForm.openForGoalId === goal.id ? (
+          <TransferToGoalForm goal={goal} form={transferForm} />
         ) : (
           <Pressable
             style={[styles.addContributionButton, { borderColor: colors.primary }]}
-            onPress={() => openAddContribution(goal.id)}>
-            <Plus size={14} color={colors.primary} strokeWidth={2.5} />
+            onPress={() => transferForm.open(goal)}>
+            <ArrowRightLeft size={14} color={colors.primary} strokeWidth={2.5} />
             <Text style={[styles.addContributionButtonText, { color: colors.primary }]}>
-              Add Contribution
+              Transfer &amp; Save
             </Text>
           </Pressable>
         ))}

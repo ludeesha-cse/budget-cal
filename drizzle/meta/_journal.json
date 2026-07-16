@@ -176,6 +176,13 @@
       "when": 1787139357608,
       "tag": "0024_add_app_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1787630689896,
+      "tag": "0025_cross_currency_transfers_and_account_backed_goals",
+      "breakpoints": true
     }
   ]
 }
