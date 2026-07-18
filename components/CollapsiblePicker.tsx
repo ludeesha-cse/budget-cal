@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useTheme } from '../contexts/ThemeContext';
 import { BottomSheetPickerContext } from './BottomSheetModal';
 import { typography, scaleFont } from '../theme/typography';
+import { fieldErrorStyle } from '../utils/formFieldStyle';
 
 export type CollapsiblePickerOption = {
   label: string;
@@ -18,6 +19,11 @@ type CollapsiblePickerProps = {
   // picker's title, whether it hands off to a parent BottomSheetModal (see
   // below) or opens its own standalone one.
   label?: string;
+  // True when this is a required field the user has left unset AND they
+  // have tried to submit — see hooks/useFieldErrors. Draws the same red
+  // outline a text input gets, so "what's missing?" reads the same way
+  // whatever kind of control the answer is.
+  invalid?: boolean;
 };
 
 function CollapsiblePicker({
@@ -26,6 +32,7 @@ function CollapsiblePicker({
   onValueChange,
   items,
   label,
+  invalid = false,
 }: CollapsiblePickerProps): React.JSX.Element {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -58,6 +65,7 @@ function CollapsiblePicker({
         style={[
           styles.button,
           { backgroundColor: colors.surface, borderColor: colors.border },
+          fieldErrorStyle(colors, invalid),
         ]}
         onPress={handlePress}>
         <Text style={[styles.buttonText, { color: colors.text }]}>

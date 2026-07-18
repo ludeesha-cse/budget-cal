@@ -9,6 +9,7 @@ import NumericInputAccessory, {
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { UseTransferResult } from '../../hooks/useTransfer';
 import { sharedFormStyles as styles } from './sharedFormStyles';
 
@@ -44,6 +45,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
     date,
     setDate,
     canSave,
+    isMissing,
     summaryText,
     close,
     handleTransferSubmit,
@@ -70,6 +72,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
             value: String(a.id),
           }))}
           label="From"
+          invalid={isMissing('fromAccountId')}
         />
       )}
 
@@ -93,6 +96,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
                 value: String(b.currencyId),
               }))}
               label="Currency"
+              invalid={isMissing('currencyId')}
             />
           )}
         </>
@@ -122,6 +126,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
                 value: String(a.id),
               }))}
               label="To"
+              invalid={isMissing('toAccountId')}
             />
           )}
         </>
@@ -149,6 +154,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
                 value: String(b.currencyId),
               }))}
               label="Receive as"
+              invalid={isMissing('toCurrencyId')}
             />
           )}
         </>
@@ -165,6 +171,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('amount')),
         ]}
         value={amount}
         onChangeText={setAmount}
@@ -184,6 +191,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, isMissing('convertedAmount')),
             ]}
             value={convertedAmount}
             onChangeText={setConvertedAmount}

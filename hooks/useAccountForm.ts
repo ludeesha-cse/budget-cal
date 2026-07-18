@@ -117,6 +117,28 @@ export function useAccountForm(deps: UseAccountFormDeps): UseAccountFormResult {
       }
       return null;
     },
+    // Editing an existing account only exposes name and type — the
+    // currency and starting balance belong to creation, which is why
+    // they are only required when `isEditing` is false (the same branch
+    // validate() takes above).
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.name.trim()) {
+        missing.push('name');
+      }
+      if (!values.isEditing) {
+        if (values.initialCurrencyId === '') {
+          missing.push('initialCurrencyId');
+        }
+        if (
+          values.initialBalance === '' ||
+          Number.isNaN(Number(values.initialBalance))
+        ) {
+          missing.push('initialBalance');
+        }
+      }
+      return missing;
+    },
     toParams: values => ({
       name: values.name.trim(),
       type: values.type,

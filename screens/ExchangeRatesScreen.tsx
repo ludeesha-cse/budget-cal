@@ -7,13 +7,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Info, RotateCcw } from 'lucide-react-native';
+import { RotateCcw } from 'lucide-react-native';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
+import InfoBanner from '../components/common/InfoBanner';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../components/NumericInputAccessory';
 import { useTheme } from '../contexts/ThemeContext';
+import { fieldErrorStyle } from '../utils/formFieldStyle';
 import { scaleFont, typography } from '../theme/typography';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import {
@@ -22,14 +24,22 @@ import {
   useSetExchangeRate as useSetExchangeRateMutation,
 } from '../hooks/queries';
 import type { ExchangeRateListRow } from '../hooks/queries';
-import { ANCHOR_CURRENCY_CODE } from '../config/exchangeRates';
 
 // The rates cross-currency transfers convert with.
 //
-// Every rate is expressed against one anchor currency, so six currencies
-// need six numbers rather than thirty pairwise ones — "1 USD = 340 LKR"
-// and "1 GBP = 425 LKR" together already say what a USD→GBP transfer
-// should pre-fill. See config/exchangeRates.ts for the arithmetic.
+// EVERY RATE IS PHRASED AGAINST THE USER'S DEFAULT CURRENCY: each row
+// answers "how many of this does 1 <default> buy?". With USD as the
+// default, EUR reads 0.86 and LKR reads 340. That means six currencies
+// need six numbers rather than thirty pairwise ones — knowing what 1 USD
+// buys in EUR and in LKR already says what a EUR→LKR transfer should
+// pre-fill. See config/exchangeRates.ts for the arithmetic.
+//
+// The default currency's own row is fixed at 1 and cannot be edited: it
+// is the unit the others are measured in, not a rate anyone chose.
+// Changing which currency is the default re-expresses every rate against
+// the new one (see rescaleRatesToDefaultWithin) — the numbers on this
+// screen move, but no conversion changes meaning, because every pair
+// ratio is preserved.
 //
 // Editing a rate NEVER changes a transfer that already happened. Past
 // transfers store the two amounts that were actually agreed, and nothing
@@ -41,6 +51,10 @@ function ExchangeRatesScreen(): React.JSX.Element {
   const setExchangeRate = useSetExchangeRateMutation();
   const resetExchangeRate = useResetExchangeRateMutation();
   const { data: rates, isPending } = useExchangeRates();
+  // The row flagged isAnchor IS the default currency — used for the
+  // "how many X does 1 <default> buy" wording throughout.
+  const anchorCode =
+    (rates ?? []).find(row => row.isAnchor)?.currencyCode ?? '';
 
   // Which row is being edited, and its in-progress text. Only one at a
   // time, matching the inline-edit pattern the other settings lists use.
@@ -48,23 +62,38 @@ function ExchangeRatesScreen(): React.JSX.Element {
     null,
   );
   const [draftRate, setDraftRate] = useState('');
+  // Whether the user has pressed Save on an empty or nonsensical rate —
+  // the same muted-but-pressable pattern every form in the app uses (see
+  // hooks/useFieldErrors), inlined here because this is a single field
+  // rather than a form worth a hook.
+  const [rateErrorShown, setRateErrorShown] = useState(false);
 
   const startEdit = (row: ExchangeRateListRow) => {
     setEditingCurrencyId(row.currencyId);
     setDraftRate(row.ratePerAnchor > 0 ? String(row.ratePerAnchor) : '');
+    setRateErrorShown(false);
   };
 
   const cancelEdit = () => {
     setEditingCurrencyId(null);
     setDraftRate('');
+    setRateErrorShown(false);
   };
 
   const saveEdit = (row: ExchangeRateListRow) => {
     const parsed = Number(draftRate);
+    // A rate has to be a positive number: zero or negative would make
+    // every conversion through this currency either Infinity or a
+    // negative amount.
+    if (!draftRate || Number.isNaN(parsed) || parsed <= 0) {
+      setRateErrorShown(true);
+      return;
+    }
     runAction(async () => {
       await setExchangeRate(row.currencyId, parsed);
       setEditingCurrencyId(null);
       setDraftRate('');
+      setRateErrorShown(false);
     }, 'Could not save rate');
   };
 
@@ -103,16 +132,17 @@ function ExchangeRatesScreen(): React.JSX.Element {
           )}
         </View>
 
-        {/* The anchor is 1 by definition — it is what every other rate is
-            measured against, so there is nothing here to edit. */}
+        {/* The default currency is 1 by definition — it is what every
+            other rate is measured against, so there is nothing here to
+            edit. */}
         {row.isAnchor ? (
           <Text style={[styles.help, { color: colors.textSecondary }]}>
-            The base currency every other rate is measured against.
+            Your default currency — every rate below is measured in it.
           </Text>
         ) : isEditing ? (
           <>
             <Text style={[styles.help, { color: colors.textSecondary }]}>
-              How many {ANCHOR_CURRENCY_CODE} one {row.currencyCode} is worth.
+              How many {row.currencyCode} one {anchorCode} buys.
             </Text>
             <TextInput
               style={[
@@ -122,6 +152,7 @@ function ExchangeRatesScreen(): React.JSX.Element {
                   color: colors.text,
                   backgroundColor: colors.surface,
                 },
+                fieldErrorStyle(colors, rateErrorShown && !draftValid),
               ]}
               value={draftRate}
               onChangeText={setDraftRate}
@@ -140,6 +171,10 @@ function ExchangeRatesScreen(): React.JSX.Element {
                   Cancel
                 </Text>
               </Pressable>
+              {/* Muted but still pressable — pressing an incomplete
+                  field is what turns it red, rather than the tap simply
+                  doing nothing. Same reasoning as BottomSheetModal's
+                  footer button. */}
               <Pressable
                 style={[
                   styles.pillSolid,
@@ -149,7 +184,6 @@ function ExchangeRatesScreen(): React.JSX.Element {
                       : colors.neutralSoft,
                   },
                 ]}
-                disabled={!draftValid}
                 onPress={() => saveEdit(row)}>
                 <Text
                   style={[
@@ -167,7 +201,7 @@ function ExchangeRatesScreen(): React.JSX.Element {
           <>
             <Text style={[styles.help, { color: colors.textSecondary }]}>
               {row.ratePerAnchor > 0
-                ? `1 ${row.currencyCode} = ${row.ratePerAnchor} ${ANCHOR_CURRENCY_CODE}`
+                ? `1 ${anchorCode} = ${row.ratePerAnchor} ${row.currencyCode}`
                 : `No rate set — transfers into or out of ${row.currencyCode} will ask you to type the converted amount.`}
             </Text>
             <View style={styles.actions}>
@@ -197,15 +231,11 @@ function ExchangeRatesScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.infoBanner, { backgroundColor: colors.primarySoft }]}>
-        <Info size={14} color={colors.primary} />
-        <Text style={[styles.infoBannerText, { color: colors.text }]}>
-          These rates only pre-fill the converted amount when you transfer
-          between two currencies — you can always change that amount before
-          saving. Editing a rate here never changes a transfer you've already
-          made.
-        </Text>
-      </View>
+      <InfoBanner>
+        {anchorCode
+          ? `Rates are measured against ${anchorCode}, your default currency. They only pre-fill the converted amount when you transfer between two currencies — you can always change that amount before saving, and editing a rate never changes a transfer you've already made.`
+          : "These rates only pre-fill the converted amount when you transfer between two currencies — you can always change that amount before saving. Editing a rate here never changes a transfer you've already made."}
+      </InfoBanner>
 
       {isPending ? (
         <EmptyState message="Loading..." />
@@ -229,19 +259,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-  },
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: scaleFont(12.5),
-    lineHeight: scaleFont(18),
   },
   card: {
     padding: 14,

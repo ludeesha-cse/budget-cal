@@ -5,7 +5,6 @@ import {
   getAccountTotalBalance,
   getAllAccountBalances,
   getNetSpentForAccount,
-  getTotalCashInHandByCurrency,
 } from '../../db/queries';
 import { queryKeys } from '../../db/queryKeys';
 
@@ -74,17 +73,6 @@ export function useNetSpentForAccount(
     queryFn: () =>
       getNetSpentForAccount(accountId as number, currencyId as number),
     enabled: accountId != null && currencyId != null,
-  });
-}
-
-// Transactional stale time: the dashboard's cash-in-hand card, summed
-// from stored balances — a headline money figure, so it gets the shorter
-// window rather than being treated as account metadata.
-export function useTotalCashInHandByCurrency(enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.transactional.balances.totalCashInHand,
-    queryFn: getTotalCashInHandByCurrency,
-    enabled,
   });
 }
 

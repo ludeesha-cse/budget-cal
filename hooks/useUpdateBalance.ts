@@ -75,6 +75,19 @@ export function useUpdateBalance(
       }
       return null;
     },
+    // newValue may legitimately be 0 or negative (that is the whole
+    // point of a correction), so it is checked for being PRESENT and
+    // numeric rather than positive.
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.newValue || Number.isNaN(Number(values.newValue))) {
+        missing.push('newValue');
+      }
+      if (!values.description.trim()) {
+        missing.push('description');
+      }
+      return missing;
+    },
     onSubmit: (target, values) =>
       updateAccountBalanceWithAudit(
         target.accountId,

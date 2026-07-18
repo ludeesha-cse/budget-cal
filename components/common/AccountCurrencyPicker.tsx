@@ -16,6 +16,8 @@ type Props = {
   accountBalances: AccountBalanceRow[];
   currencyId: number | null;
   onCurrencyIdChange: (currencyId: number) => void;
+  accountInvalid?: boolean;
+  currencyInvalid?: boolean;
 };
 
 // The ACCOUNT picker (always shown) + CURRENCY picker (only shown once an
@@ -28,6 +30,8 @@ function AccountCurrencyPicker({
   accountBalances,
   currencyId,
   onCurrencyIdChange,
+  accountInvalid = false,
+  currencyInvalid = false,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
 
@@ -50,6 +54,7 @@ function AccountCurrencyPicker({
         onValueChange={value => onAccountIdChange(Number(value))}
         items={accounts.map(a => ({ label: a.name, value: String(a.id) }))}
         label="Account"
+        invalid={accountInvalid}
       />
 
       {accountBalances.length > 1 && (
@@ -72,6 +77,7 @@ function AccountCurrencyPicker({
               value: String(b.currencyId),
             }))}
             label="Currency"
+            invalid={currencyInvalid}
           />
         </>
       )}

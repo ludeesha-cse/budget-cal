@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { getTransferableAccounts } from '../db/queries';
 import { formatDateString } from '../utils/date';
@@ -9,6 +9,7 @@ import {
   indexRatesByCurrencyId,
 } from '../utils/currencyConversion';
 import { useAsyncAction } from './useAsyncAction';
+import { useFieldErrors } from './useFieldErrors';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
 import {
   useCreateTransfer as useCreateTransferMutation,
@@ -73,6 +74,9 @@ export interface UseTransferResult {
   date: string;
   setDate: (value: string) => void;
   canSave: boolean;
+  // True when this required field is empty AND the user has already
+  // pressed Transfer. See hooks/useFieldErrors.
+  isMissing: (field: string) => boolean;
   summaryText: string | null;
   openTransferModal: (options?: OpenTransferOptions) => Promise<void>;
   close: () => void;
@@ -285,7 +289,57 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     toCurrencyId,
   ]);
 
+  // One list, two consumers: canSave below is "is it empty?", and
+  // fieldErrors turns the same list into per-control outlines once the
+  // user has actually pressed Transfer.
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!fromAccountId) {
+      missing.push('fromAccountId');
+    }
+    if (!currencyId) {
+      missing.push('currencyId');
+    }
+    if (!toAccountId) {
+      missing.push('toAccountId');
+    }
+    if (!toCurrencyId) {
+      missing.push('toCurrencyId');
+    }
+    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+      missing.push('amount');
+    }
+    // Only a field at all when the two currencies differ.
+    if (
+      isCrossCurrency &&
+      (!convertedAmount ||
+        Number.isNaN(Number(convertedAmount)) ||
+        Number(convertedAmount) <= 0)
+    ) {
+      missing.push('convertedAmount');
+    }
+    return missing;
+  }, [
+    fromAccountId,
+    currencyId,
+    toAccountId,
+    toCurrencyId,
+    amount,
+    convertedAmount,
+    isCrossCurrency,
+  ]);
+
+  const fieldErrors = useFieldErrors(missingFields);
+  const canSave = missingFields.length === 0;
+
+  // Read through a ref so the callbacks below can reveal or clear the
+  // outlines without listing fieldErrors — whose identity changes on
+  // every keystroke — as a dependency.
+  const fieldErrorsRef = useRef(fieldErrors);
+  fieldErrorsRef.current = fieldErrors;
+
   const resetForm = useCallback(() => {
+    fieldErrorsRef.current.reset();
     setFromAccountId('');
     setCurrencyId('');
     setToAccountId('');
@@ -366,6 +420,13 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   );
 
   const handleTransferSubmit = useCallback(() => {
+    // The save button is muted but pressable while the form is
+    // incomplete (see BottomSheetModal's footer), so this is the path an
+    // incomplete press takes — reveal the outlines rather than only
+    // showing an alert the user then has to map back onto the form.
+    if (missingFields.length > 0) {
+      fieldErrorsRef.current.reveal();
+    }
     if (!fromAccountId || !toAccountId || !currencyId || !toCurrencyId) {
       Alert.alert(
         'Missing information',
@@ -433,20 +494,9 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     isCrossCurrency,
     accounts,
     performTransfer,
+    missingFields,
   ]);
 
-  const canSave =
-    Boolean(fromAccountId) &&
-    Boolean(currencyId) &&
-    Boolean(toAccountId) &&
-    Boolean(toCurrencyId) &&
-    amount !== '' &&
-    !Number.isNaN(Number(amount)) &&
-    Number(amount) > 0 &&
-    (!isCrossCurrency ||
-      (convertedAmount !== '' &&
-        !Number.isNaN(Number(convertedAmount)) &&
-        Number(convertedAmount) > 0));
 
   const fromCurrencyOptions = useMemo(() => {
     const fromAccount = accounts.find(a => String(a.id) === fromAccountId);
@@ -521,6 +571,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     date,
     setDate,
     canSave,
+    isMissing: fieldErrors.isMissing,
     summaryText,
     openTransferModal,
     close,

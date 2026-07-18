@@ -1,18 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Crown, Plus, Trash2 } from 'lucide-react-native';
+import { Crown, Plus } from 'lucide-react-native';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
 import AddCurrencySheets from '../components/currencies/AddCurrencySheets';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
-import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useAllCurrencies } from '../hooks/queries';
 import {
-  useDeleteCurrency as useDeleteCurrencyMutation,
   useSetCurrencyActive as useSetCurrencyActiveMutation,
   useSetDefaultCurrency as useSetDefaultCurrencyMutation,
 } from '../hooks/queries';
@@ -23,11 +21,9 @@ function CurrenciesScreen(): React.JSX.Element {
   // invalidates every query its write can affect (see
   // hooks/queries/invalidation.ts). The call sites below are
   // unchanged — these hooks take the wrapped function's own arguments.
-  const deleteCurrency = useDeleteCurrencyMutation();
   const setCurrencyActive = useSetCurrencyActiveMutation();
   const setDefaultCurrency = useSetDefaultCurrencyMutation();
   const { colors } = useTheme();
-  const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
@@ -65,21 +61,18 @@ function CurrenciesScreen(): React.JSX.Element {
     }, 'Cannot disable currency');
   };
 
-  const handleDelete = (currencyId: number, currencyCode: string) => {
-    confirmDelete(
-      'Delete currency',
-      `Are you sure you want to delete ${currencyCode}?`,
-      'Delete',
-      () =>
-        runAction(async () => {
-          await deleteCurrency(currencyId);
-          // No load() here any more: the mutation above already
-          // invalidated every query this write affects, and awaiting it
-          // waits for those refetches — a second read would be redundant.
-        }, 'Cannot delete currency'),
-    );
-  };
-
+  // DELETING A CURRENCY IS NO LONGER OFFERED, and that is the whole
+  // feature rather than an omission. A currency is referenced by account
+  // balances, transactions, budgets, transfers, loans, installments,
+  // savings goals and now its own exchange rate — so in any database
+  // that has actually been used, the delete either fails on a foreign
+  // key or would have to cascade through the user's entire financial
+  // history to succeed. Neither is something a settings screen should
+  // do. Disabling is the supported answer: it removes the currency from
+  // every picker and tab in the app while leaving the records that
+  // reference it intact and readable. (The default currency cannot even
+  // be disabled — the app always needs one usable currency; set another
+  // as default first.)
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Pressable
@@ -126,12 +119,6 @@ function CurrenciesScreen(): React.JSX.Element {
                   <Text style={[styles.actionLink, { color: colors.textSecondary }]}>
                     Disable
                   </Text>
-                </Pressable>
-                <Pressable
-                  hitSlop={8}
-                  style={styles.iconButton}
-                  onPress={() => handleDelete(item.id, item.code)}>
-                  <Trash2 size={16} color={colors.danger} />
                 </Pressable>
               </View>
             )}
@@ -210,9 +197,6 @@ const styles = StyleSheet.create({
   actionLink: {
     fontSize: scaleFont(13),
     fontWeight: '700',
-  },
-  iconButton: {
-    padding: 4,
   },
   defaultBadge: {
     flexDirection: 'row',

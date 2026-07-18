@@ -21,11 +21,15 @@ function TransferRow({ transfer, onPress, onDelete }: Props): React.JSX.Element 
       <HistoryRowDateBlock date={transfer.date} />
       <View style={styles.rowDetails}>
         <Text style={[styles.rowTitle, { color: colors.text }]}>
-          {/* A conversion inside one account reads as "BOC (USD → LKR)"
+          {/* No "Transfer —" prefix: the TRANSFER badge below already
+              says what this row is, and repeating it in the title costs
+              the width that the account names actually need.
+
+              A conversion inside one account reads as "BOC (USD → LKR)"
               rather than "BOC → BOC", which would look like a bug. */}
           {transfer.fromAccountId === transfer.toAccountId
-            ? `Transfer — ${transfer.fromAccountName} (${transfer.currencyCode} → ${transfer.toCurrencyCode})`
-            : `Transfer — ${transfer.fromAccountName} → ${transfer.toAccountName}`}
+            ? `${transfer.fromAccountName} (${transfer.currencyCode} → ${transfer.toCurrencyCode})`
+            : `${transfer.fromAccountName} → ${transfer.toAccountName}`}
         </Text>
         {/* Set to the savings goal's name for a savings transfer, which
             is what makes the goal identifiable here without History

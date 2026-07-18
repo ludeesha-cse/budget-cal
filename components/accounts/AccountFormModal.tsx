@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
 import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -22,7 +23,8 @@ type Props = {
 
 function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { visible, editingId, values, setValues, canSave, close, submit } = form;
+  const { visible, editingId, values, setValues, canSave, isMissing, close, submit } =
+    form;
 
   const setName = (name: string) => setValues(current => ({ ...current, name }));
   const setType = (type: string) => setValues(current => ({ ...current, type }));
@@ -45,6 +47,7 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('name')),
         ]}
         value={values.name}
         onChangeText={setName}
@@ -82,6 +85,7 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
               value: String(c.id),
             }))}
             label="Initial currency"
+            invalid={isMissing('initialCurrencyId')}
           />
 
           <Text style={[styles.label, { color: colors.text }]}>
@@ -91,6 +95,7 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, isMissing('initialBalance')),
             ]}
             value={values.initialBalance}
             onChangeText={setInitialBalance}

@@ -5,6 +5,7 @@ import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
 import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont } from '../../theme/typography';
 import type { UseSavingsGoalFormResult } from '../../hooks/useSavingsGoalForm';
@@ -20,7 +21,7 @@ type Props = {
 // use for their own screens.
 function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { values, error } = form;
+  const { values, error, isMissing } = form;
 
   return (
     <>
@@ -29,6 +30,7 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('name')),
         ]}
         value={values.name}
         onChangeText={form.setName}
@@ -41,6 +43,7 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('targetAmount')),
         ]}
         value={values.targetAmount}
         onChangeText={form.setTargetAmount}
@@ -64,6 +67,7 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
             value: String(c.id),
           }))}
           label="Currency"
+          invalid={isMissing('currencyId')}
         />
       )}
 
@@ -97,6 +101,7 @@ function GoalFormFields({ form, currencies }: Props): React.JSX.Element {
             value: String(a.id),
           }))}
           label="Saved in"
+          invalid={isMissing('accountId')}
         />
       )}
       <Text style={[styles.helpText, { color: colors.textSecondary }]}>

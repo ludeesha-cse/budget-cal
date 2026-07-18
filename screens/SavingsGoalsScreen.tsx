@@ -1,9 +1,10 @@
 import React from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Info, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import InfoBanner from '../components/common/InfoBanner';
 import SegmentedToggle, {
   type SegmentedToggleOption,
 } from '../components/common/SegmentedToggle';
@@ -125,19 +126,15 @@ function SavingsGoalsScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* This banner used to say the opposite — that contributions
-          never move money. Goals are now backed by a real account and
-          funded by real transfers, so the note has to say so; leaving
-          the old wording would have been the single most misleading
-          sentence in the app. */}
-      <View style={[styles.infoBanner, { backgroundColor: colors.primarySoft }]}>
-        <Info size={14} color={colors.primary} />
-        <Text style={[styles.infoBannerText, { color: colors.text }]}>
-          Each goal saves into a real account. Transfer money in to build it
-          up — and if you spend from that account, the goal drops to what's
-          actually left, then recovers when you put money back.
-        </Text>
-      </View>
+      {/* This note used to say the opposite — that contributions never
+          move money. Goals are now backed by a real account and funded by
+          real transfers, so it has to say so; leaving the old wording
+          would have been the single most misleading sentence in the app. */}
+      <InfoBanner>
+        Each goal saves into a real account. Transfer money in to build it up —
+        and if you spend from that account, the goal drops to what's actually
+        left, then recovers when you put money back.
+      </InfoBanner>
 
       <SegmentedToggle
         options={FILTER_OPTIONS}
@@ -204,19 +201,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-  },
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: scaleFont(12.5),
-    lineHeight: scaleFont(18),
   },
   addGoalButton: {
     flexDirection: 'row',

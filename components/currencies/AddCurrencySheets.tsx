@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import BottomSheetModal from '../BottomSheetModal';
 import { useTheme } from '../../contexts/ThemeContext';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import { scaleFont, typography } from '../../theme/typography';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useEntityFormModal } from '../../hooks/useEntityFormModal';
@@ -114,6 +115,16 @@ function AddCurrencySheets({
       v.code.trim() === '' || v.name.trim() === ''
         ? 'Enter a currency code and name.'
         : null,
+    requiredFields: v => {
+      const missing: string[] = [];
+      if (v.code.trim() === '') {
+        missing.push('code');
+      }
+      if (v.name.trim() === '') {
+        missing.push('name');
+      }
+      return missing;
+    },
     toParams: v => ({ code: v.code.trim().toUpperCase(), name: v.name.trim() }),
     onCreate: async params => {
       const performCreate = () => addCurrency(params.code, params.name);
@@ -151,6 +162,7 @@ function AddCurrencySheets({
     values,
     setValues,
     canSave: formCanSave,
+    isMissing,
     openAdd: openNewCurrencyForm,
     close: closeForm,
     submit: handleSubmit,
@@ -253,6 +265,7 @@ function AddCurrencySheets({
               color: colors.text,
               backgroundColor: colors.surface,
             },
+            fieldErrorStyle(colors, isMissing('code')),
           ]}
           value={values.code}
           onChangeText={text => setValues(v => ({ ...v, code: text }))}
@@ -270,6 +283,7 @@ function AddCurrencySheets({
               color: colors.text,
               backgroundColor: colors.surface,
             },
+            fieldErrorStyle(colors, isMissing('name')),
           ]}
           value={values.name}
           onChangeText={text => setValues(v => ({ ...v, name: text }))}

@@ -131,7 +131,6 @@ export const {
   CREDIT_CARD_TYPE,
   getNetSpentForAccount,
   getAccountBalance,
-  getTotalCashInHandByCurrency,
   updateAccountBalanceWithAudit,
   getAccountBalances,
   getAllAccountBalances,

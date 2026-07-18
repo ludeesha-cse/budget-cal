@@ -239,7 +239,20 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
   // something the user typed, not something derivable from their data —
   // a currency missing from this sheet simply falls back to its shipped
   // default (see config/exchangeRates.ts).
-  ExchangeRates: ['CurrencyCode', 'RatePerAnchor', 'IsCustom', 'UpdatedAt'],
+  //
+  // RatePerAnchor reads "how many of CurrencyCode does 1 AnchorCurrencyCode
+  // buy". AnchorCurrencyCode is the default currency AT EXPORT TIME, and
+  // is written for the reader's benefit rather than the importer's: the
+  // import re-anchors every rate to whatever the restored database's
+  // default is (normalizeRatesToDefault), which is correct whether or
+  // not the two match, since re-anchoring preserves every pair ratio.
+  ExchangeRates: [
+    'CurrencyCode',
+    'RatePerAnchor',
+    'AnchorCurrencyCode',
+    'IsCustom',
+    'UpdatedAt',
+  ],
 };
 
 // A cell can only ever be one of these three JS types — nullable DB

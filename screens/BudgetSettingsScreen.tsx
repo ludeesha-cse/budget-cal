@@ -9,10 +9,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Check, Info } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
 import CurrencyTabs from '../components/common/CurrencyTabs';
+import InfoBanner from '../components/common/InfoBanner';
+import { fieldErrorStyle } from '../utils/formFieldStyle';
 
 import { useBudgetSettingsData } from '../hooks/useBudgetSettingsData';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
@@ -59,6 +61,8 @@ function BudgetSettingsScreen(): React.JSX.Element {
     creditCards,
   } = useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
 
+  // Whether the user has pressed Save on an empty/invalid amount.
+  const [amountErrorShown, setAmountErrorShown] = useState(false);
   const parsedAmount = Number(amount);
   const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
   const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
@@ -69,8 +73,14 @@ function BudgetSettingsScreen(): React.JSX.Element {
 
   const handleSave = async () => {
     if (!amountValid || currencyId == null) {
+      // Same muted-but-pressable pattern as every form in the app (see
+      // hooks/useFieldErrors): the button looks unavailable, but the tap
+      // still lands here and turns the amount field red, rather than
+      // doing nothing at all and leaving the user guessing.
+      setAmountErrorShown(true);
       return;
     }
+    setAmountErrorShown(false);
     // The amount TextInput's returnKeyType="done" has no onSubmitEditing
     // of its own (it relies on inputAccessoryViewID, an iOS-only "Done"
     // bar) — so without this, tapping Save while that field is focused
@@ -168,7 +178,12 @@ function BudgetSettingsScreen(): React.JSX.Element {
           {currencyCode ? ` · ${currencyCode}` : ''}
         </Text>
         <TextInput
-          style={[typography.amountLarge, styles.amountInput, { color: colors.text }]}
+          style={[
+            typography.amountLarge,
+            styles.amountInput,
+            { color: colors.text },
+            fieldErrorStyle(colors, amountErrorShown && !amountValid),
+          ]}
           value={amount}
           onChangeText={setAmount}
           keyboardType="numeric"
@@ -195,7 +210,6 @@ function BudgetSettingsScreen(): React.JSX.Element {
 
       <View style={styles.actionRow}>
         <Pressable
-          disabled={!amountValid}
           style={[
             styles.saveButton,
             styles.actionButtonGrow,
@@ -242,14 +256,10 @@ function BudgetSettingsScreen(): React.JSX.Element {
         style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
         CREDIT CARDS
       </Text>
-      <View style={[styles.noteRow, { backgroundColor: colors.primarySoft }]}>
-        <Info size={14} color={colors.primary} />
-        <Text style={[styles.noteText, { color: colors.text }]}>
-          Credit card debt isn't counted against your monthly budget. Settle
-          a card here once it's paid off — it won't affect past budget
-          history.
-        </Text>
-      </View>
+      <InfoBanner>
+        Credit card debt isn't counted against your monthly budget. Settle a
+        card here once it's paid off — it won't affect past budget history.
+      </InfoBanner>
       {creditCards.length === 0 ? (
         <EmptyState message="No credit cards yet." />
       ) : (
@@ -368,19 +378,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     marginBottom: 8,
-  },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: scaleFont(12.5),
-    lineHeight: scaleFont(18),
   },
   cardRow: {
     flexDirection: 'row',

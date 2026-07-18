@@ -16,6 +16,7 @@ import { avatarColorsFor } from '../utils/avatarColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { fieldErrorStyle } from '../utils/formFieldStyle';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntityFormModal } from '../hooks/useEntityFormModal';
 import { useCategories } from '../hooks/queries';
@@ -52,6 +53,7 @@ function CategoriesScreen(): React.JSX.Element {
     values: name,
     setValues: setName,
     canSave: formCanSave,
+    isMissing,
     openAdd: handleAddPress,
     openEdit: handleEditPress,
     close: closeForm,
@@ -63,6 +65,7 @@ function CategoriesScreen(): React.JSX.Element {
     initialValues: '',
     populateFromRow: category => category.name,
     validate: value => (value.trim() === '' ? 'Enter a name.' : null),
+    requiredFields: value => (value.trim() === '' ? ['name'] : []),
     toParams: value => value.trim(),
     // Editing an existing category is never gated — see the same rule
     // applied in AccountsScreen. Only the create path below checks the
@@ -199,6 +202,7 @@ function CategoriesScreen(): React.JSX.Element {
           style={[
             styles.input,
             { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+            fieldErrorStyle(colors, isMissing('name')),
           ]}
           value={name}
           onChangeText={setName}

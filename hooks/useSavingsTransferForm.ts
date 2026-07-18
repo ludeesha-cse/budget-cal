@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { getContributions } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { useAsyncAction } from './useAsyncAction';
 import { useConfirmDelete } from './useConfirmDelete';
+import { useFieldErrors } from './useFieldErrors';
 import type {
   SavingsGoalAccountOption,
   SavingsGoalRow,
@@ -34,6 +35,9 @@ export interface UseSavingsTransferFormResult {
   // "NTB: 45,000.00 LKR available", or null before a source is picked.
   sourceBalanceText: string | null;
   canSave: boolean;
+  // True when this required field is empty AND the user has already
+  // pressed Transfer & Save. See hooks/useFieldErrors.
+  isMissing: (field: string) => boolean;
   open: (goal: SavingsGoalRow) => void;
   close: () => void;
   submit: () => void;
@@ -104,11 +108,30 @@ export function useSavingsTransferForm(
     )} available`;
   }, [goal, fromAccountId, sourceOptions]);
 
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!fromAccountId) {
+      missing.push('fromAccountId');
+    }
+    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+      missing.push('amount');
+    }
+    return missing;
+  }, [fromAccountId, amount]);
+
+  const fieldErrors = useFieldErrors(missingFields);
+  // Read through a ref so the callbacks below can reveal or clear the
+  // outlines without listing fieldErrors — whose identity changes on
+  // every keystroke — as a dependency.
+  const fieldErrorsRef = useRef(fieldErrors);
+  fieldErrorsRef.current = fieldErrors;
+
   const open = useCallback((target: SavingsGoalRow) => {
     setGoal(target);
     setFromAccountId('');
     setAmount('');
     setDate(getCurrentDateString());
+    fieldErrorsRef.current.reset();
   }, []);
 
   const close = useCallback(() => setGoal(null), []);
@@ -132,6 +155,12 @@ export function useSavingsTransferForm(
   const submit = useCallback(() => {
     if (!goal) {
       return;
+    }
+    // The button is muted but pressable while the form is incomplete, so
+    // this is the path an incomplete press takes — point at the controls
+    // rather than only raising an alert the user has to map back.
+    if (missingFields.length > 0) {
+      fieldErrorsRef.current.reveal();
     }
     if (!fromAccountId) {
       Alert.alert('Missing information', 'Choose an account to transfer from.');
@@ -162,7 +191,7 @@ export function useSavingsTransferForm(
       return;
     }
     perform(parsedAmount, goal);
-  }, [goal, fromAccountId, amount, sourceOptions, perform]);
+  }, [goal, fromAccountId, amount, sourceOptions, perform, missingFields]);
 
   // Removing a contribution reverses the transfer behind it — the money
   // goes back where it came from. The prompt says so explicitly, because
@@ -192,12 +221,7 @@ export function useSavingsTransferForm(
     [confirmDelete, runAction, deleteContribution, onSaved],
   );
 
-  const canSave =
-    goal != null &&
-    Boolean(fromAccountId) &&
-    amount !== '' &&
-    !Number.isNaN(Number(amount)) &&
-    Number(amount) > 0;
+  const canSave = goal != null && missingFields.length === 0;
 
   return {
     openForGoalId: goal?.id ?? null,
@@ -210,6 +234,7 @@ export function useSavingsTransferForm(
     sourceOptions,
     sourceBalanceText,
     canSave,
+    isMissing: fieldErrors.isMissing,
     open,
     close,
     submit,

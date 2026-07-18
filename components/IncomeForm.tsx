@@ -4,6 +4,7 @@ import { formatDateString } from '../utils/date';
 import { useReferenceData } from '../hooks/useReferenceData';
 import { useAccountCurrency } from '../hooks/useAccountCurrency';
 import { useAmountInput } from '../hooks/useAmountInput';
+import { useFieldErrors } from '../hooks/useFieldErrors';
 import DateField from './common/DateField';
 import AccountCurrencyPicker from './common/AccountCurrencyPicker';
 import AmountInput from './common/AmountInput';
@@ -48,6 +49,24 @@ function IncomeForm({
   const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Same shape as TransactionForm's — one list driving both the submit
+  // gate and the red outlines. An Income entry carries no category at
+  // all, which is why that field is absent here.
+  const missingFields = React.useMemo(() => {
+    const missing: string[] = [];
+    if (!amountValid) {
+      missing.push('amount');
+    }
+    if (accountId == null) {
+      missing.push('accountId');
+    }
+    if (currencyId == null) {
+      missing.push('currencyId');
+    }
+    return missing;
+  }, [amountValid, accountId, currencyId]);
+  const fieldErrors = useFieldErrors(missingFields);
+
   // Keeps the current account selection valid (or falls back to the
   // first) whenever the reference-data list itself changes, same
   // responsibility useReferenceData deliberately leaves to callers.
@@ -60,6 +79,9 @@ function IncomeForm({
   }, [accounts]);
 
   const handleSubmit = () => {
+    if (missingFields.length > 0) {
+      fieldErrors.reveal();
+    }
     if (!amountValid) {
       setError('Enter a valid amount');
       return;
@@ -84,7 +106,7 @@ function IncomeForm({
     });
   };
 
-  const canSave = amountValid && accountId != null && currencyId != null;
+  const canSave = missingFields.length === 0;
 
   return (
     <ScrollView
@@ -92,6 +114,8 @@ function IncomeForm({
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
       <AccountCurrencyPicker
+        accountInvalid={fieldErrors.isMissing('accountId')}
+        currencyInvalid={fieldErrors.isMissing('currencyId')}
         accounts={accounts}
         accountId={accountId}
         onAccountIdChange={setAccountId}
@@ -106,7 +130,11 @@ function IncomeForm({
       </Text>
       <DateField value={date} onChange={setDate} />
 
-      <AmountInput value={amount} onChangeText={setAmount} />
+      <AmountInput
+        value={amount}
+        onChangeText={setAmount}
+        invalid={fieldErrors.isMissing('amount')}
+      />
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>

@@ -54,6 +54,7 @@ export function useInstallmentPay(
       !values.accountId
         ? 'Choose which account is paying this installment.'
         : null,
+    requiredFields: values => (values.accountId ? [] : ['accountId']),
     onSubmit: (target, values) =>
       payInstallment({
         planId: target.id,

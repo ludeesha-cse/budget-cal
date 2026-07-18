@@ -26,8 +26,11 @@ function FormSubmitButton({
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
       )}
 
+      {/* Muted but still pressable when the form is incomplete — see the
+          matching note in BottomSheetModal's footer, and
+          hooks/useFieldErrors, for why a genuinely disabled button is
+          the wrong answer here. */}
       <Pressable
-        disabled={!canSave}
         style={[
           styles.submitButton,
           { backgroundColor: !canSave ? colors.neutralSoft : colors.primary },

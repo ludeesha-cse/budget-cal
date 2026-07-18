@@ -28,7 +28,8 @@ function InstallmentPayModal({
   nextAmountDueFor,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { target, values, setAccountId, setDate, canSave, close, submit } = pay;
+  const { target, values, setAccountId, setDate, canSave, isMissing, close, submit } =
+    pay;
 
   return (
     <BottomSheetModal
@@ -61,6 +62,7 @@ function InstallmentPayModal({
                 value: String(a.id),
               }))}
               label="Pay from"
+              invalid={isMissing('accountId')}
             />
           )}
 

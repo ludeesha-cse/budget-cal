@@ -11,6 +11,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { fieldErrorStyle } from '../utils/formFieldStyle';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useEntityFormModal } from '../hooks/useEntityFormModal';
 import { useTags } from '../hooks/queries';
@@ -48,6 +49,7 @@ function TagsScreen(): React.JSX.Element {
     values: name,
     setValues: setName,
     canSave: formCanSave,
+    isMissing,
     openAdd: handleAddPress,
     openEdit: handleEditPress,
     close: closeForm,
@@ -56,6 +58,7 @@ function TagsScreen(): React.JSX.Element {
     initialValues: '',
     populateFromRow: tag => tag.name,
     validate: value => (value.trim() === '' ? 'Enter a name.' : null),
+    requiredFields: value => (value.trim() === '' ? ['name'] : []),
     toParams: value => value.trim(),
     onCreate: trimmedName => addTag(trimmedName),
     onUpdate: (id, trimmedName) => updateTag(id, trimmedName),
@@ -133,6 +136,7 @@ function TagsScreen(): React.JSX.Element {
               color: colors.text,
               backgroundColor: colors.surface,
             },
+            fieldErrorStyle(colors, isMissing('name')),
           ]}
           value={name}
           onChangeText={setName}

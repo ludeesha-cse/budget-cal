@@ -120,7 +120,6 @@ export const queryKeys = {
         [TRANSACTIONAL, 'balances', 'accountBalance', accountId, currencyId] as const,
       netSpent: (accountId: number, currencyId: number) =>
         [TRANSACTIONAL, 'balances', 'netSpent', accountId, currencyId] as const,
-      totalCashInHand: [TRANSACTIONAL, 'balances', 'totalCashInHand'] as const,
       isZeroEverywhere: (accountId: number) =>
         [TRANSACTIONAL, 'balances', 'isZeroEverywhere', accountId] as const,
     },

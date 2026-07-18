@@ -24,7 +24,6 @@ import {
   useLoanTotalOwedByAccountId,
   useMonthlyIncome,
   usePendingOccurrences,
-  useTotalCashInHandByCurrency,
   useTotalCreditCardDebt,
   useTransactionsByMonth,
 } from './queries';
@@ -58,7 +57,6 @@ export interface DashboardData {
   pendingOccurrenceCount: number;
   totalIncome: number;
   budgetCards: DashboardBudgetCard[];
-  cashInHandByCurrency: Record<string, number>;
   creditCardDebt: number;
   categoryBreakdown: CategoryBreakdownRow[];
   shortcutAccounts: ShortcutAccountRow[];
@@ -130,7 +128,6 @@ export function useDashboardData(): DashboardData {
     useDefaultCurrency();
   const { data: budgetsThisMonth, isPending: budgetsPending } =
     useBudgetsForMonth(month);
-  const { data: cashByCurrency } = useTotalCashInHandByCurrency();
   const { data: cardDebt } = useTotalCreditCardDebt();
   const { data: pendingOccurrences } = usePendingOccurrences();
   const { data: accounts } = useAccountList();
@@ -259,7 +256,6 @@ export function useDashboardData(): DashboardData {
     pendingOccurrenceCount: pendingOccurrences?.length ?? 0,
     totalIncome: totalIncome ?? 0,
     budgetCards,
-    cashInHandByCurrency: cashByCurrency ?? {},
     creditCardDebt: cardDebt ?? 0,
     categoryBreakdown,
     shortcutAccounts,

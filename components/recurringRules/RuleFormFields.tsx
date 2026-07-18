@@ -8,6 +8,7 @@ import SegmentedToggle, {
 import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { UseRecurringRuleFormResult } from '../../hooks/useRecurringRuleForm';
 import type {
   RecurringRuleAccountRow,
@@ -35,7 +36,8 @@ type Props = {
 // screen.
 function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { values, error, accountId, currencyId, accountBalances } = form;
+  const { values, error, accountId, currencyId, accountBalances, isMissing } =
+    form;
   const parsedDayPreview = Number(values.dayOfMonth);
 
   return (
@@ -52,6 +54,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('name')),
         ]}
         value={values.name}
         onChangeText={form.setName}
@@ -64,6 +67,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('amount')),
         ]}
         value={values.amount}
         onChangeText={form.setAmount}
@@ -81,6 +85,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
         onValueChange={form.setDayOfMonth}
         items={DAY_OF_MONTH_OPTIONS}
         label="Day of month"
+        invalid={isMissing('dayOfMonth')}
       />
       {parsedDayPreview >= 29 && (
         <Text style={[styles.hint, { color: colors.textSecondary }]}>
@@ -102,6 +107,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
             value: String(a.id),
           }))}
           label="Account"
+          invalid={isMissing('accountId')}
         />
       )}
 
@@ -122,6 +128,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
               value: String(b.currencyId),
             }))}
             label="Currency"
+            invalid={isMissing('currencyId')}
           />
         </>
       )}
@@ -138,6 +145,7 @@ function RuleFormFields({ form, accounts, categories }: Props): React.JSX.Elemen
               onValueChange={value => form.setCategoryId(Number(value))}
               items={categories.map(c => ({ label: c.name, value: String(c.id) }))}
               label="Category"
+              invalid={isMissing('categoryId')}
             />
           )}
         </>

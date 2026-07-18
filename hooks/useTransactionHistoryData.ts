@@ -32,18 +32,19 @@ export type TransferRow = Awaited<ReturnType<typeof getTransfers>>[number];
 // render branch. mergeHistoryRows itself never needs to change — see its
 // own comment.
 export type HistoryRow =
-  | { kind: 'transaction'; date: string; data: TransactionRow }
-  | { kind: 'loanPayment'; date: string; data: LoanPaymentRow }
-  | { kind: 'transfer'; date: string; data: TransferRow };
+  | { kind: 'transaction'; date: string; createdAt: number; data: TransactionRow }
+  | { kind: 'loanPayment'; date: string; createdAt: number; data: LoanPaymentRow }
+  | { kind: 'transfer'; date: string; createdAt: number; data: TransferRow };
 
-// The one thing every money-movement kind needs from the merge: a flat
-// list ordered by date, most recent first — matches the mockup's
-// "RECENT" list reading top-to-bottom from today backwards. None of the
-// source queries sort on their own, so this is the only place ordering
-// is ever decided. Already a clean pure function — kept as-is.
+
 function mergeHistoryRows(...sources: HistoryRow[][]): HistoryRow[] {
   const merged = sources.flat();
-  merged.sort((a, b) => b.date.localeCompare(a.date));
+  merged.sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      b.createdAt - a.createdAt ||
+      b.data.id - a.data.id,
+  );
   return merged;
 }
 
@@ -116,7 +117,12 @@ export function useTransactionHistoryData(
   const rows = useMemo<HistoryRow[]>(() => {
     if (isSearchMode) {
       return (search.data ?? []).map(
-        (data): HistoryRow => ({ kind: 'transaction', date: data.date, data }),
+        (data): HistoryRow => ({
+          kind: 'transaction',
+          date: data.date,
+          createdAt: data.createdAt,
+          data,
+        }),
       );
     }
     const transactionRows = monthMode
@@ -128,13 +134,28 @@ export function useTransactionHistoryData(
     const transferRows = monthMode ? monthTransfers.data : yearTransfers.data;
     return mergeHistoryRows(
       (transactionRows ?? []).map(
-        (data): HistoryRow => ({ kind: 'transaction', date: data.date, data }),
+        (data): HistoryRow => ({
+          kind: 'transaction',
+          date: data.date,
+          createdAt: data.createdAt,
+          data,
+        }),
       ),
       (loanPaymentRows ?? []).map(
-        (data): HistoryRow => ({ kind: 'loanPayment', date: data.date, data }),
+        (data): HistoryRow => ({
+          kind: 'loanPayment',
+          date: data.date,
+          createdAt: data.createdAt,
+          data,
+        }),
       ),
       (transferRows ?? []).map(
-        (data): HistoryRow => ({ kind: 'transfer', date: data.date, data }),
+        (data): HistoryRow => ({
+          kind: 'transfer',
+          date: data.date,
+          createdAt: data.createdAt,
+          data,
+        }),
       ),
     );
   }, [

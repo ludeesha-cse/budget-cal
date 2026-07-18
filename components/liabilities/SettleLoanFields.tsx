@@ -7,6 +7,7 @@ import NumericInputAccessory, {
 import { useTheme } from '../../contexts/ThemeContext';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { LoanAccountType } from '../../db/queries';
 import type { UseSettleLoanResult } from '../../hooks/useSettleLoan';
 import type { LoanAccountRow } from '../../hooks/useLoanAccountsData';
@@ -30,7 +31,14 @@ function SettleLoanFields({
   totalOwedByAccountId,
 }: Props): React.JSX.Element | null {
   const { colors } = useTheme();
-  const { target, values, setPaymentAmount, setCounterpartAccountId, error } = settle;
+  const {
+    target,
+    values,
+    setPaymentAmount,
+    setCounterpartAccountId,
+    error,
+    isMissing,
+  } = settle;
 
   if (!target) {
     return null;
@@ -49,6 +57,7 @@ function SettleLoanFields({
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('paymentAmount')),
         ]}
         value={values.paymentAmount}
         onChangeText={setPaymentAmount}
@@ -78,6 +87,7 @@ function SettleLoanFields({
           value: String(a.id),
         }))}
         label={type === 'Receivable' ? 'Deposit into' : 'Pay from'}
+        invalid={isMissing('counterpartAccountId')}
       />
 
       {error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}

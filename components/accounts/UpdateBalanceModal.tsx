@@ -5,6 +5,7 @@ import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import { formatAmount } from '../../utils/formatAmount';
 import type { UseUpdateBalanceResult } from '../../hooks/useUpdateBalance';
 import { sharedFormStyles as styles } from './sharedFormStyles';
@@ -54,6 +55,7 @@ function UpdateBalanceModal({ state }: Props): React.JSX.Element {
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, state.isMissing('newValue')),
             ]}
             value={values.newValue}
             onChangeText={setNewValue}
@@ -71,6 +73,7 @@ function UpdateBalanceModal({ state }: Props): React.JSX.Element {
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, state.isMissing('description')),
             ]}
             value={values.description}
             onChangeText={setDescription}

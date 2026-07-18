@@ -357,39 +357,14 @@ export async function getAccountBalance(
   }
 }
 
-const CASH_LIKE_ACCOUNT_TYPES = [
-  'Bank',
-  'Cash',
-  'CryptoWallet',
-  'Receivable',
-] as const;
-
-// NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/accounts/cash-in-hand-by-currency, keeping the same
-// return shape. Sums Bank + Cash + CryptoWallet + Receivable account
-// balances (Liability and CreditCard are debts, not cash), grouped by
-// currency code. Currencies are never summed together — the result is a
-// map of currency code to that currency's total only.
-export async function getTotalCashInHandByCurrency(): Promise<
-  Record<string, number>
-> {
-  const rows = await db
-    .select({
-      currencyCode: currencies.code,
-      total: sql<number>`sum(${accountBalances.balance})`,
-    })
-    .from(accountBalances)
-    .innerJoin(accounts, eq(accountBalances.accountId, accounts.id))
-    .innerJoin(currencies, eq(accountBalances.currencyId, currencies.id))
-    .where(inArray(accounts.type, CASH_LIKE_ACCOUNT_TYPES))
-    .groupBy(currencies.code);
-
-  const totals: Record<string, number> = {};
-  for (const row of rows) {
-    totals[row.currencyCode] = row.total;
-  }
-  return totals;
-}
+// getTotalCashInHandByCurrency lived here: one summed figure per
+// currency across Bank/Cash/CryptoWallet/Receivable accounts, read only
+// by the Dashboard's "Cash in hand" row. Both are gone. Several
+// currencies rendered side by side on one line were never a single
+// usable number, and the app deliberately never sums currencies
+// anywhere else either (see utils/currencyTotals.ts). The Accounts
+// screen shows each real balance, and Net Worth aggregates properly when
+// asked — nothing needed a standing total on the Dashboard.
 
 // The reserved category from db/index.ts's seedReservedBankCategory
 // should already exist by the time this runs, but this falls back to

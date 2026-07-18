@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useFieldErrors } from './useFieldErrors';
 
 // The shape behind every "tap a row to act on it" sheet in this app —
 // settle a loan, pay off a credit card, undo an installment payment,
@@ -22,6 +23,11 @@ export interface UseTargetedModalConfig<TTarget, TValues> {
   // (real-time, as the user edits) and the `error` shown if submit()
   // runs anyway.
   validate: (values: TValues, target: TTarget) => string | null;
+  // Which required fields are currently empty, by key — the same
+  // contract as useEntityFormModal's own `requiredFields`, including why
+  // it is kept separate from `validate`. Optional; omit it and the form
+  // still gets its summary message, just no per-field outlines.
+  requiredFields?: (values: TValues, target: TTarget) => string[];
   onSubmit: (target: TTarget, values: TValues) => Promise<unknown>;
   // Optional since the TanStack Query refactor: a caller used to pass
   // its screen's load() here purely to re-read the database after a
@@ -38,6 +44,10 @@ export interface UseTargetedModalResult<TTarget, TValues> {
   setValues: React.Dispatch<React.SetStateAction<TValues>>;
   error: string | null;
   canSave: boolean;
+  // True when this required field is empty AND the user has already
+  // tried to submit. Pass straight to fieldErrorStyle / a picker's
+  // `invalid` prop.
+  isMissing: (field: string) => boolean;
   open: (target: TTarget) => void;
   close: () => void;
   submit: () => Promise<void>;
@@ -46,7 +56,7 @@ export interface UseTargetedModalResult<TTarget, TValues> {
 export function useTargetedModal<TTarget, TValues>(
   config: UseTargetedModalConfig<TTarget, TValues>,
 ): UseTargetedModalResult<TTarget, TValues> {
-  const { initialValues, validate, onSubmit, onSaved } = config;
+  const { initialValues, validate, requiredFields, onSubmit, onSaved } = config;
 
   // target and values are kept in one piece of state (rather than two
   // separate useState calls) specifically so they can never desync —
@@ -57,11 +67,24 @@ export function useTargetedModal<TTarget, TValues>(
     values: TValues;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFieldErrors(
+    state && requiredFields ? requiredFields(state.values, state.target) : [],
+  );
+  // Read through refs inside the callbacks below so they can clear or
+  // set the reveal without taking fieldErrors' identity as a dependency
+  // — it changes on every keystroke, and would otherwise rebuild open,
+  // close and submit (and every callback listing them) on every render.
+  const resetFieldErrorsRef = useRef(fieldErrors.reset);
+  resetFieldErrorsRef.current = fieldErrors.reset;
+  const revealFieldErrorsRef = useRef(fieldErrors.reveal);
+  revealFieldErrorsRef.current = fieldErrors.reveal;
 
   const open = useCallback(
     (target: TTarget) => {
       setState({ target, values: initialValues(target) });
       setError(null);
+      // A form the user has only just opened has not been got wrong yet.
+      resetFieldErrorsRef.current();
     },
     [initialValues],
   );
@@ -69,6 +92,7 @@ export function useTargetedModal<TTarget, TValues>(
   const close = useCallback(() => {
     setState(null);
     setError(null);
+    resetFieldErrorsRef.current();
   }, []);
 
   const setValues = useCallback<React.Dispatch<React.SetStateAction<TValues>>>(
@@ -107,9 +131,13 @@ export function useTargetedModal<TTarget, TValues>(
     const validationError = validate(currentValues, currentTarget);
     if (validationError) {
       setError(validationError);
+      // The press that could not save is exactly the moment to say which
+      // controls are why — see hooks/useFieldErrors.
+      revealFieldErrorsRef.current();
       return;
     }
     setError(null);
+    resetFieldErrorsRef.current();
     try {
       await onSubmit(currentTarget, currentValues);
       setState(null);
@@ -119,5 +147,15 @@ export function useTargetedModal<TTarget, TValues>(
     }
   }, [state, validate, onSubmit, onSaved]);
 
-  return { target, values, setValues, error, canSave, open, close, submit };
+  return {
+    target,
+    values,
+    setValues,
+    error,
+    canSave,
+    isMissing: fieldErrors.isMissing,
+    open,
+    close,
+    submit,
+  };
 }

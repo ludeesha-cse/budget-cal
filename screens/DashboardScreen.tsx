@@ -188,10 +188,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             />
 
             <Text style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
-              Cash &amp; Debt
+              Debt &amp; Income
             </Text>
             <CashDebtSummary
-              cashInHandByCurrency={data.cashInHandByCurrency}
               creditCardDebt={data.creditCardDebt}
               totalIncome={data.totalIncome}
             />

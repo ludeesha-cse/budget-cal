@@ -5,6 +5,7 @@ import { labelForId } from '../utils/pickerLabels';
 import { useReferenceData } from '../hooks/useReferenceData';
 import { useAccountCurrency } from '../hooks/useAccountCurrency';
 import { useAmountInput } from '../hooks/useAmountInput';
+import { useFieldErrors } from '../hooks/useFieldErrors';
 import CollapsiblePicker from './CollapsiblePicker';
 import SegmentedToggle, {
   type SegmentedToggleOption,
@@ -96,6 +97,28 @@ function TransactionForm({
   );
   const [error, setError] = useState<string | null>(null);
 
+  // One list feeding both the submit gate and, once the user has pressed
+  // Save on an incomplete form, the red outlines. See
+  // hooks/useFieldErrors for why the button is muted-but-pressable
+  // rather than disabled.
+  const missingFields = React.useMemo(() => {
+    const missing: string[] = [];
+    if (!amountValid) {
+      missing.push('amount');
+    }
+    if (accountId == null) {
+      missing.push('accountId');
+    }
+    if (categoryId == null) {
+      missing.push('categoryId');
+    }
+    if (currencyId == null) {
+      missing.push('currencyId');
+    }
+    return missing;
+  }, [amountValid, accountId, categoryId, currencyId]);
+  const fieldErrors = useFieldErrors(missingFields);
+
   // Keeps the current account/category selections valid (or falls back to
   // the first) whenever the reference-data lists themselves change, same
   // responsibility useReferenceData deliberately leaves to callers.
@@ -116,6 +139,9 @@ function TransactionForm({
   }, [categories]);
 
   const handleSubmit = () => {
+    if (missingFields.length > 0) {
+      fieldErrors.reveal();
+    }
     if (!amountValid) {
       setError('Enter a valid amount');
       return;
@@ -133,6 +159,7 @@ function TransactionForm({
       return;
     }
     setError(null);
+    fieldErrors.reset();
     onSubmit({
       date,
       amount: parsedAmount,
@@ -153,8 +180,7 @@ function TransactionForm({
     'Select category',
   );
 
-  const canSave =
-    amountValid && accountId != null && categoryId != null && currencyId != null;
+  const canSave = missingFields.length === 0;
 
   return (
     <ScrollView
@@ -176,6 +202,8 @@ function TransactionForm({
       )}
 
       <AccountCurrencyPicker
+        accountInvalid={fieldErrors.isMissing('accountId')}
+        currencyInvalid={fieldErrors.isMissing('currencyId')}
         accounts={accounts}
         accountId={accountId}
         onAccountIdChange={setAccountId}
@@ -190,7 +218,11 @@ function TransactionForm({
       </Text>
       <DateField value={date} onChange={setDate} />
 
-      <AmountInput value={amount} onChangeText={setAmount} />
+      <AmountInput
+        value={amount}
+        onChangeText={setAmount}
+        invalid={fieldErrors.isMissing('amount')}
+      />
 
       <Text
         style={[typography.eyebrow, styles.label, { color: colors.textSecondary }]}>
@@ -207,6 +239,7 @@ function TransactionForm({
           value: String(c.id),
         }))}
         label="Category"
+        invalid={fieldErrors.isMissing('categoryId')}
       />
 
       <Text

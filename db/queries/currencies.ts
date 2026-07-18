@@ -4,6 +4,7 @@ import {
   accountBalances,
   currencies,
 } from '../schema';
+import { rescaleRatesToDefaultWithin } from './exchangeRates';
 
 type Currency = typeof currencies.$inferSelect;
 
@@ -112,6 +113,14 @@ export async function setDefaultCurrency(currencyId: number): Promise<void> {
         .update(currencies)
         .set({ isDefault: true })
         .where(eq(currencies.id, currencyId));
+      // Exchange rates are expressed as "units per 1 of the DEFAULT
+      // currency", so moving the default flag changes what every rate is
+      // measured in. Re-anchoring in the SAME transaction means there is
+      // never a moment where the flag says one currency and the rates
+      // are phrased against another. Pair ratios are unchanged by the
+      // rescale, so no conversion the app offers changes meaning — only
+      // the figures shown on the Exchange Rates screen move.
+      await rescaleRatesToDefaultWithin(tx, currencyId);
     });
   } catch (error) {
     console.error(
@@ -157,6 +166,13 @@ export async function confirmDefaultCurrency(currencyId: number): Promise<void> 
         .update(currencies)
         .set({ active: false })
         .where(notInArray(currencies.id, keepActiveIds));
+
+      // Same reason as setDefaultCurrency above — this is the other path
+      // that moves the default flag, so it has to re-anchor the rates
+      // too. On a genuinely fresh install there are no rates yet and
+      // this is a no-op; seedExchangeRates then seeds them against the
+      // currency chosen here.
+      await rescaleRatesToDefaultWithin(tx, currencyId);
     });
   } catch (error) {
     console.error(
@@ -169,6 +185,17 @@ export async function confirmDefaultCurrency(currencyId: number): Promise<void> 
 
 // NETWORK-READY: If a backend is added later, replace this with fetch(DELETE
 // /api/currencies/:id), keeping the same return shape.
+//
+// NOT REACHABLE FROM THE UI, deliberately. The Currencies screen offers
+// enable/disable only — see the long comment there for why deleting a
+// currency is the wrong operation to expose in a settings screen once
+// eight tables reference it. This is kept as the query layer's own
+// guard: any future caller that tries still gets the refusal below
+// rather than a cascade through someone's financial history. Note the
+// check is now incomplete on its own — a currency is also referenced by
+// transactions, budgets, transfers, loans, installments, savings goals
+// and exchange_rates — so re-exposing this would mean widening it
+// first, not just adding a button.
 export async function deleteCurrency(currencyId: number): Promise<void> {
   try {
     const referencing = await db

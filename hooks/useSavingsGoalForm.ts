@@ -104,6 +104,24 @@ export function useSavingsGoalForm(
       }
       return null;
     },
+    // The four controls that must hold something before this can save.
+    // Keys are what GoalFormFields passes to isMissing().
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.name.trim()) {
+        missing.push('name');
+      }
+      if (!values.targetAmount || Number(values.targetAmount) <= 0) {
+        missing.push('targetAmount');
+      }
+      if (values.currencyId == null) {
+        missing.push('currencyId');
+      }
+      if (values.accountId == null) {
+        missing.push('accountId');
+      }
+      return missing;
+    },
     toParams: values => ({
       name: values.name.trim(),
       targetAmount: Number(values.targetAmount),

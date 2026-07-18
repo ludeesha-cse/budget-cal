@@ -95,6 +95,16 @@ export function usePayOffCard(
       }
       return null;
     },
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.amount || Number(values.amount) <= 0) {
+        missing.push('amount');
+      }
+      if (!values.payingAccountId) {
+        missing.push('payingAccountId');
+      }
+      return missing;
+    },
     onSubmit: (target, values) =>
       payOffCreditCard({
         creditCardAccountId: target.accountId,

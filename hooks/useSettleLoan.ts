@@ -60,6 +60,16 @@ export function useSettleLoan(
       }
       return null;
     },
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.paymentAmount || Number(values.paymentAmount) <= 0) {
+        missing.push('paymentAmount');
+      }
+      if (!values.counterpartAccountId) {
+        missing.push('counterpartAccountId');
+      }
+      return missing;
+    },
     onSubmit: (target, values) =>
       settleLoan({
         loanAccountId: target.accountId,

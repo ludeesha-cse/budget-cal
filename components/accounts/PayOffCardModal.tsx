@@ -8,6 +8,7 @@ import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
 import type { UsePayOffCardResult } from '../../hooks/usePayOffCard';
@@ -71,6 +72,7 @@ function PayOffCardModal({ state }: Props): React.JSX.Element {
                 value: String(a.id),
               }))}
               label="Pay from"
+              invalid={state.isMissing('payingAccountId')}
             />
           )}
 
@@ -79,6 +81,7 @@ function PayOffCardModal({ state }: Props): React.JSX.Element {
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, state.isMissing('amount')),
             ]}
             value={values.amount}
             onChangeText={setAmount}

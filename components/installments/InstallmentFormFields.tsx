@@ -9,6 +9,7 @@ import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { InstallmentMode, UseInstallmentFormResult } from '../../hooks/useInstallmentForm';
 import type {
   InstallmentCategoryRow,
@@ -37,7 +38,7 @@ function InstallmentFormFields({
   currencies,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { values, error, preview } = form;
+  const { values, error, preview, isMissing } = form;
 
   const categoryLabel = (id: string) =>
     labelForId(categories, id, 'name', 'Select category');
@@ -57,6 +58,7 @@ function InstallmentFormFields({
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('name')),
         ]}
         value={values.name}
         onChangeText={form.setName}
@@ -76,6 +78,7 @@ function InstallmentFormFields({
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, isMissing('principalAmount')),
             ]}
             value={values.principalAmount}
             onChangeText={form.setPrincipalAmount}
@@ -93,6 +96,7 @@ function InstallmentFormFields({
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, isMissing('interestRatePercent')),
             ]}
             value={values.interestRatePercent}
             onChangeText={form.setInterestRatePercent}
@@ -112,6 +116,7 @@ function InstallmentFormFields({
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, isMissing('monthlyAmountInput')),
             ]}
             value={values.monthlyAmountInput}
             onChangeText={form.setMonthlyAmountInput}
@@ -129,6 +134,7 @@ function InstallmentFormFields({
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('numberOfMonths')),
         ]}
         value={values.numberOfMonths}
         onChangeText={form.setNumberOfMonths}
@@ -168,6 +174,7 @@ function InstallmentFormFields({
         onValueChange={form.setCategoryId}
         items={categories.map(c => ({ label: c.name, value: String(c.id) }))}
         label="Category"
+        invalid={isMissing('categoryId')}
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Currency</Text>
@@ -180,6 +187,7 @@ function InstallmentFormFields({
           value: String(c.id),
         }))}
         label="Currency"
+        invalid={isMissing('currencyId')}
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Start date</Text>

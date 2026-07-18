@@ -45,6 +45,8 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Set once the user presses Continue without having chosen a currency.
+  const [selectionErrorShown, setSelectionErrorShown] = useState(false);
 
   const load = useCallback(async () => {
     const [rows, current] = await Promise.all([
@@ -75,9 +77,17 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
   );
 
   const handleContinue = async () => {
-    if (confirming || selectedId == null) {
+    if (confirming) {
       return;
     }
+    // Muted but pressable when nothing is picked yet — the tap lands
+    // here and says what is needed, rather than doing nothing. Same
+    // pattern as every form in the app (see hooks/useFieldErrors).
+    if (selectedId == null) {
+      setSelectionErrorShown(true);
+      return;
+    }
+    setSelectionErrorShown(false);
     setConfirming(true);
     await runAction(async () => {
       
@@ -172,8 +182,18 @@ function DefaultCurrencyScreen({ onDone }: Props): React.JSX.Element {
       </ScrollView>
 
       <View style={styles.footer}>
+        {selectionErrorShown && selectedId == null && (
+          <Text style={[styles.selectionPrompt, { color: colors.danger }]}>
+            Choose a currency to continue.
+          </Text>
+        )}
+        {/* `confirming` still disables — that one is a genuine in-flight
+            guard against a double submit, not a "you haven't filled this
+            in" state. Only the selection half is muted-but-pressable, so
+            tapping Continue without a currency chosen surfaces the
+            prompt below instead of doing nothing. */}
         <Pressable
-          disabled={confirming || selectedId == null}
+          disabled={confirming}
           style={[
             styles.continueButton,
             {
@@ -273,6 +293,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     paddingTop: 8,
+  },
+  selectionPrompt: {
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   continueButton: {
     borderRadius: 14,

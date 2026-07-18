@@ -49,7 +49,13 @@
 
  And allow user to edit the savings goal money saved account, follow the same logic as above. If the user changes the account to another account, then the savings goal balance should be updated with the remaining amount in the new account(if the new account has sufficient funds(saving goal balance < new account balance) - no need to update the savings goal balance). This will help users to stay on track with their savings goals and avoid overspending.
 
-- add error handling for ui buttons,
+- [x] DONE — shared form validation: save/confirm buttons stay muted until every required field is filled, and pressing one anyway outlines the missing fields in red (hooks/useFieldErrors + utils/formFieldStyle). Applied to every form modal, inline form and screen-level save.
+- [x] DONE — informative banners at the top of screens are closable and come back on the next visit (components/common/InfoBanner).
+- [x] DONE — history is newest-first WITHIN a day, not just by date; transfer rows dropped the redundant "Transfer —" prefix.
+- [x] DONE — cash-in-hand removed from the Dashboard (several currencies on one line was never a usable figure; Accounts and Net Worth cover it).
+- [x] DONE — currency deletion removed from the Currencies screen; disabling is the supported way to take one out of circulation.
+- [x] DONE — exchange rates are now measured against the user's DEFAULT currency ("1 USD = 0.86 EUR"), and changing the default re-anchors every rate without altering any pair.
+
 - add a loading indicator for ui buttons, and disable the button while the action is being processed. This will help to prevent users from accidentally triggering multiple actions and improve the overall user experience.
 - limit free users only to have 1 bank and default cash in wallet account. 
 - add currency converted transactions, like If i want to withdraw 100 USD to my LKR account, then the transaction will be converted to LKR based on the (current exchange rate) (allow users to edit the converted ammounts manually) and the amount will be deducted from my USD account and added to my LKR account. This will help users to manage their finances across different currencies and make it easier to track their spending and savings.

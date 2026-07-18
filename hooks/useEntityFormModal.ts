@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAsyncAction } from './useAsyncAction';
+import { useFieldErrors } from './useFieldErrors';
 
 // Every "add/edit this kind of thing in a BottomSheetModal" screen in this
 // app (Tags, Currencies, Categories, Savings Goals, Recurring Rules, ...)
@@ -28,6 +29,18 @@ export interface UseEntityFormModalConfig<
   // if it is. Drives both `canSave` (real-time, as the user types) and
   // the `error` surfaced if submit() somehow runs anyway.
   validate: (values: TValues) => string | null;
+  // Which required fields are currently empty, by key. Optional: a form
+  // that does not supply it still gets the summary message from
+  // `validate`, just no per-field outlines. Keys are the form's own
+  // choice of name — whatever the components pass to isMissing().
+  //
+  // Kept separate from `validate` rather than folded into it because the
+  // two answer different questions: validate says "can this be
+  // submitted, and if not what should the one message say", while this
+  // says "which controls should turn red". A field can be present but
+  // invalid (an amount of -5), which belongs in the message, not in an
+  // outline that means "you left this blank".
+  requiredFields?: (values: TValues) => string[];
   toParams: (values: TValues) => TParams;
   onCreate: (params: TParams) => Promise<unknown>;
   // Omit entirely for an add-only screen (e.g. CurrenciesScreen, which
@@ -61,6 +74,10 @@ export interface UseEntityFormModalResult<TRow, TValues> {
   setValues: React.Dispatch<React.SetStateAction<TValues>>;
   error: string | null;
   canSave: boolean;
+  // True when this required field is empty AND the user has already
+  // tried to submit. Pass straight to fieldErrorStyle / a picker's
+  // `invalid` prop.
+  isMissing: (field: string) => boolean;
   openAdd: () => void;
   openEdit: (row: TRow) => void;
   close: () => void;
@@ -89,6 +106,7 @@ export function useEntityFormModal<
     initialValues,
     populateFromRow,
     validate,
+    requiredFields,
     toParams,
     onCreate,
     onUpdate,
@@ -102,12 +120,25 @@ export function useEntityFormModal<
   const [editingRow, setEditingRow] = useState<TRow | null>(null);
   const [values, setValues] = useState<TValues>(initialValues);
   const [error, setError] = useState<string | null>(null);
+  const fieldErrors = useFieldErrors(requiredFields ? requiredFields(values) : []);
+  // Read through a ref inside the callbacks below so they can clear the
+  // reveal without taking fieldErrors' identity as a dependency — which
+  // changes on every keystroke, and would otherwise rebuild openAdd,
+  // openEdit and close (and therefore every callback listing them) on
+  // every render.
+  const resetFieldErrorsRef = useRef(fieldErrors.reset);
+  resetFieldErrorsRef.current = fieldErrors.reset;
+  const revealFieldErrorsRef = useRef(fieldErrors.reveal);
+  revealFieldErrorsRef.current = fieldErrors.reveal;
 
   const openAdd = useCallback(() => {
     setEditingId(null);
     setEditingRow(null);
     setValues(initialValues);
     setError(null);
+    // A freshly opened blank form is not a form the user has got wrong
+    // yet, so nothing is highlighted until they try to save.
+    resetFieldErrorsRef.current();
     setVisible(true);
   }, [initialValues]);
 
@@ -117,6 +148,7 @@ export function useEntityFormModal<
       setEditingRow(row);
       setValues(populateFromRow(row));
       setError(null);
+      resetFieldErrorsRef.current();
       setVisible(true);
     },
     [populateFromRow],
@@ -128,6 +160,7 @@ export function useEntityFormModal<
     setEditingRow(null);
     setValues(initialValues);
     setError(null);
+    resetFieldErrorsRef.current();
   }, [initialValues]);
 
   const closeWaitersRef = useRef<Array<() => void>>([]);
@@ -152,9 +185,13 @@ export function useEntityFormModal<
     const validationError = validate(values);
     if (validationError) {
       setError(validationError);
+      // The press that could not save is exactly the moment to say which
+      // controls are why — see hooks/useFieldErrors.
+      revealFieldErrorsRef.current();
       return;
     }
     setError(null);
+    resetFieldErrorsRef.current();
     const params = toParams(values);
     await runAction(async () => {
       if (editingId != null) {
@@ -179,6 +216,7 @@ export function useEntityFormModal<
     visible,
     editingId,
     editingRow,
+    isMissing: fieldErrors.isMissing,
     values,
     setValues,
     error,

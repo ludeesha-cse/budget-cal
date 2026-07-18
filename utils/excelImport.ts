@@ -1157,6 +1157,11 @@ export async function validateExcelFile(
         'currency',
       );
       const ratePerAnchor = v.requiredNumber('RatePerAnchor');
+      // Read for the record only. The import re-anchors every rate to
+      // the restored database's own default afterwards, so a workbook
+      // exported under a different default still restores correctly —
+      // re-anchoring preserves every pair ratio.
+      const anchorCurrencyCode = v.string('AnchorCurrencyCode');
       // Zero or negative is not a rate — it would make every conversion
       // through this currency either Infinity or a negative amount, so
       // it is rejected here rather than silently stored and then ignored
@@ -1173,6 +1178,7 @@ export async function validateExcelFile(
       sheetRows.push({
         CurrencyCode: currencyCode,
         RatePerAnchor: ratePerAnchor,
+        AnchorCurrencyCode: anchorCurrencyCode,
         IsCustom: isCustom ? 'true' : 'false',
         UpdatedAt: updatedAt,
       });

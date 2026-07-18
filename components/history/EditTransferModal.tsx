@@ -7,6 +7,7 @@ import NumericInputAccessory, {
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont } from '../../theme/typography';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { UseEditTransferModalResult } from '../../hooks/useEditTransferModal';
 
 type Props = {
@@ -50,6 +51,7 @@ function EditTransferModal({ modal }: Props): React.JSX.Element {
             style={[
               styles.input,
               { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+              fieldErrorStyle(colors, modal.isMissing('amount')),
             ]}
             value={values.amount}
             onChangeText={modal.setAmount}
@@ -72,6 +74,7 @@ function EditTransferModal({ modal }: Props): React.JSX.Element {
                 style={[
                   styles.input,
                   { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+                  fieldErrorStyle(colors, modal.isMissing('convertedAmount')),
                 ]}
                 value={values.convertedAmount}
                 onChangeText={modal.setConvertedAmount}

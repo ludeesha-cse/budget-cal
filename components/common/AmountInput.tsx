@@ -5,11 +5,13 @@ import NumericInputAccessory, {
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { typography } from '../../theme/typography';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 
 type Props = {
   value: string;
   onChangeText: (value: string) => void;
   label?: string;
+  invalid?: boolean;
 };
 
 // The "AMOUNT" eyebrow label + large numeric field + its keyboard
@@ -18,6 +20,7 @@ function AmountInput({
   value,
   onChangeText,
   label = 'AMOUNT',
+  invalid = false,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
 
@@ -41,6 +44,7 @@ function AmountInput({
             color: colors.text,
             backgroundColor: colors.surface,
           },
+          fieldErrorStyle(colors, invalid),
         ]}
         value={value}
         onChangeText={onChangeText}

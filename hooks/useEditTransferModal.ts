@@ -91,6 +91,21 @@ export function useEditTransferModal(
       }
       return null;
     },
+    // The converted amount is only a field at all when the transfer
+    // actually converts, so it is only ever required in that case.
+    requiredFields: (values, transfer) => {
+      const missing: string[] = [];
+      if (!values.amount || Number(values.amount) <= 0) {
+        missing.push('amount');
+      }
+      if (
+        transfer.isCrossCurrency &&
+        (!values.convertedAmount || Number(values.convertedAmount) <= 0)
+      ) {
+        missing.push('convertedAmount');
+      }
+      return missing;
+    },
     // Accounts and both currencies are carried over unchanged from the
     // original transfer — updateTransfer still needs them to reverse that
     // exact original effect before applying the new one. `description` is

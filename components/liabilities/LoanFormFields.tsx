@@ -6,6 +6,7 @@ import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import CounterpartySuggestions from './CounterpartySuggestions';
 import { useTheme } from '../../contexts/ThemeContext';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { LoanAccountType } from '../../db/queries';
 import type { UseLoanFormResult } from '../../hooks/useLoanForm';
 import type { LoanAccountRow, LoanCurrencyRow } from '../../hooks/useLoanAccountsData';
@@ -29,7 +30,7 @@ function LoanFormFields({
   counterpartAccounts,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { values, error } = form;
+  const { values, error, isMissing } = form;
 
   const currencyLabel = (id: string) =>
     labelForId(
@@ -48,6 +49,7 @@ function LoanFormFields({
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('counterpartyName')),
         ]}
         value={values.counterpartyName}
         onChangeText={form.handleNameChange}
@@ -81,6 +83,7 @@ function LoanFormFields({
         style={[
           styles.input,
           { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface },
+          fieldErrorStyle(colors, isMissing('principal')),
         ]}
         value={values.principal}
         onChangeText={form.setPrincipal}
@@ -98,6 +101,7 @@ function LoanFormFields({
         onValueChange={form.setCurrencyId}
         items={currencies.map(c => ({ label: `${c.code} — ${c.name}`, value: String(c.id) }))}
         label="Currency"
+        invalid={isMissing('currencyId')}
       />
 
       <Text style={[styles.label, { color: colors.text }]}>
@@ -112,6 +116,7 @@ function LoanFormFields({
           value: String(a.id),
         }))}
         label={type === 'Liability' ? 'Deposit into' : 'Paid from'}
+        invalid={isMissing('counterpartAccountId')}
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Due date (optional)</Text>
@@ -148,6 +153,7 @@ function LoanFormFields({
             onValueChange={form.setInterestPeriod}
             items={INTEREST_PERIODS.map(p => ({ label: p, value: p }))}
             label="Interest period"
+            invalid={isMissing('interestPeriod')}
           />
         </>
       )}

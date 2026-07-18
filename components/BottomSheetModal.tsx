@@ -392,8 +392,15 @@ function BottomSheetModal({
                 </Text>
               </Pressable>
               {onSave && (
+                // NOT `disabled` when canSave is false, deliberately.
+                // The button still LOOKS unavailable (muted fill, muted
+                // text), which is the "not yet" signal — but pressing it
+                // runs the form's submit anyway, and that is what asks
+                // the form to point at whatever is still missing. A truly
+                // disabled button swallows the tap and leaves the user
+                // with no way to find out why nothing happened. See
+                // hooks/useFieldErrors for the other half.
                 <Pressable
-                  disabled={!canSave}
                   style={[
                     styles.footerButton,
                     {

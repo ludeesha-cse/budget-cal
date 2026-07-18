@@ -9,6 +9,7 @@ import NumericInputAccessory, {
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont } from '../../theme/typography';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { UseSavingsTransferFormResult } from '../../hooks/useSavingsTransferForm';
 import type { SavingsGoalRow } from '../../hooks/useSavingsGoalsData';
 
@@ -51,6 +52,7 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
             value: String(a.id),
           }))}
           label="Transfer from"
+          invalid={form.isMissing('fromAccountId')}
         />
       )}
 
@@ -71,6 +73,7 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
             color: colors.text,
             backgroundColor: colors.background,
           },
+          fieldErrorStyle(colors, form.isMissing('amount')),
         ]}
         value={form.amount}
         onChangeText={form.setAmount}
@@ -109,6 +112,9 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
             Cancel
           </Text>
         </Pressable>
+        {/* Muted but still pressable while incomplete — pressing is what
+            reveals which controls are missing. Same reasoning as
+            BottomSheetModal's footer button. */}
         <Pressable
           style={[
             styles.smallPillButtonSolid,
@@ -116,7 +122,6 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
               backgroundColor: form.canSave ? colors.primary : colors.neutralSoft,
             },
           ]}
-          disabled={!form.canSave}
           onPress={form.submit}>
           <Text
             style={[

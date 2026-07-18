@@ -155,6 +155,28 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       }
       return null;
     },
+    // interestPeriod is only required once an interest RATE has been
+    // typed — a loan with no interest needs neither, which is why this
+    // pair is conditional in the same way validate() is.
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.counterpartyName.trim()) {
+        missing.push('counterpartyName');
+      }
+      if (!values.principal || Number(values.principal) <= 0) {
+        missing.push('principal');
+      }
+      if (!values.currencyId) {
+        missing.push('currencyId');
+      }
+      if (!values.counterpartAccountId) {
+        missing.push('counterpartAccountId');
+      }
+      if (values.interestRate.trim() && !values.interestPeriod) {
+        missing.push('interestPeriod');
+      }
+      return missing;
+    },
     // Stored as rate × 100 so it stays an integer all the way down.
     toParams: values => {
       let parsedRate: number | undefined;

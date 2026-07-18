@@ -1,7 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../index';
 import { upsertAccountBalanceWithin } from './loans';
-import { seedExchangeRates } from './exchangeRates';
+import {
+  normalizeRatesToDefault,
+  seedExchangeRates,
+} from './exchangeRates';
 import {
   accountBalances,
   accounts,
@@ -122,6 +125,11 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
     );
     const savingsGoalName = new Map(allSavingsGoals.map(g => [g.id, g.name]));
     const transferById = new Map(allTransfers.map(t => [t.id, t]));
+    // Which currency the exported rates are measured against — the
+    // default at export time. See the ExchangeRates comment in
+    // utils/exportFormat.ts.
+    const exportAnchorCode =
+      allCurrencies.find(c => c.isDefault)?.code ?? '';
     const transactionById = new Map(allTransactions.map(t => [t.id, t]));
 
     // Tag names per transaction, comma-joined, for Transactions' own Tags
@@ -365,6 +373,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
         (r): ExportRow => ({
           CurrencyCode: currencyCode.get(r.currencyId) ?? '',
           RatePerAnchor: r.ratePerAnchor,
+          AnchorCurrencyCode: exportAnchorCode,
           IsCustom: r.isCustom ? 'true' : 'false',
           UpdatedAt: toDateOnly(r.updatedAt),
         }),
@@ -1245,14 +1254,24 @@ export async function importData(
       rowCounts.ExchangeRates = data.ExchangeRates?.length ?? 0;
     });
 
-    // Outside the transaction, and deliberately after it: a REPLACE
-    // import from a workbook with no ExchangeRates sheet (every file
-    // exported before that sheet existed) has just wiped the rate table,
-    // and this puts a shipped default back for any currency still
-    // missing one. It never overwrites a rate the import restored —
-    // seedExchangeRates only inserts where no row exists — so a workbook
-    // that DID carry rates keeps exactly what it brought.
+    // Both outside the transaction, and deliberately after it.
+    //
+    // seedExchangeRates: a REPLACE import from a workbook with no
+    // ExchangeRates sheet (every file exported before that sheet
+    // existed) has just wiped the rate table, and this puts a shipped
+    // default back for any currency still missing one. It never
+    // overwrites a rate the import restored — it only inserts where no
+    // row exists — so a workbook that DID carry rates keeps what it
+    // brought.
+    //
+    // normalizeRatesToDefault: the restored rates were measured against
+    // whatever default the EXPORTING database had, which need not be
+    // this one's. Re-anchoring makes the current default exactly 1 again
+    // and leaves every pair ratio untouched, so the imported rates keep
+    // saying the same thing about every pair — just phrased in the right
+    // currency.
     await seedExchangeRates();
+    await normalizeRatesToDefault();
 
     return rowCounts;
   } catch (error) {

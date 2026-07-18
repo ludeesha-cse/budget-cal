@@ -116,6 +116,32 @@ export function useRecurringRuleForm(
       }
       return null;
     },
+    // categoryId is required for an Expense rule and meaningless for an
+    // Income one — the Income tab has no category picker at all — so it
+    // is conditional here for the same reason it is in validate().
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.name.trim()) {
+        missing.push('name');
+      }
+      if (!values.amount || Number(values.amount) <= 0) {
+        missing.push('amount');
+      }
+      const parsedDay = Number(values.dayOfMonth);
+      if (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31) {
+        missing.push('dayOfMonth');
+      }
+      if (accountId == null) {
+        missing.push('accountId');
+      }
+      if (currencyId == null) {
+        missing.push('currencyId');
+      }
+      if (values.ruleType === 'Expense' && values.categoryId == null) {
+        missing.push('categoryId');
+      }
+      return missing;
+    },
     toParams: values => ({
       name: values.name.trim(),
       ruleType: values.ruleType,

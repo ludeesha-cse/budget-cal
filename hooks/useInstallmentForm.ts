@@ -183,6 +183,48 @@ export function useInstallmentForm(
       }
       return null;
     },
+    // A plan is entered one of two ways — principal + rate, or a fixed
+    // monthly figure — so which amount fields are required depends on
+    // the mode, exactly as in validate() above. dueDayOfMonth is
+    // genuinely optional (a plan with no due date simply never surfaces
+    // as a Dashboard reminder) and is deliberately absent from this list.
+    requiredFields: values => {
+      const missing: string[] = [];
+      if (!values.name.trim()) {
+        missing.push('name');
+      }
+      const parsedMonths = Number(values.numberOfMonths);
+      if (
+        values.numberOfMonths === '' ||
+        !Number.isInteger(parsedMonths) ||
+        parsedMonths <= 0
+      ) {
+        missing.push('numberOfMonths');
+      }
+      if (!values.categoryId) {
+        missing.push('categoryId');
+      }
+      if (!values.currencyId) {
+        missing.push('currencyId');
+      }
+      if (values.mode === 'principal') {
+        if (!values.principalAmount || Number(values.principalAmount) <= 0) {
+          missing.push('principalAmount');
+        }
+        if (
+          values.interestRatePercent === '' ||
+          Number(values.interestRatePercent) < 0
+        ) {
+          missing.push('interestRatePercent');
+        }
+      } else if (
+        !values.monthlyAmountInput ||
+        Number(values.monthlyAmountInput) <= 0
+      ) {
+        missing.push('monthlyAmountInput');
+      }
+      return missing;
+    },
     toParams: (values): NewInstallmentPlanParams => {
       const base = {
         name: values.name.trim(),
