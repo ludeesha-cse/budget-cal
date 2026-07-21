@@ -56,9 +56,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
           <Text style={[typography.screenTitle, { color: colors.text }]}>Dashboard</Text>
         </View>
 
-        {!data.loading && data.pendingOccurrenceCount > 0 && !banner.dismissed && (
+        {!data.loading && data.pendingScheduledCount > 0 && !banner.dismissed && (
           <PendingReviewBanner
-            count={data.pendingOccurrenceCount}
+            count={data.pendingScheduledCount}
             onPress={() => navigation.navigate('ReviewOccurrences')}
             onDismiss={banner.dismiss}
           />

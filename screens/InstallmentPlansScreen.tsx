@@ -55,6 +55,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     currencies,
     activeAccounts,
     paymentsByPlan,
+    expandedOccurrences,
     paidCountFor,
     remainingFor,
     nextAmountDueFor,
@@ -114,6 +115,9 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
             nextAmountDueFor={nextAmountDueFor}
             remainingFor={remainingFor}
             payments={paymentsByPlan[item.id] ?? []}
+            occurrences={
+              expandedPlanId === item.id ? expandedOccurrences : undefined
+            }
             isExpanded={expandedPlanId === item.id}
             onToggleExpand={() => toggleExpanded(item.id)}
             onPay={() => pay.open(item)}

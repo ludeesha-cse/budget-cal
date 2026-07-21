@@ -27,35 +27,38 @@ import m0022 from './0022_fast_blue_shield.sql';
 import m0023 from './0023_lyrical_winter_soldier.sql';
 import m0024 from './0024_add_app_meta.sql';
 import m0025 from './0025_cross_currency_transfers_and_account_backed_goals.sql';
+import m0026 from './0026_add_installment_occurrences.sql';
 
-export default {
-  journal,
-  migrations: {
-    m0000,
-    m0001,
-    m0002,
-    m0003,
-    m0004,
-    m0005,
-    m0006,
-    m0007,
-    m0008,
-    m0009,
-    m0010,
-    m0011,
-    m0012,
-    m0013,
-    m0014,
-    m0015,
-    m0016,
-    m0017,
-    m0018,
-    m0019,
-    m0020,
-    m0021,
-    m0022,
-    m0023,
-    m0024,
-    m0025,
-  },
-};
+  export default {
+    journal,
+    migrations: {
+      m0000,
+m0001,
+m0002,
+m0003,
+m0004,
+m0005,
+m0006,
+m0007,
+m0008,
+m0009,
+m0010,
+m0011,
+m0012,
+m0013,
+m0014,
+m0015,
+m0016,
+m0017,
+m0018,
+m0019,
+m0020,
+m0021,
+m0022,
+m0023,
+m0024,
+m0025,
+m0026
+    }
+  }
+  

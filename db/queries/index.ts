@@ -21,6 +21,7 @@ import * as currenciesModule from './currencies';
 import * as settingsModule from './settings';
 import * as installmentsModule from './installments';
 import * as recurringModule from './recurring';
+import * as scheduledModule from './scheduled';
 import * as savingsGoalsModule from './savingsGoals';
 import * as tagsModule from './tags';
 import * as reportsModule from './reports';
@@ -69,7 +70,12 @@ export type {
   NewInstallmentPlanParams,
   InstallmentReminderRow,
   PayInstallmentParams,
+  PendingInstallmentOccurrenceRow,
 } from './installments';
+export type {
+  PendingScheduledPayment,
+  PendingRecurringOccurrenceRow,
+} from './scheduled';
 export type {
   NewRecurringRuleParams,
   ConfirmOccurrenceParams,
@@ -192,6 +198,12 @@ export const {
   deleteInstallmentPlan,
   getInstallmentPayments,
   getNextUnpaidInstallmentNumber,
+  createFirstInstallmentOccurrence,
+  getPendingInstallmentOccurrences,
+  resolveInstallmentOccurrence,
+  skipInstallmentOccurrence,
+  advanceInstallmentSchedule,
+  getInstallmentOccurrenceHistory,
   payInstallment,
   unpayInstallment,
   getRemainingInstallmentBalance,
@@ -206,6 +218,8 @@ export const {
   confirmOccurrence,
   skipOccurrence,
   getOccurrenceHistory,
+  // --- scheduled (recurring + installment occurrences, merged) ---
+  getPendingScheduledPayments,
   // --- savingsGoals ---
   getSavingsGoals,
   createSavingsGoal,
@@ -250,6 +264,7 @@ export const {
   ...settingsModule,
   ...installmentsModule,
   ...recurringModule,
+  ...scheduledModule,
   ...savingsGoalsModule,
   ...tagsModule,
   ...reportsModule,

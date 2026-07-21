@@ -3,8 +3,10 @@ import {
   useAccountList,
   useActiveCurrencies,
   useCategories,
+  useInstallmentOccurrenceHistory,
   useInstallmentPaymentsByPlan,
   useInstallmentPlans,
+  type InstallmentOccurrenceRow,
   type InstallmentPaymentRow,
   type InstallmentPlanRow,
 } from './queries';
@@ -14,7 +16,7 @@ import {
   getCategories,
 } from '../db/queries';
 
-export type { InstallmentPlanRow, InstallmentPaymentRow };
+export type { InstallmentPlanRow, InstallmentPaymentRow, InstallmentOccurrenceRow };
 export type InstallmentCategoryRow = Awaited<
   ReturnType<typeof getCategories>
 >[number];
@@ -32,6 +34,9 @@ export interface UseInstallmentPlansDataResult {
   accounts: InstallmentAccountRow[];
   activeAccounts: InstallmentAccountRow[];
   paymentsByPlan: Record<string | number, InstallmentPaymentRow[]>;
+  // Only ever the EXPANDED plan's occurrence schedule, and undefined
+  // while that one query is in flight — see where it is fetched below.
+  expandedOccurrences: InstallmentOccurrenceRow[] | undefined;
   paidCountFor: (planId: number) => number;
   paidAmountFor: (planId: number) => number;
   remainingFor: (plan: InstallmentPlanRow) => number;
@@ -69,6 +74,16 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
   // installment now invalidates these by prefix instead of the whole
   // batch being refetched whenever the plans array changed identity.
   const paymentsByPlan = useInstallmentPaymentsByPlan(planIds);
+
+  // The occurrence schedule, unlike the payments above, is fetched for
+  // ONE plan and only while its history is open: nothing on a collapsed
+  // card is derived from it (paid count, remaining and next amount due
+  // all come from the payments), so fetching every plan's schedule up
+  // front would be work for a list nobody is looking at. Passing
+  // expandedPlanId straight in means collapsing simply disables the
+  // query rather than needing a separate teardown.
+  const { data: expandedOccurrences } =
+    useInstallmentOccurrenceHistory(expandedPlanId);
 
   const activeAccounts = useMemo(
     () => (accounts ?? []).filter(a => a.active),
@@ -126,6 +141,7 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
     accounts: accounts ?? [],
     activeAccounts,
     paymentsByPlan,
+    expandedOccurrences,
     paidCountFor,
     paidAmountFor,
     remainingFor,

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import {
+  getInstallmentOccurrenceHistory,
   getInstallmentPayments,
   getInstallmentPlans,
   getInstallmentReminders,
@@ -16,6 +17,9 @@ export type InstallmentPlanRow = Awaited<
 >[number];
 export type InstallmentPaymentRow = Awaited<
   ReturnType<typeof getInstallmentPayments>
+>[number];
+export type InstallmentOccurrenceRow = Awaited<
+  ReturnType<typeof getInstallmentOccurrenceHistory>
 >[number];
 
 // Transactional stale time: a plan's terms are fixed at creation, but
@@ -130,4 +134,23 @@ export function useRemainingInstallmentBalanceByCurrency(
     });
     return byCurrency;
   }, [currencyIds, values]);
+}
+
+// Transactional stale time: one plan's occurrence schedule, which gains
+// a row on every payment or skip and is read right after those actions —
+// the same reasoning as useOccurrenceHistory for recurring rules.
+//
+// Fetched per plan and only when a plan's history is actually expanded
+// (planId is null otherwise), unlike useInstallmentPaymentsByPlan above,
+// which has to be eager because the "paid N of M" figures on every
+// collapsed card are computed from it. Nothing on a collapsed card reads
+// the occurrence schedule.
+export function useInstallmentOccurrenceHistory(planId: number | null) {
+  return useQuery({
+    queryKey: queryKeys.transactional.installments.occurrenceHistory(
+      planId ?? -1,
+    ),
+    queryFn: () => getInstallmentOccurrenceHistory(planId as number),
+    enabled: planId != null,
+  });
 }

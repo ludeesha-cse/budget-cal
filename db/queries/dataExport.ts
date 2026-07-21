@@ -14,6 +14,7 @@ import {
   creditCardPayoffs,
   currencies,
   exchangeRates,
+  installmentOccurrences,
   installmentPayments,
   installmentPlans,
   loanDetails,
@@ -435,6 +436,10 @@ function splitTagNames(raw: string): string[] {
 // follows it — nothing else in the app should ever call this casually.
 async function wipeAllDataWithin(tx: DbTransaction): Promise<void> {
   await tx.delete(transactionTags);
+  // Before installment_payments and installment_plans: occurrence rows
+  // reference both, so wiping them later would be deleting a parent out
+  // from under a child.
+  await tx.delete(installmentOccurrences);
   await tx.delete(installmentPayments);
   await tx.delete(recurringOccurrences);
   await tx.delete(savingsContributions);

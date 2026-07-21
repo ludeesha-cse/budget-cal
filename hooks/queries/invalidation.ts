@@ -64,6 +64,13 @@ const INSTALLMENT_POSITIONS: QueryKey[] = [k.transactional.installments.all];
 const SAVINGS_POSITIONS: QueryKey[] = [k.transactional.savingsGoals.all];
 const TRANSFER_LEDGER: QueryKey[] = [k.transactional.transfers.all];
 const RECURRING_STATE: QueryKey[] = [k.transactional.recurring.all];
+// The Dashboard's merged pending list is downstream of BOTH recurring
+// occurrences and installment occurrences, so it belongs to neither
+// prefix and is named explicitly alongside each of them. Every write
+// below that can add, resolve or remove a pending item of either kind
+// carries this too — a banner showing a count that no longer matches
+// what the review screen lists is exactly the failure this prevents.
+const SCHEDULED_STATE: QueryKey[] = [k.transactional.scheduled.all];
 
 const ACCOUNT_ROSTER: QueryKey[] = [k.reference.accounts.all];
 const CATEGORY_ROSTER: QueryKey[] = [k.reference.categories.all];
@@ -210,18 +217,36 @@ export const invalidates = {
   // Installment plan create/update/delete, and pay/unpay. Pay and unpay
   // write a transactions row, hence the full ledger and budget reach on
   // top of the plan's own position.
-  installmentPlanWrite: [...INSTALLMENT_POSITIONS] as QueryKey[],
+  // Creating a plan also schedules its first occurrence, and deleting
+  // one removes whatever occurrences it still had — so a plan write now
+  // moves the merged pending list as well as the plan's own figures.
+  installmentPlanWrite: [
+    ...INSTALLMENT_POSITIONS,
+    ...SCHEDULED_STATE,
+  ] as QueryKey[],
   installmentPayment: [
     ...INSTALLMENT_POSITIONS,
     ...LEDGER,
     ...ACCOUNT_MONEY,
     ...BUDGET_FIGURES,
     ...SAVINGS_POSITIONS,
+    // Paying resolves this month's occurrence and schedules next
+    // month's; undoing a payment reverses both.
+    ...SCHEDULED_STATE,
+  ] as QueryKey[],
+
+  // Skipping an installment occurrence writes no payment and moves no
+  // balance — deliberately as narrow as skipping a recurring occurrence.
+  // Advancing the schedule afterwards has the same reach, so both steps
+  // of a skip share this entry.
+  installmentOccurrenceSkip: [
+    ...INSTALLMENT_POSITIONS,
+    ...SCHEDULED_STATE,
   ] as QueryKey[],
 
   // Recurring rule create/edit/activate/delete moves only the rule list
   // and what can be generated from it.
-  recurringRuleWrite: [...RECURRING_STATE] as QueryKey[],
+  recurringRuleWrite: [...RECURRING_STATE, ...SCHEDULED_STATE] as QueryKey[],
 
   // Confirming an occurrence writes a real transactions row; skipping
   // one does not, so it only clears the pending list.
@@ -231,8 +256,9 @@ export const invalidates = {
     ...ACCOUNT_MONEY,
     ...BUDGET_FIGURES,
     ...SAVINGS_POSITIONS,
+    ...SCHEDULED_STATE,
   ] as QueryKey[],
-  occurrenceSkip: [...RECURRING_STATE] as QueryKey[],
+  occurrenceSkip: [...RECURRING_STATE, ...SCHEDULED_STATE] as QueryKey[],
 
   // Editing a goal's own fields — name, target, target date, or which
   // account it saves into. None of those move money, so balances are

@@ -6,11 +6,13 @@ import ProgressRing from '../common/ProgressRing';
 import ProgressBar from '../common/ProgressBar';
 import ActionButtons, { type ActionButtonItem } from '../common/ActionButtons';
 import InstallmentHistoryList from './InstallmentHistoryList';
+import InstallmentOccurrenceHistoryList from './InstallmentOccurrenceHistoryList';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
 import { formatAmount } from '../../utils/formatAmount';
 import { ordinalSuffix } from '../../utils/dateUtils';
 import type {
+  InstallmentOccurrenceRow,
   InstallmentPaymentRow,
   InstallmentPlanRow,
 } from '../../hooks/useInstallmentPlansData';
@@ -21,6 +23,9 @@ type Props = {
   nextAmountDueFor: (plan: InstallmentPlanRow) => number | null;
   remainingFor: (plan: InstallmentPlanRow) => number;
   payments: InstallmentPaymentRow[];
+  // Undefined until this plan's schedule query resolves, and only ever
+  // passed for the plan that is actually expanded.
+  occurrences: InstallmentOccurrenceRow[] | undefined;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onPay: () => void;
@@ -35,6 +40,7 @@ function InstallmentPlanCard({
   nextAmountDueFor,
   remainingFor,
   payments,
+  occurrences,
   isExpanded,
   onToggleExpand,
   onPay,
@@ -117,11 +123,17 @@ function InstallmentPlanCard({
       </Pressable>
 
       {isExpanded && (
-        <InstallmentHistoryList
-          payments={payments}
-          currencyCode={item.currencyCode}
-          onUndo={onUndo}
-        />
+        <>
+          <InstallmentHistoryList
+            payments={payments}
+            currencyCode={item.currencyCode}
+            onUndo={onUndo}
+          />
+          <InstallmentOccurrenceHistoryList
+            occurrences={occurrences}
+            currencyCode={item.currencyCode}
+          />
+        </>
       )}
     </Card>
   );

@@ -10,6 +10,7 @@ export * from './budgets';
 export * from './loans';
 export * from './installments';
 export * from './recurring';
+export * from './scheduled';
 export * from './savingsGoals';
 export * from './transfers';
 export * from './exchangeRates';

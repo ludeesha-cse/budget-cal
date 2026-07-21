@@ -176,6 +176,14 @@ export const queryKeys = {
         [TRANSACTIONAL, 'installments', 'nextUnpaidNumber', planId] as const,
       remainingBalance: (currencyId: number) =>
         [TRANSACTIONAL, 'installments', 'remainingBalance', currencyId] as const,
+      // Lazily-scheduled installment occurrences. Under the installments
+      // prefix (not their own root) so every write that already
+      // invalidates a plan or a payment reaches them too — paying an
+      // installment is precisely what resolves one occurrence and
+      // creates the next.
+      pendingOccurrences: [TRANSACTIONAL, 'installments', 'pendingOccurrences'] as const,
+      occurrenceHistory: (planId: number) =>
+        [TRANSACTIONAL, 'installments', 'occurrenceHistory', planId] as const,
     },
 
     recurring: {
@@ -185,6 +193,18 @@ export const queryKeys = {
       pendingOccurrences: [TRANSACTIONAL, 'recurring', 'pendingOccurrences'] as const,
       occurrenceHistory: (ruleId: number) =>
         [TRANSACTIONAL, 'recurring', 'occurrenceHistory', ruleId] as const,
+    },
+
+    // The merged pending list the Dashboard banner and the review screen
+    // read (getPendingScheduledPayments). It has its own root rather
+    // than living under `recurring` or `installments` because it is
+    // downstream of BOTH: no single existing prefix covers it, so
+    // hooks/queries/invalidation.ts names it explicitly on every write
+    // that can move either half. Putting it under one of the two would
+    // have made the other half's writes silently miss it.
+    scheduled: {
+      all: [TRANSACTIONAL, 'scheduled'] as const,
+      pending: [TRANSACTIONAL, 'scheduled', 'pending'] as const,
     },
 
     savingsGoals: {

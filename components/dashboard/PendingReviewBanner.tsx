@@ -14,6 +14,13 @@ type Props = {
 // the user from seeing anything else on the screen. Visibility (loading/
 // count/dismissed gating) is decided by the orchestrator; this component
 // just renders the banner once told to.
+//
+// ONE banner, ONE number, covering recurring-rule occurrences and
+// installment occurrences together — never two stacked banners each
+// counting its own half. The wording is "scheduled entries" rather than
+// "recurring entries" for exactly that reason: an installment coming due
+// is not a recurring rule, but it is waiting on the same decision from
+// the same person in the same place.
 function PendingReviewBanner({ count, onPress, onDismiss }: Props): React.JSX.Element {
   const { colors } = useTheme();
 
@@ -24,7 +31,7 @@ function PendingReviewBanner({ count, onPress, onDismiss }: Props): React.JSX.El
       <View style={[styles.bannerDot, { backgroundColor: colors.primary }]} />
       <Text style={[styles.bannerText, { color: colors.text }]}>
         <Text style={styles.bannerTextBold}>
-          {count} recurring {count === 1 ? 'entry' : 'entries'}
+          {count} scheduled {count === 1 ? 'entry' : 'entries'}
         </Text>{' '}
         to review
       </Text>

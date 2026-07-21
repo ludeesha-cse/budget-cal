@@ -417,6 +417,63 @@ export const installmentPayments = sqliteTable(
   }),
 );
 
+// One row per SCHEDULED installment — the "this one has come due, deal
+// with it" prompt — as opposed to installmentPayments above, which is
+// the record of one actually having been PAID. The two are deliberately
+// separate tables: a payment is a ledger fact with a real transaction
+// behind it, an occurrence is a reminder that can also be skipped
+// without any money moving at all.
+//
+// LAZY, NOT UPFRONT: a 12-month plan does NOT get twelve rows at
+// creation. Exactly one row (installmentNumber 1) is written when the
+// plan is created, and each resolution — paid or skipped — is what opens
+// the door to the next month's single row (see
+// advanceInstallmentSchedule in db/queries/installments.ts). So this
+// table only ever holds installments that have actually come around, and
+// a plan the user abandons simply stops generating rows instead of
+// leaving eleven future reminders behind to be cleaned up.
+//
+// THE SHAPE MATCHES recurring_occurrences BELOW ON PURPOSE
+// (dueDate / status / resolvedAt), because the Dashboard merges both
+// into one pending list (getPendingScheduledPayments). That unification
+// happens at the QUERY layer only — the two tables stay separate rather
+// than one table growing a nullable dual foreign key that would be
+// half-null on every row and could never be constrained to exactly one
+// parent.
+export const installmentOccurrences = sqliteTable(
+  'installment_occurrences',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    installmentPlanId: int('installment_plan_id')
+      .notNull()
+      .references(() => installmentPlans.id),
+    installmentNumber: int('installment_number').notNull(), // 1-based, same numbering as installmentPayments
+    dueDate: text('due_date').notNull(), // 'YYYY-MM-DD', already clamped to a shorter month's last day if needed
+    status: text('status')
+      .notNull()
+      .default('pending')
+      .$type<'pending' | 'paid' | 'skipped'>(),
+    // Set only when status is 'paid': the installment_payments row (and
+    // through it the real transaction) that resolved this occurrence.
+    // Null while pending, and null forever on a skip, since skipping
+    // creates no payment at all.
+    installmentPaymentId: int('installment_payment_id').references(
+      () => installmentPayments.id,
+    ),
+    resolvedAt: text('resolved_at'), // 'YYYY-MM-DD', set on pay or skip; null while pending
+  },
+  table => ({
+    // The same guard recurring_occurrences' own unique index provides:
+    // one occurrence per installment number per plan, so a double-tap on
+    // Pay — or advanceInstallmentSchedule running twice for the same
+    // number — can never schedule the same installment twice.
+    planOccurrenceUnique: uniqueIndex('plan_occurrence_unique').on(
+      table.installmentPlanId,
+      table.installmentNumber,
+    ),
+  }),
+);
+
 // One row per recurring rule (Stage 13a: schedule/template only — no
 // occurrence generation and no transactions created from it yet, that's
 // Stage 13b). amount is a DEFAULT suggestion rather than a locked value

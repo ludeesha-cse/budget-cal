@@ -23,7 +23,7 @@ import {
   useInstallmentReminders,
   useLoanTotalOwedByAccountId,
   useMonthlyIncome,
-  usePendingOccurrences,
+  usePendingScheduledPayments,
   useTotalCreditCardDebt,
   useTransactionsByMonth,
 } from './queries';
@@ -54,7 +54,11 @@ export type DashboardBudgetCard = {
 
 export interface DashboardData {
   loading: boolean;
-  pendingOccurrenceCount: number;
+  // ONE number across both kinds of scheduled item — recurring-rule
+  // occurrences and installment occurrences — because the banner is one
+  // banner. See getPendingScheduledPayments for where the two are
+  // merged.
+  pendingScheduledCount: number;
   totalIncome: number;
   budgetCards: DashboardBudgetCard[];
   creditCardDebt: number;
@@ -86,8 +90,12 @@ function useEnsureOccurrencesGenerated(today: string): void {
       return;
     }
     occurrencesGeneratedForDate = today;
-    // Its mutation invalidates the recurring prefix, so the pending
-    // list below picks up anything newly generated.
+    // Its mutation invalidates the recurring prefix AND the merged
+    // scheduled prefix, so the pending list below picks up anything
+    // newly generated. Note this generation step is for RECURRING rules
+    // only — installment occurrences are never generated in bulk from
+    // the calendar; each one is created by resolving the previous one
+    // (see advanceInstallmentSchedule).
     generatePendingOccurrences().catch(error => {
       // Let the next mount retry rather than leaving the day marked done
       // after a failure.
@@ -129,7 +137,7 @@ export function useDashboardData(): DashboardData {
   const { data: budgetsThisMonth, isPending: budgetsPending } =
     useBudgetsForMonth(month);
   const { data: cardDebt } = useTotalCreditCardDebt();
-  const { data: pendingOccurrences } = usePendingOccurrences();
+  const { data: pendingScheduled } = usePendingScheduledPayments();
   const { data: accounts } = useAccountList();
   const { data: allBalances } = useAllAccountBalances();
   const { data: liabilities } = useActiveLoanAccounts('Liability');
@@ -253,7 +261,7 @@ export function useDashboardData(): DashboardData {
 
   return {
     loading,
-    pendingOccurrenceCount: pendingOccurrences?.length ?? 0,
+    pendingScheduledCount: pendingScheduled?.length ?? 0,
     totalIncome: totalIncome ?? 0,
     budgetCards,
     creditCardDebt: cardDebt ?? 0,
