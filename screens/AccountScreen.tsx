@@ -25,6 +25,7 @@ function AccountScreen(): React.JSX.Element {
     try {
       await signInWithGoogleAndroid();
     } catch (error) {
+      console.error('Sign-in failed', error);
       Alert.alert(
         'Sign-in failed',
         error instanceof Error ? error.message : String(error),

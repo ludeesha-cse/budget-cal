@@ -6,6 +6,7 @@ import type { PaywallRequest } from '../contexts/PaywallContext';
 import type { EntitlementTier } from './useEntitlement';
 import { canAddAccount } from '../utils/entitlementChecks';
 import { defaultCurrencyId } from '../utils/currencyHelpers';
+import { getCurrentDateString } from '../utils/date';
 import { useEntityFormModal } from './useEntityFormModal';
 import type { UseEntityFormModalResult } from './useEntityFormModal';
 import type {
@@ -17,13 +18,28 @@ import type {
 import {
   useCreateLoanAccount as useCreateLoanAccountMutation,
   useReactivateLoanAccount as useReactivateLoanAccountMutation,
+  useTopUpLoanAccount as useTopUpLoanAccountMutation,
+  useUpdateLoanAccount as useUpdateLoanAccountMutation,
 } from './queries';
 
+// useEntityFormModal keys its edit flow off `row.id`, but a loan row is
+// keyed by `accountId` (an ActiveLoan is an account joined to its loan
+// details and its one balance, so it has no `id` of its own). This is
+// that same row with the key it needs, produced at the call site — see
+// LiabilitiesReceivablesScreen's onEdit.
+export type LoanEditRow = ActiveLoan & { id: number };
+
 export type LoanFormValues = {
-  // Set only by picking a closed account from the name suggestions, which
-  // is also what routes submit to reactivateLoanAccount instead of
+  // Set only by picking a CLOSED account from the name suggestions,
+  // which is also what routes submit to reactivateLoanAccount instead of
   // createLoanAccount.
   reuseAccountId: number | null;
+  // Set only by picking an OPEN account from the name suggestions. That
+  // is the fix for "two accounts with the same name": the second amount
+  // is added to the loan that already exists rather than opening a
+  // rival account for the same person, so one counterparty always shows
+  // one running total.
+  topUpAccountId: number | null;
   counterpartyName: string;
   principal: string;
   currencyId: string;
@@ -35,6 +51,7 @@ export type LoanFormValues = {
 
 export type LoanFormParams = {
   reuseAccountId: number | null;
+  topUpAccountId: number | null;
   counterpartyName: string;
   principal: number;
   currencyId: number;
@@ -44,8 +61,14 @@ export type LoanFormParams = {
   interestPeriod?: 'monthly' | 'annual';
 };
 
+// Which of the four things this one sheet is currently doing. Only the
+// wording and which fields are shown differ between them — the money
+// rules live in db/queries/loans.ts, not here.
+export type LoanFormMode = 'add' | 'reopen' | 'topUp' | 'edit';
+
 export interface UseLoanFormResult
-  extends UseEntityFormModalResult<{ id: number }, LoanFormValues> {
+  extends UseEntityFormModalResult<LoanEditRow, LoanFormValues> {
+  mode: LoanFormMode;
   setPrincipal: (value: string) => void;
   setCurrencyId: (value: string) => void;
   setCounterpartAccountId: (value: string) => void;
@@ -54,7 +77,12 @@ export interface UseLoanFormResult
   setInterestPeriod: (value: string) => void;
   handleNameChange: (text: string) => void;
   handlePickSuggestion: (loan: InactiveLoan) => void;
+  handlePickOpenLoan: (loan: ActiveLoan) => void;
   clearReuse: () => void;
+  clearTopUp: () => void;
+  // The open loan currently being topped up, so the form body can name
+  // it and show what is already outstanding.
+  topUpTarget: ActiveLoan | null;
   activeNameMatches: ActiveLoan[];
   inactiveNameMatches: InactiveLoan[];
   hasNameMatches: boolean;
@@ -77,25 +105,25 @@ export interface UseLoanFormDeps {
   onSaved?: () => void | Promise<void>;
 }
 
-// Add a Liability/Receivable, built on useEntityFormModal (Step 6) —
-// despite the hook's usual "add vs edit an existing row" shape, this
-// screen never edits an existing loan; openEdit/populateFromRow are
-// simply never called (same "required by the type, dead in practice"
-// pattern CurrenciesScreen's add-only migration already established).
-// Picking a closed account from the name-match suggestions only ever
-// sets `reuseAccountId` on the CURRENT form values — none of that
-// account's own old terms are prefilled — so it's modeled as a field on
-// `values`, not as useEntityFormModal's editingId, and onCreate below
-// branches on it to call reactivateLoanAccount instead of
-// createLoanAccount.
+// Add, reopen, top up or edit a Liability/Receivable, built on
+// useEntityFormModal.
+//
+// The two "which existing account is this really about" choices are
+// modeled as FIELDS on `values` (reuseAccountId, topUpAccountId) rather
+// than as useEntityFormModal's editingId, because neither of them is an
+// edit: both hand over new money and neither prefills the chosen
+// account's own terms. editingId is reserved for the genuine edit flow
+// added here — openEdit(row) populates the form from an open loan and
+// submit() routes to updateLoanAccount.
 export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
   // Write paths go through the caching layer's mutation hooks: each
   // one runs the same db/queries function as before and then
   // invalidates every query its write can affect (see
-  // hooks/queries/invalidation.ts). The call sites below are
-  // unchanged — these hooks take the wrapped function's own arguments.
+  // hooks/queries/invalidation.ts).
   const createLoanAccount = useCreateLoanAccountMutation();
   const reactivateLoanAccount = useReactivateLoanAccountMutation();
+  const topUpLoanAccount = useTopUpLoanAccountMutation();
+  const updateLoanAccount = useUpdateLoanAccountMutation();
   const {
     type,
     loans,
@@ -107,13 +135,10 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
     onSaved,
   } = deps;
 
-  const form = useEntityFormModal<
-    { id: number },
-    LoanFormValues,
-    LoanFormParams
-  >({
+  const form = useEntityFormModal<LoanEditRow, LoanFormValues, LoanFormParams>({
     initialValues: {
       reuseAccountId: null,
+      topUpAccountId: null,
       counterpartyName: '',
       principal: '',
       currencyId: defaultCurrencyId(currencies),
@@ -122,10 +147,25 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       interestRate: '',
       interestPeriod: '',
     },
-    // Never invoked — this form has no edit flow, only add/reuse.
-    populateFromRow: () => {
-      throw new Error('useLoanForm: openEdit is never used.');
-    },
+    // `principal` is filled from the loan's CURRENT outstanding balance,
+    // not from whatever it was opened at — that is the figure the card
+    // shows and the one updateLoanAccount corrects against. The stored
+    // rate is an integer at rate × 100 (5.5% is 550), so it is divided
+    // back out for display and re-multiplied in toParams.
+    populateFromRow: row => ({
+      reuseAccountId: null,
+      topUpAccountId: null,
+      counterpartyName: row.counterpartyName,
+      principal: String(row.principal),
+      currencyId: String(row.currencyId),
+      counterpartAccountId: String(
+        row.counterpartAccountId ?? counterpartAccounts[0]?.id ?? '',
+      ),
+      dueDate: row.dueDate ?? null,
+      interestRate:
+        row.interestRate != null ? String(row.interestRate / 100) : '',
+      interestPeriod: row.interestPeriod ?? '',
+    }),
     validate: values => {
       if (!values.counterpartyName.trim()) {
         return 'Enter a counterparty name';
@@ -136,7 +176,9 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
         Number.isNaN(parsedPrincipal) ||
         parsedPrincipal <= 0
       ) {
-        return 'Enter a valid principal amount';
+        return values.topUpAccountId != null
+          ? 'Enter a valid amount to add'
+          : 'Enter a valid principal amount';
       }
       if (!values.currencyId) {
         return 'Select a currency';
@@ -187,6 +229,7 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       }
       return {
         reuseAccountId: values.reuseAccountId,
+        topUpAccountId: values.topUpAccountId,
         counterpartyName: values.counterpartyName.trim(),
         principal: Number(values.principal),
         currencyId: Number(values.currencyId),
@@ -201,7 +244,24 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
     // it's gated the same way rather than treated as "editing existing
     // data" (which stays ungated everywhere else in this app) — both
     // branches below go through the same entitlement check first.
+    //
+    // A TOP-UP is deliberately outside that gate: it opens no account
+    // and adds no row to the list the free tier caps, it only makes an
+    // existing loan bigger. Charging for it would also be charging for
+    // the fix to duplicate accounts, since "add to the one you have" and
+    // "open a second one for the same person" would then cost the same.
     onCreate: async params => {
+      if (params.topUpAccountId != null) {
+        await topUpLoanAccount({
+          accountId: params.topUpAccountId,
+          amount: params.principal,
+          currencyId: params.currencyId,
+          counterpartAccountId: params.counterpartAccountId,
+          date: getCurrentDateString(),
+        });
+        return;
+      }
+
       const performCreate = async () => {
         if (params.reuseAccountId != null) {
           await reactivateLoanAccount({
@@ -243,6 +303,21 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       }
       await performCreate();
     },
+    // Editing never touches the entitlement gate: the loan already
+    // exists and stays one loan, so nothing about the count the free
+    // tier caps changes.
+    onUpdate: async (accountId, params) => {
+      await updateLoanAccount({
+        accountId,
+        counterpartyName: params.counterpartyName,
+        principal: params.principal,
+        currencyId: params.currencyId,
+        counterpartAccountId: params.counterpartAccountId,
+        dueDate: params.dueDate,
+        interestRate: params.interestRate,
+        interestPeriod: params.interestPeriod,
+      });
+    },
     onSaved,
     errorTitle: 'Could not save',
   });
@@ -253,13 +328,15 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
   ) => form.setValues(current => ({ ...current, [key]: value }));
 
   // Editing the name away from a picked account drops back to "create
-  // new" — otherwise the typed name and the reused account could silently
-  // disagree about who this loan is with.
+  // new" — otherwise the typed name and the chosen account could
+  // silently disagree about who this loan is with. Applies to both kinds
+  // of pick, reopen and top-up alike.
   const handleNameChange = (text: string) =>
     form.setValues(current => ({
       ...current,
       counterpartyName: text,
       reuseAccountId: null,
+      topUpAccountId: null,
     }));
 
   const handlePickSuggestion = (loan: InactiveLoan) =>
@@ -267,32 +344,72 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       ...current,
       counterpartyName: loan.counterpartyName,
       reuseAccountId: loan.accountId,
+      topUpAccountId: null,
+    }));
+
+  // A loan account holds exactly one currency, and topUpLoanAccount
+  // refuses a top-up in any other one — so picking the target sets the
+  // currency here rather than leaving the user to guess and be rejected
+  // on save. The currency picker is hidden in this mode for the same
+  // reason (see LoanFormFields).
+  const handlePickOpenLoan = (loan: ActiveLoan) =>
+    form.setValues(current => ({
+      ...current,
+      counterpartyName: loan.counterpartyName,
+      topUpAccountId: loan.accountId,
+      reuseAccountId: null,
+      currencyId: String(loan.currencyId),
     }));
 
   const clearReuse = () => setField('reuseAccountId', null);
+  const clearTopUp = () => setField('topUpAccountId', null);
+
+  const mode: LoanFormMode =
+    form.editingId != null
+      ? 'edit'
+      : form.values.topUpAccountId != null
+        ? 'topUp'
+        : form.values.reuseAccountId != null
+          ? 'reopen'
+          : 'add';
+
+  const topUpTarget =
+    form.values.topUpAccountId != null
+      ? loans.find(loan => loan.accountId === form.values.topUpAccountId) ??
+        null
+      : null;
 
   // Every existing loan of this type — open or closed — whose
-  // counterparty matches what's been typed so far. Showing the open ones
-  // too (even though they can't be tapped to reuse) is what surfaces an
-  // about-to-be-duplicated name before Save creates a second account for
-  // the same person, rather than only warning about it after the fact.
-  // Suppressed once a closed one is picked, so the list doesn't sit on
-  // top of the field after the choice is made.
+  // counterparty matches what's been typed so far. Both lists are now
+  // TAPPABLE and both lead somewhere real: an open one tops itself up,
+  // a closed one reopens. That is what makes the duplicate impossible to
+  // reach by accident rather than merely warned about — before this, the
+  // open matches were shown greyed out with no action, so the only way
+  // forward from "you already have one of these" was to create the
+  // duplicate anyway.
+  //
+  // Suppressed once either kind is picked (so the list does not sit on
+  // top of the field after the choice is made) and while editing, where
+  // the name belongs to a loan that already exists.
   const query = form.values.counterpartyName.trim().toLowerCase();
+  const suppressed =
+    form.editingId != null ||
+    form.values.reuseAccountId != null ||
+    form.values.topUpAccountId != null ||
+    !query;
   const matchesQuery = (name: string) => name.toLowerCase().includes(query);
-  const activeNameMatches =
-    form.values.reuseAccountId != null || !query
-      ? []
-      : loans.filter(loan => matchesQuery(loan.counterpartyName));
-  const inactiveNameMatches =
-    form.values.reuseAccountId != null || !query
-      ? []
-      : inactiveLoans.filter(loan => matchesQuery(loan.counterpartyName));
+  const activeNameMatches = suppressed
+    ? []
+    : loans.filter(loan => matchesQuery(loan.counterpartyName));
+  const inactiveNameMatches = suppressed
+    ? []
+    : inactiveLoans.filter(loan => matchesQuery(loan.counterpartyName));
   const hasNameMatches =
     activeNameMatches.length > 0 || inactiveNameMatches.length > 0;
 
   return {
     ...form,
+    mode,
     setPrincipal: value => setField('principal', value),
     setCurrencyId: value => setField('currencyId', value),
     setCounterpartAccountId: value => setField('counterpartAccountId', value),
@@ -301,7 +418,10 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
     setInterestPeriod: value => setField('interestPeriod', value),
     handleNameChange,
     handlePickSuggestion,
+    handlePickOpenLoan,
     clearReuse,
+    clearTopUp,
+    topUpTarget,
     activeNameMatches,
     inactiveNameMatches,
     hasNameMatches,

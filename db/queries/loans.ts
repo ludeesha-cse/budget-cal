@@ -1,4 +1,4 @@
-import { and, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
 import {
@@ -6,6 +6,7 @@ import {
   accounts,
   currencies,
   loanDetails,
+  loanOriginations,
   loanPayments,
 } from '../schema';
 import {
@@ -38,6 +39,32 @@ export type ReactivatedLoanAccount = LoanTerms & {
   counterpartAccountId: number;
 };
 
+// Adding more money to a loan that is already open, with the same
+// counterparty — "I lent Hasindu another 2,000". Deliberately NOT a
+// second account: the whole point of the duplicate-name fix is that one
+// counterparty owes one running total, so this folds into the existing
+// account's balance and records its own origination row.
+export type TopUpLoanAccountParams = {
+  accountId: number;
+  amount: number;
+  currencyId: number;
+  counterpartAccountId: number;
+  date: string; // 'YYYY-MM-DD'
+};
+
+// Correcting an open loan after the fact. `principal` here means the
+// loan's CURRENT outstanding principal (the figure LoanCard shows as
+// "Principal:"), not the amount originally handed over — see
+// updateLoanAccount for why that distinction matters once a partial
+// settlement has happened.
+export type UpdateLoanAccountParams = LoanTerms & {
+  accountId: number;
+  counterpartyName: string;
+  principal: number;
+  currencyId: number;
+  counterpartAccountId: number;
+};
+
 // The drizzle transaction handle, so the balance helper below can run
 // inside the same transaction as the rest of a loan's writes.
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -60,6 +87,78 @@ function loanAccountName(type: LoanAccountType, counterpartyName: string): strin
   return type === 'Liability'
     ? `Borrowed_from_${counterpartyName}`
     : `Lend_to_${counterpartyName}`;
+}
+
+// Two counterparty names are "the same person" when they match ignoring
+// surrounding whitespace and case — which is how a user reads them, and
+// therefore the only comparison that stops "hasindu" and "Hasindu "
+// becoming two accounts that each show half of what one person owes.
+function normalizeCounterpartyName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+// Refuses a second OPEN loan of the same type for a counterparty who
+// already has one. This is the enforcement half of the duplicate fix;
+// the form's own suggestion list is the discoverable half, offering the
+// existing account as a top-up target before it ever gets here.
+// `exceptAccountId` lets an edit keep its own name (a rename that
+// changes nothing must not collide with itself).
+async function assertNoOpenLoanWithName(
+  type: LoanAccountType,
+  counterpartyName: string,
+  exceptAccountId?: number,
+): Promise<void> {
+  const target = normalizeCounterpartyName(counterpartyName);
+  const openLoans = await db
+    .select({
+      accountId: accounts.id,
+      counterpartyName: loanDetails.counterpartyName,
+    })
+    .from(accounts)
+    .innerJoin(loanDetails, eq(loanDetails.accountId, accounts.id))
+    .where(
+      exceptAccountId == null
+        ? and(eq(accounts.type, type), eq(accounts.active, true))
+        : and(
+            eq(accounts.type, type),
+            eq(accounts.active, true),
+            ne(accounts.id, exceptAccountId),
+          ),
+    );
+  const clash = openLoans.find(
+    row => normalizeCounterpartyName(row.counterpartyName) === target,
+  );
+  if (clash) {
+    throw new Error(
+      type === 'Liability'
+        ? `You already have an open liability with ${counterpartyName.trim()}. Add to that one instead of opening a second.`
+        : `You already have an open receivable with ${counterpartyName.trim()}. Add to that one instead of opening a second.`,
+    );
+  }
+}
+
+// Records the money actually crossing the loan edge, so History has a
+// "Borrowed"/"Lent" row to show. Called from every path that hands money
+// over: opening a loan, reopening a closed account, and topping an open
+// one up.
+async function recordLoanOriginationWithin(
+  tx: DbTransaction,
+  params: {
+    loanAccountId: number;
+    counterpartAccountId: number;
+    amount: number;
+    currencyId: number;
+    date: string;
+  },
+): Promise<void> {
+  await tx.insert(loanOriginations).values({
+    loanAccountId: params.loanAccountId,
+    counterpartAccountId: params.counterpartAccountId,
+    amount: params.amount,
+    currencyId: params.currencyId,
+    date: params.date,
+    createdAt: Date.now(),
+  });
 }
 
 // Shifts a (account, currency) balance by `delta` by moving the stored
@@ -167,6 +266,11 @@ export async function getActiveLoanAccounts(type: LoanAccountType) {
         dueDate: loanDetails.dueDate,
         interestRate: loanDetails.interestRate,
         interestPeriod: loanDetails.interestPeriod,
+        // Which real account this loan's money moves through — read here
+        // so the edit form can pre-select it (and updateLoanAccount can
+        // put the old amount back into it). Null only for loans created
+        // before migration 0027 added the column.
+        counterpartAccountId: loanDetails.counterpartAccountId,
         currencyId: accountBalances.currencyId,
         currencyCode: currencies.code,
         principal: accountBalances.balance,
@@ -203,6 +307,7 @@ export async function createLoanAccount(
     if (!params.counterpartyName.trim()) {
       throw new Error('A counterparty name is required to create a loan.');
     }
+    await assertNoOpenLoanWithName(params.type, params.counterpartyName);
     const today = getCurrentDateString();
     return await db.transaction(async tx => {
       const [account] = await tx
@@ -222,6 +327,7 @@ export async function createLoanAccount(
         dueDate: params.dueDate,
         interestRate: params.interestRate,
         interestPeriod: params.interestPeriod,
+        counterpartAccountId: params.counterpartAccountId,
       });
       await tx.insert(accountBalances).values({
         accountId: account.id,
@@ -234,6 +340,13 @@ export async function createLoanAccount(
         params.currencyId,
         counterpartDeltaSign(params.type) * params.principal,
       );
+      await recordLoanOriginationWithin(tx, {
+        loanAccountId: account.id,
+        counterpartAccountId: params.counterpartAccountId,
+        amount: params.principal,
+        currencyId: params.currencyId,
+        date: today,
+      });
       return account;
     });
   } catch (error) {
@@ -266,6 +379,18 @@ export async function reactivateLoanAccount(
     if (!existingAccount) {
       throw new Error('That loan account no longer exists.');
     }
+    const [existingDetails] = await db
+      .select()
+      .from(loanDetails)
+      .where(eq(loanDetails.accountId, params.accountId))
+      .limit(1);
+    if (existingDetails) {
+      await assertNoOpenLoanWithName(
+        existingAccount.type as LoanAccountType,
+        existingDetails.counterpartyName,
+        params.accountId,
+      );
+    }
     // Terms and balances are committed before the account is flipped back
     // to active, so a failure part-way leaves it closed and untouched
     // rather than active with a half-applied new loan on it.
@@ -278,6 +403,7 @@ export async function reactivateLoanAccount(
           dueDate: params.dueDate ?? null,
           interestRate: params.interestRate ?? null,
           interestPeriod: params.interestPeriod ?? null,
+          counterpartAccountId: params.counterpartAccountId,
         })
         .where(eq(loanDetails.accountId, params.accountId))
         .returning();
@@ -301,6 +427,13 @@ export async function reactivateLoanAccount(
         counterpartDeltaSign(existingAccount.type as LoanAccountType) *
           params.principal,
       );
+      await recordLoanOriginationWithin(tx, {
+        loanAccountId: params.accountId,
+        counterpartAccountId: params.counterpartAccountId,
+        amount: params.principal,
+        currencyId: params.currencyId,
+        date: today,
+      });
     });
     return await reactivateAccount(params.accountId);
   } catch (error) {
@@ -352,6 +485,271 @@ export async function getLoanTotalOwed(
   } catch (error) {
     console.error(
       `getLoanTotalOwed: failed to compute total owed for account id=${accountId} as of ${asOfDate}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(POST
+// /api/loans/:id/top-up), keeping the same input shape. Adds more money
+// to a loan that is ALREADY open with this counterparty, instead of
+// opening a second account for the same person.
+//
+// WHY IT FOLDS ACCRUED INTEREST IN FIRST: the loan account holds one
+// number, and interest is never written back into it — it is recomputed
+// from lastAccrualAnchorDate on every read. Adding to the stored
+// principal without first settling what has accrued would silently
+// restart the accrual clock on the combined figure and lose the interest
+// earned so far. So this does exactly what a partial settlement does in
+// reverse: bring the balance up to today's total owed, add the new
+// money, and re-anchor accrual to today.
+export async function topUpLoanAccount(
+  params: TopUpLoanAccountParams,
+): Promise<void> {
+  try {
+    if (params.amount <= 0) {
+      throw new Error('Enter an amount greater than zero.');
+    }
+    const [loanAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, params.accountId))
+      .limit(1);
+    if (!loanAccount) {
+      throw new Error('That loan account no longer exists.');
+    }
+    if (!loanAccount.active) {
+      throw new Error(
+        'That loan is closed. Reopen it from the name suggestions instead.',
+      );
+    }
+    const [balanceRow] = await db
+      .select({
+        currencyId: accountBalances.currencyId,
+        currencyCode: currencies.code,
+      })
+      .from(accountBalances)
+      .innerJoin(currencies, eq(accountBalances.currencyId, currencies.id))
+      .where(eq(accountBalances.accountId, params.accountId))
+      .limit(1);
+    // One loan account holds exactly one currency (see getLoanTotalOwed's
+    // note) — a top-up in a different one has no coherent meaning here,
+    // so it is refused with the currency named rather than silently
+    // opening a second balance row on the same account.
+    if (balanceRow && balanceRow.currencyId !== params.currencyId) {
+      throw new Error(
+        `This loan is held in ${balanceRow.currencyCode}. Add to it in ${balanceRow.currencyCode}, or open a separate loan for another currency.`,
+      );
+    }
+    const totalOwed = await getLoanTotalOwed(params.accountId, params.date);
+    await db.transaction(async tx => {
+      await upsertAccountBalanceWithin(
+        tx,
+        params.accountId,
+        params.currencyId,
+        totalOwed + params.amount,
+      );
+      await tx
+        .update(loanDetails)
+        .set({
+          lastAccrualAnchorDate: params.date,
+          counterpartAccountId: params.counterpartAccountId,
+        })
+        .where(eq(loanDetails.accountId, params.accountId));
+      await shiftAccountBaselineWithin(
+        tx,
+        params.counterpartAccountId,
+        params.currencyId,
+        counterpartDeltaSign(loanAccount.type as LoanAccountType) *
+          params.amount,
+      );
+      await recordLoanOriginationWithin(tx, {
+        loanAccountId: params.accountId,
+        counterpartAccountId: params.counterpartAccountId,
+        amount: params.amount,
+        currencyId: params.currencyId,
+        date: params.date,
+      });
+    });
+  } catch (error) {
+    console.error(
+      `topUpLoanAccount: failed to add ${params.amount} to loan account id=${params.accountId}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PUT
+// /api/loans/:id), keeping the same input shape. Edits an open loan in
+// place and repairs every table that its original creation touched:
+//
+//   accounts.name          — the prefixed "Borrowed_from_X" form, so a
+//                            rename follows through to History, Net
+//                            Worth and every account picker at once
+//   loan_details           — counterparty, due date, interest terms, and
+//                            which account the money moves through
+//   account_balances       — BOTH sides. The loan account is set to the
+//                            new outstanding principal; the real account
+//                            is corrected by exactly the difference, so
+//                            dropping a lend from 6,000 to 5,000 puts
+//                            1,000 back into the account it was paid
+//                            from rather than leaving it short.
+//   loan_originations      — the "Borrowed"/"Lent" row in History, moved
+//                            by the same difference, so the ledger and
+//                            the balances cannot disagree.
+//
+// `principal` is the CURRENT outstanding principal, not the amount
+// originally handed over: that is the figure the card shows and the
+// figure a user is looking at while editing. On a loan that has been
+// partially settled those two differ, which is why the origination row
+// is adjusted BY THE DIFFERENCE rather than overwritten — overwriting it
+// would rewrite history to claim you had borrowed only what is left.
+//
+// Changing the currency or the counterpart account is treated as "put
+// the whole old amount back, then hand the whole new amount over",
+// because a delta across two different accounts (or two different
+// currencies) is not a meaningful number. A loan created before
+// loan_details.counterpart_account_id existed has nothing to put the old
+// amount back INTO, so that half is skipped — the new side is still
+// applied, and the user is not blocked from fixing the rest of the loan.
+export async function updateLoanAccount(
+  params: UpdateLoanAccountParams,
+): Promise<void> {
+  try {
+    if (!params.counterpartyName.trim()) {
+      throw new Error('A counterparty name is required.');
+    }
+    if (params.principal < 0) {
+      throw new Error('Principal cannot be negative.');
+    }
+    const [loanAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, params.accountId))
+      .limit(1);
+    if (!loanAccount) {
+      throw new Error('That loan account no longer exists.');
+    }
+    const type = loanAccount.type as LoanAccountType;
+    await assertNoOpenLoanWithName(
+      type,
+      params.counterpartyName,
+      params.accountId,
+    );
+    const [details] = await db
+      .select()
+      .from(loanDetails)
+      .where(eq(loanDetails.accountId, params.accountId))
+      .limit(1);
+    if (!details) {
+      throw new Error('This account has no loan details to edit.');
+    }
+    const [balanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(eq(accountBalances.accountId, params.accountId))
+      .limit(1);
+    const oldPrincipal = balanceRow?.balance ?? 0;
+    const oldCurrencyId = balanceRow?.currencyId ?? params.currencyId;
+    const oldCounterpartAccountId = details.counterpartAccountId;
+    const sign = counterpartDeltaSign(type);
+    const crossedEdges =
+      oldCurrencyId !== params.currencyId ||
+      oldCounterpartAccountId !== params.counterpartAccountId;
+
+    await db.transaction(async tx => {
+      await tx
+        .update(accounts)
+        .set({ name: loanAccountName(type, params.counterpartyName.trim()) })
+        .where(eq(accounts.id, params.accountId));
+      await tx
+        .update(loanDetails)
+        .set({
+          counterpartyName: params.counterpartyName.trim(),
+          dueDate: params.dueDate ?? null,
+          interestRate: params.interestRate ?? null,
+          interestPeriod: params.interestPeriod ?? null,
+          counterpartAccountId: params.counterpartAccountId,
+        })
+        .where(eq(loanDetails.accountId, params.accountId));
+
+      // A loan account holds exactly one currency, so switching currency
+      // means zeroing the old holding rather than leaving two live rows
+      // that would both be read as "the" principal.
+      if (oldCurrencyId !== params.currencyId) {
+        await upsertAccountBalanceWithin(
+          tx,
+          params.accountId,
+          oldCurrencyId,
+          0,
+        );
+      }
+      await upsertAccountBalanceWithin(
+        tx,
+        params.accountId,
+        params.currencyId,
+        params.principal,
+      );
+
+      if (crossedEdges) {
+        if (oldCounterpartAccountId != null) {
+          await shiftAccountBaselineWithin(
+            tx,
+            oldCounterpartAccountId,
+            oldCurrencyId,
+            -sign * oldPrincipal,
+          );
+        }
+        await shiftAccountBaselineWithin(
+          tx,
+          params.counterpartAccountId,
+          params.currencyId,
+          sign * params.principal,
+        );
+      } else {
+        await shiftAccountBaselineWithin(
+          tx,
+          params.counterpartAccountId,
+          params.currencyId,
+          sign * (params.principal - oldPrincipal),
+        );
+      }
+
+      const [latestOrigination] = await tx
+        .select()
+        .from(loanOriginations)
+        .where(eq(loanOriginations.loanAccountId, params.accountId))
+        .orderBy(
+          desc(loanOriginations.date),
+          desc(loanOriginations.createdAt),
+          desc(loanOriginations.id),
+        )
+        .limit(1);
+      if (latestOrigination) {
+        const corrected =
+          latestOrigination.amount + (params.principal - oldPrincipal);
+        await tx
+          .update(loanOriginations)
+          .set({
+            // A correction big enough to drive the recorded amount to or
+            // below zero means the delta rule has run out of room (the
+            // loan has been settled down past what this row recorded);
+            // falling back to the new principal keeps the row a real,
+            // non-negative figure instead of an impossible one.
+            amount: corrected > 0 ? corrected : params.principal,
+            currencyId: params.currencyId,
+            counterpartAccountId: params.counterpartAccountId,
+          })
+          .where(eq(loanOriginations.id, latestOrigination.id));
+      }
+    });
+  } catch (error) {
+    console.error(
+      `updateLoanAccount: failed to update loan account id=${params.accountId}`,
+      params,
       error,
     );
     throw error;
@@ -534,3 +932,94 @@ export async function getLoanPaymentsByYear(year: string) {
   }
 }
 
+
+// The origination ledger's own aliases. counterpart_account_id is
+// nullable (migration 0027 backfilled pre-existing loans without one), so
+// this side is LEFT joined — an inner join would silently drop exactly
+// the historical rows the backfill exists to surface.
+const originationLoanAccountAlias = alias(accounts, 'origination_loan_account');
+
+const originationCounterpartAlias = alias(
+  accounts,
+  'origination_counterpart_account',
+);
+
+function selectLoanOriginationColumns() {
+  return {
+    id: loanOriginations.id,
+    loanAccountId: loanOriginations.loanAccountId,
+    loanAccountName: originationLoanAccountAlias.name,
+    loanAccountType: originationLoanAccountAlias.type,
+    counterpartyName: loanDetails.counterpartyName,
+    counterpartAccountId: loanOriginations.counterpartAccountId,
+    counterpartAccountName: originationCounterpartAlias.name,
+    amount: loanOriginations.amount,
+    currencyId: loanOriginations.currencyId,
+    currencyCode: currencies.code,
+    date: loanOriginations.date,
+    createdAt: loanOriginations.createdAt,
+  };
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/loan-originations?month=YYYY-MM, keeping the same
+// return shape. Mirrors getLoanPaymentsByMonth exactly so History can
+// fetch both with the same `month` value and merge them into one list.
+export async function getLoanOriginationsByMonth(month: string) {
+  try {
+    return await db
+      .select(selectLoanOriginationColumns())
+      .from(loanOriginations)
+      .innerJoin(
+        originationLoanAccountAlias,
+        eq(loanOriginations.loanAccountId, originationLoanAccountAlias.id),
+      )
+      .innerJoin(
+        loanDetails,
+        eq(loanDetails.accountId, loanOriginations.loanAccountId),
+      )
+      .leftJoin(
+        originationCounterpartAlias,
+        eq(loanOriginations.counterpartAccountId, originationCounterpartAlias.id),
+      )
+      .innerJoin(currencies, eq(loanOriginations.currencyId, currencies.id))
+      .where(like(loanOriginations.date, `${month}%`));
+  } catch (error) {
+    console.error(
+      `getLoanOriginationsByMonth: failed to load loan originations for month=${month}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/loan-originations?year=YYYY, keeping the same return
+// shape.
+export async function getLoanOriginationsByYear(year: string) {
+  try {
+    return await db
+      .select(selectLoanOriginationColumns())
+      .from(loanOriginations)
+      .innerJoin(
+        originationLoanAccountAlias,
+        eq(loanOriginations.loanAccountId, originationLoanAccountAlias.id),
+      )
+      .innerJoin(
+        loanDetails,
+        eq(loanDetails.accountId, loanOriginations.loanAccountId),
+      )
+      .leftJoin(
+        originationCounterpartAlias,
+        eq(loanOriginations.counterpartAccountId, originationCounterpartAlias.id),
+      )
+      .innerJoin(currencies, eq(loanOriginations.currencyId, currencies.id))
+      .where(like(loanOriginations.date, `${year}%`));
+  } catch (error) {
+    console.error(
+      `getLoanOriginationsByYear: failed to load loan originations for year=${year}`,
+      error,
+    );
+    throw error;
+  }
+}

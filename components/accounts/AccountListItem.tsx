@@ -138,7 +138,8 @@ function AccountListItem({
           ]}
         />
 
-        <Pressable onPress={() => toggleAddCurrency(item.id)}>
+        <Pressable
+          onPress={() => toggleAddCurrency(item.id, availableCurrencies)}>
           <Text style={[styles.addCurrencyLink, { color: colors.primary }]}>
             {isExpanded ? 'Cancel' : '+ Add Currency'}
           </Text>
@@ -152,6 +153,9 @@ function AccountListItem({
             balance={addCurrencyBalance}
             onBalanceChange={setAddCurrencyBalance}
             onSubmit={() => handleAddCurrencySubmit(item.id)}
+            canSave={addCurrency.canSave}
+            isMissing={addCurrency.isMissing}
+            error={addCurrency.error}
           />
         )}
       </View>

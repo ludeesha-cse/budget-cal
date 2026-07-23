@@ -159,6 +159,12 @@ export const invalidates = {
     // Closing an account can DELETE the goals saving into it, and a
     // reopened or renamed one changes what a goal card displays.
     ...SAVINGS_POSITIONS,
+    // Loan rows in History name the accounts on both ends of the
+    // movement ("Cash in wallet → Lend_to_Hasindu"), and the loan lists
+    // are filtered on accounts.active — so renaming or closing an
+    // ordinary account changes what those rows say without any loan row
+    // itself being touched.
+    ...LOAN_POSITIONS,
   ] as QueryKey[],
 
   // A balance correction posts a real transactions row (an audit entry),

@@ -11,6 +11,9 @@ type Props = {
   loanPayment: LoanPaymentRowData;
 };
 
+// A repayment or a collection — the money-flowing-BACK half of the loan
+// ledger, whose other half is LoanOriginationRow.
+//
 // Read-only — unlike transfers and transactions, a loan payment row has
 // no edit or delete action of its own here (settling/undoing a payment
 // is done from LiabilitiesReceivablesScreen).
@@ -50,7 +53,19 @@ function LoanPaymentRow({ loanPayment }: Props): React.JSX.Element {
           </Text>
         </View>
       </View>
-      <Text style={[typography.amountMono, styles.amount, { color: colors.primary }]}>
+      {/* Paired with LoanOriginationRow's colouring, and for the same
+          reason: paying a liability down is money leaving (red, −),
+          collecting on a receivable is money arriving (green, +). This
+          used to be brand-teal in both directions, which read as
+          "something loan-ish happened" and left the direction to be
+          worked out from the account arrow. */}
+      <Text
+        style={[
+          typography.amountMono,
+          styles.amount,
+          { color: isLiability ? colors.danger : colors.success },
+        ]}>
+        {isLiability ? '-' : '+'}
         {formatAmount(loanPayment.amount, loanPayment.currencyCode)}
       </Text>
     </View>

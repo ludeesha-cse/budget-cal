@@ -8,6 +8,7 @@ import { MONTH_OPTIONS } from '../components/MonthYearPicker';
 import EmptyState from '../components/common/EmptyState';
 import SearchAndTagFilterBar from '../components/history/SearchAndTagFilterBar';
 import LoanPaymentRow from '../components/history/LoanPaymentRow';
+import LoanOriginationRow from '../components/history/LoanOriginationRow';
 import TransferRow from '../components/history/TransferRow';
 import TransactionRow from '../components/history/TransactionRow';
 import EditTransferModal from '../components/history/EditTransferModal';
@@ -79,6 +80,10 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
             renderItem={({ item }) => {
               if (item.kind === 'loanPayment') {
                 return <LoanPaymentRow loanPayment={item.data} />;
+              }
+
+              if (item.kind === 'loanOrigination') {
+                return <LoanOriginationRow origination={item.data} />;
               }
 
               if (item.kind === 'transfer') {

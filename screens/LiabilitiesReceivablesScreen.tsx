@@ -26,10 +26,48 @@ import { useSettleLoan } from '../hooks/useSettleLoan';
 
 const COUNTERPART_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
-const TYPE_LABELS: Record<LoanAccountType, { heading: string; add: string }> = {
-  Liability: { heading: 'Liabilities (borrowed)', add: 'Add Liability' },
-  Receivable: { heading: 'Receivables (lended)', add: 'Add Lend' },
+const TYPE_LABELS: Record<
+  LoanAccountType,
+  { heading: string; add: string; edit: string }
+> = {
+  Liability: {
+    heading: 'Liabilities (borrowed)',
+    add: 'Add Liability',
+    edit: 'Edit Liability',
+  },
+  Receivable: {
+    heading: 'Receivables (lended)',
+    add: 'Add Lend',
+    edit: 'Edit Lend',
+  },
 };
+
+// One sheet serves four jobs (see LoanFormFields), so its title and its
+// confirm button say which one is happening — "Save" on a form headed
+// "Add Lend" while it is actually about to fold money into an account
+// that already exists would be the wrong promise.
+function formTitle(mode: string, type: LoanAccountType): string {
+  if (mode === 'edit') {
+    return TYPE_LABELS[type].edit;
+  }
+  if (mode === 'topUp') {
+    return type === 'Liability' ? 'Borrow more' : 'Lend more';
+  }
+  return TYPE_LABELS[type].add;
+}
+
+function formSaveLabel(mode: string): string {
+  if (mode === 'edit') {
+    return 'Save changes';
+  }
+  if (mode === 'topUp') {
+    return 'Add to loan';
+  }
+  if (mode === 'reopen') {
+    return 'Reopen';
+  }
+  return 'Save';
+}
 
 const LOAN_TYPE_OPTIONS: SegmentedToggleOption<LoanAccountType>[] = [
   { key: 'Liability', label: 'Liabilities' },
@@ -149,6 +187,10 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
             type={type}
             totalOwed={totalOwedByAccountId[loan.accountId] ?? loan.principal}
             onSettle={() => settle.open(loan)}
+            // useEntityFormModal keys its edit flow off row.id, which a
+            // loan row does not have — accountId is its identity. See
+            // LoanEditRow in hooks/useLoanForm.ts.
+            onEdit={() => form.openEdit({ ...loan, id: loan.accountId })}
           />
         ))
       )}
@@ -158,8 +200,8 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         onClose={form.close}
         onSave={form.submit}
         canSave={form.canSave}
-        title={TYPE_LABELS[type].add}
-        saveLabel={form.values.reuseAccountId != null ? 'Reopen' : 'Save'}>
+        title={formTitle(form.mode, type)}
+        saveLabel={formSaveLabel(form.mode)}>
         <LoanFormFields
           form={form}
           type={type}

@@ -17,6 +17,33 @@ type Props = {
   state: UseTransferResult;
 };
 
+// Reads an account type the way the Accounts screen labels it, so the
+// message below names the same thing the user is looking at.
+const TYPE_LABELS: Record<string, string> = {
+  Bank: 'bank',
+  Cash: 'cash',
+  CryptoWallet: 'crypto wallet',
+};
+
+// What to say when the source picker has nothing in it.
+//
+// WHY THIS IS NOT ONE FIXED STRING: the Withdraw shortcut narrows the
+// source list to Bank accounts only, but this used to report the
+// unnarrowed message — "No Bank, Cash, or Crypto Wallet accounts
+// available" — even when the user had several cash accounts sitting
+// right behind the sheet. That is an actively false statement, and a
+// costly one: it reads as "the account you just made did not save",
+// when the real situation was "the account you made is typed Cash, and
+// this shortcut only accepts Bank". Naming the filtered type turns an
+// apparent data-loss bug into a two-second fix the user can act on.
+function emptySourceMessage(fromTypeFilter: string | null): string {
+  if (!fromTypeFilter) {
+    return 'No Bank, Cash, or Crypto Wallet accounts available.';
+  }
+  const label = TYPE_LABELS[fromTypeFilter] ?? fromTypeFilter;
+  return `No ${label} accounts available. This shortcut only moves money out of ${label} accounts — check that the account you want is set to that type on the Accounts screen, or use Transfer instead.`;
+}
+
 // Transfers are a free-tier feature (Stage 11) — no PremiumGate anywhere
 // in here, unlike PayOffCardModal's credit-card row.
 function TransferModal({ state }: Props): React.JSX.Element {
@@ -25,6 +52,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
     visible,
     title,
     fromOptions,
+    fromTypeFilter,
     fromAccountId,
     setFromAccountId,
     fromCurrencyOptions,
@@ -61,7 +89,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
       saveLabel={title === 'Withdraw to Cash' ? 'Withdraw' : 'Transfer'}>
       <Text style={[styles.label, { color: colors.text }]}>From</Text>
       {fromOptions.length === 0 ? (
-        <EmptyState message="No Bank, Cash, or Crypto Wallet accounts available." />
+        <EmptyState message={emptySourceMessage(fromTypeFilter)} />
       ) : (
         <CollapsiblePicker
           displayLabel={labelForId(fromOptions, fromAccountId, 'name', 'Select account')}

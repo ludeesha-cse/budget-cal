@@ -18,7 +18,14 @@
 // information for these two sheets at all, so the importer treats a
 // missing CurrencyCode as the app's current default currency rather than
 // guessing.
-export const SCHEMA_VERSION = 2;
+// v3: added the LoanOriginations sheet (the "Borrowed"/"Lent" side of the
+// loan ledger, which History now shows) and a CounterpartAccountName
+// column on LoanDetails. Both are additive and both are optional on the
+// way in, so a v1 or v2 file still imports cleanly — it simply restores
+// loans with no origination rows and no recorded counterpart account,
+// which is exactly the state migration 0027 leaves a pre-existing
+// database in.
+export const SCHEMA_VERSION = 3;
 
 export type SheetName =
   | 'Meta'
@@ -33,6 +40,7 @@ export type SheetName =
   | 'CategoryBudgets'
   | 'Transfers'
   | 'LoanDetails'
+  | 'LoanOriginations'
   | 'LoanPayments'
   | 'CreditCardPayoffs'
   | 'InstallmentPlans'
@@ -59,6 +67,7 @@ export const SHEET_ORDER: SheetName[] = [
   'CategoryBudgets',
   'Transfers',
   'LoanDetails',
+  'LoanOriginations',
   'LoanPayments',
   'CreditCardPayoffs',
   'InstallmentPlans',
@@ -147,6 +156,24 @@ export const SHEET_COLUMNS: Record<SheetName, string[]> = {
     'DueDate',
     'InterestRate',
     'InterestPeriod',
+    // Blank for loans that pre-date migration 0027 — nothing recorded
+    // which real account their principal crossed. Editing such a loan
+    // still works; it just applies the new amount forward instead of
+    // reversing the old one first (see updateLoanAccount).
+    'CounterpartAccountName',
+  ],
+  // The opening side of the loan ledger, mirroring LoanPayments below:
+  // one row per hand-over of money (a loan being opened, reopened or
+  // topped up), which is what History shows as "Borrowed"/"Lent".
+  // CounterpartAccountName is blank on rows backfilled by migration
+  // 0027, for the same reason as in LoanDetails above.
+  LoanOriginations: [
+    'Date',
+    'LoanAccountName',
+    'CounterpartAccountName',
+    'Amount',
+    'CurrencyCode',
+    'CreatedAt',
   ],
   LoanPayments: [
     'Date',

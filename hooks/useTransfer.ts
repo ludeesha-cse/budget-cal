@@ -11,9 +11,11 @@ import {
 import { useAsyncAction } from './useAsyncAction';
 import { useFieldErrors } from './useFieldErrors';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
+import { preferredCurrencyId } from '../utils/currencyHelpers';
 import {
   useCreateTransfer as useCreateTransferMutation,
   useCurrencyRates,
+  useDefaultCurrency,
 } from './queries';
 
 export type TransferableAccountRow = Awaited<
@@ -46,6 +48,10 @@ export interface UseTransferResult {
   visible: boolean;
   title: string;
   fromOptions: TransferableAccountRow[];
+  // Which account type the source list was narrowed to, or null when it
+  // was not narrowed at all. Exposed purely so the empty state can name
+  // the type it actually filtered on — see TransferModal.
+  fromTypeFilter: string | null;
   fromAccountId: string;
   setFromAccountId: (value: string) => void;
   // The from account's own currency balances — what it can send.
@@ -105,6 +111,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   // hooks/queries/invalidation.ts).
   const createTransfer = useCreateTransferMutation();
   const { data: rateRows } = useCurrencyRates();
+  const { data: defaultCurrency } = useDefaultCurrency();
   const { accounts, routeParams, clearRouteParams, onSaved } = deps;
   const runAction = useAsyncAction();
 
@@ -127,6 +134,13 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   // Set only for Withdraw (the FAB's constrained variant of this same
   // sheet) — narrows the "to" picker to a single account type.
   const [toTypeFilter, setToTypeFilter] = useState<string | null>(null);
+  // The same narrowing on the source side. Kept in state (rather than
+  // only applied inline when the sheet opens) so the empty state can say
+  // WHICH type it found none of: "No Bank accounts available" is a
+  // different problem from "you have no accounts", and telling the user
+  // the second when the first is true is what makes a Cash account
+  // they meant to create as Bank look like an account that never saved.
+  const [fromTypeFilter, setFromTypeFilter] = useState<string | null>(null);
   const [title, setTitle] = useState('Transfer');
 
   const ratesByCurrencyId = useMemo(
@@ -354,6 +368,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     async (options?: OpenTransferOptions) => {
       resetForm();
       setToTypeFilter(options?.toType ?? null);
+      setFromTypeFilter(options?.fromType ?? null);
       setTitle(options?.title ?? 'Transfer');
       const allOptions = await getTransferableAccounts();
       setFromOptions(
@@ -503,6 +518,26 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     return fromAccount?.balances ?? [];
   }, [accounts, fromAccountId]);
 
+  // The source side's counterpart to the to-currency auto-pick above:
+  // default to the user's default currency when this account holds it,
+  // or to its only currency when there is nothing to choose. Runs after
+  // the account-switch reset below has already cleared currencyId, and
+  // only ever fills an empty selection — so switching accounts still
+  // discards a now-invalid currency, it just lands on a sensible one
+  // instead of on nothing.
+  useEffect(() => {
+    if (currencyId || fromCurrencyOptions.length === 0) {
+      return;
+    }
+    const preferred = preferredCurrencyId(
+      fromCurrencyOptions,
+      defaultCurrency?.id,
+    );
+    if (preferred != null) {
+      setCurrencyId(String(preferred));
+    }
+  }, [currencyId, fromCurrencyOptions, defaultCurrency?.id]);
+
   // "BOC: 1,200.00 USD · NTB: 45,000.00 LKR" — each side shown in its
   // OWN currency now, since the two can differ. Reading a destination
   // balance in the source's currency would be meaningless for a
@@ -551,6 +586,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     visible,
     title,
     fromOptions,
+    fromTypeFilter,
     fromAccountId,
     setFromAccountId,
     fromCurrencyOptions,

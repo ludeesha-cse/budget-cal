@@ -164,6 +164,14 @@ export const queryKeys = {
         [TRANSACTIONAL, 'loans', 'paymentsByMonth', month] as const,
       paymentsByYear: (year: string) =>
         [TRANSACTIONAL, 'loans', 'paymentsByYear', year] as const,
+      // The other side of the same ledger: when the money was handed
+      // over, rather than paid back. Same month/year slicing as the
+      // payment keys above so History can invalidate both by the shared
+      // `loans` prefix.
+      originationsByMonth: (month: string) =>
+        [TRANSACTIONAL, 'loans', 'originationsByMonth', month] as const,
+      originationsByYear: (year: string) =>
+        [TRANSACTIONAL, 'loans', 'originationsByYear', year] as const,
     },
 
     installments: {

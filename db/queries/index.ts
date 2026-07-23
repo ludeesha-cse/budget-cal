@@ -53,6 +53,8 @@ export type {
   LoanTerms,
   NewLoanAccount,
   ReactivatedLoanAccount,
+  TopUpLoanAccountParams,
+  UpdateLoanAccountParams,
   SettleLoanParams,
 } from './loans';
 export type {
@@ -156,10 +158,14 @@ export const {
   getActiveLoanAccounts,
   createLoanAccount,
   reactivateLoanAccount,
+  topUpLoanAccount,
+  updateLoanAccount,
   getLoanTotalOwed,
   settleLoan,
   getLoanPaymentsByMonth,
   getLoanPaymentsByYear,
+  getLoanOriginationsByMonth,
+  getLoanOriginationsByYear,
   // --- transfers ---
   getTransferableAccounts,
   createTransfer,

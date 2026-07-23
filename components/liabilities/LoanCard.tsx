@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pencil } from 'lucide-react-native';
 import Card from '../Card';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
@@ -15,11 +16,19 @@ type Props = {
   type: LoanAccountType;
   totalOwed: number;
   onSettle: () => void;
+  onEdit: () => void;
 };
 
 // One active loan card — the caller is responsible for the `key` prop on
 // each instance (accountId+currencyId, matching the original).
-function LoanCard({ loan, index, type, totalOwed, onSettle }: Props): React.JSX.Element {
+function LoanCard({
+  loan,
+  index,
+  type,
+  totalOwed,
+  onSettle,
+  onEdit,
+}: Props): React.JSX.Element {
   const { colors } = useTheme();
   const { bg, fg } = avatarColorsFor(index, colors.chart);
 
@@ -39,6 +48,17 @@ function LoanCard({ loan, index, type, totalOwed, onSettle }: Props): React.JSX.
             Principal: {formatAmount(loan.principal, loan.currencyCode)}
           </Text>
         </View>
+        {/* Edit sits in the header rather than beside "Settle / Pay Off"
+            below: settling is the frequent, deliberate action and keeps
+            the full-width button, while correcting a typo in the terms
+            is the rare one and gets the quiet icon. */}
+        <Pressable
+          hitSlop={10}
+          style={[styles.editButton, { borderColor: colors.border }]}
+          accessibilityLabel={`Edit ${loan.counterpartyName}`}
+          onPress={onEdit}>
+          <Pencil size={15} color={colors.textSecondary} />
+        </Pressable>
       </View>
 
       {/* Live figure — principal plus interest accrued since
@@ -96,6 +116,11 @@ const styles = StyleSheet.create({
   },
   loanHeaderText: {
     flex: 1,
+  },
+  editButton: {
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   loanName: {
     fontSize: scaleFont(15),

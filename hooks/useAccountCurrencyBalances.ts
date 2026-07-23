@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getAccountBalances } from '../db/queries';
+import { preferredCurrencyId } from '../utils/currencyHelpers';
+import { useDefaultCurrency } from './queries';
 
 type AccountBalanceRow = Awaited<ReturnType<typeof getAccountBalances>>[number];
 
@@ -23,6 +25,7 @@ export function useAccountCurrencyBalances(
     [],
   );
   const [currencyId, setCurrencyId] = useState<number | null>(null);
+  const { data: defaultCurrency } = useDefaultCurrency();
 
   useEffect(() => {
     if (accountId == null) {
@@ -48,6 +51,20 @@ export function useAccountCurrencyBalances(
       cancelled = true;
     };
   }, [accountId]);
+
+  // Same preselect as useAccountCurrency, and for the same reason — see
+  // that hook's note. Only ever fills an empty selection, so an existing
+  // rule's own currency (set directly by RecurringRulesScreen's edit
+  // flow) is never overwritten.
+  useEffect(() => {
+    if (currencyId != null || accountBalances.length === 0) {
+      return;
+    }
+    const preferred = preferredCurrencyId(accountBalances, defaultCurrency?.id);
+    if (preferred != null) {
+      setCurrencyId(preferred);
+    }
+  }, [currencyId, accountBalances, defaultCurrency?.id]);
 
   return { accountBalances, currencyId, setCurrencyId };
 }

@@ -42,10 +42,23 @@ export function useSettleLoan(
   // unchanged — these hooks take the wrapped function's own arguments.
   const settleLoan = useSettleLoanMutation();
   const modal = useTargetedModal<ActiveLoan, SettleLoanValues>({
-    initialValues: () => ({
-      paymentAmount: '',
-      counterpartAccountId: String(counterpartAccounts[0]?.id ?? ''),
-    }),
+    // Defaults to the account this loan's money actually moved through
+    // when it was opened, which is where a repayment almost always goes
+    // back to — falling back to the first eligible account only for
+    // loans created before that was recorded (see loan_details.
+    // counterpart_account_id, added in migration 0027), or if that
+    // account has since been closed.
+    initialValues: target => {
+      const remembered = counterpartAccounts.find(
+        account => account.id === target.counterpartAccountId,
+      );
+      return {
+        paymentAmount: '',
+        counterpartAccountId: String(
+          remembered?.id ?? counterpartAccounts[0]?.id ?? '',
+        ),
+      };
+    },
     validate: values => {
       const parsedAmount = Number(values.paymentAmount);
       if (

@@ -22,3 +22,35 @@ export function currencyLabel<T extends { id: number | string; code: string; nam
   const currency = currencies.find(c => String(c.id) === currencyId);
   return currency ? `${currency.code} — ${currency.name}` : 'Select currency';
 }
+
+// Which currency a form should PRESELECT when the options are decided by
+// an account rather than by the full currency list — the from-currency of
+// a transfer, the currency of a transaction on a multi-currency account,
+// the currency of a new balance being added to one.
+//
+// The rule: the user's default currency if the account can actually offer
+// it, otherwise the only option if there is only one, otherwise nothing.
+// defaultCurrencyId() above answers the same question for forms whose
+// options are every active currency, where "the account doesn't hold it"
+// cannot arise.
+//
+// WHY PRESELECT AT ALL: leaving the picker empty on a multi-currency
+// account made the user restate, every single time, the answer that is
+// right in the overwhelming majority of cases — and an empty required
+// field is also the one that turns red under the form-validation
+// pattern, so the form opened already looking like something was wrong.
+// It is a default, not a lock: every one of these pickers stays fully
+// editable, and a form that already has a currency (editing an existing
+// row) is never overwritten by it.
+export function preferredCurrencyId<T extends { currencyId: number }>(
+  options: T[],
+  defaultId: number | null | undefined,
+): number | null {
+  if (
+    defaultId != null &&
+    options.some(option => option.currencyId === defaultId)
+  ) {
+    return defaultId;
+  }
+  return options.length === 1 ? options[0].currencyId : null;
+}

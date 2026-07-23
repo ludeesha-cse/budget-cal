@@ -3,6 +3,8 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   getActiveLoanAccounts,
   getInactiveLoanAccounts,
+  getLoanOriginationsByMonth,
+  getLoanOriginationsByYear,
   getLoanPaymentsByMonth,
   getLoanPaymentsByYear,
   getLoanTotalOwed,
@@ -20,6 +22,9 @@ export type InactiveLoanRow = Awaited<
 >[number];
 export type LoanPaymentRow = Awaited<
   ReturnType<typeof getLoanPaymentsByMonth>
+>[number];
+export type LoanOriginationRow = Awaited<
+  ReturnType<typeof getLoanOriginationsByMonth>
 >[number];
 
 // Transactional stale time: an open loan's terms rarely change, but its
@@ -112,6 +117,30 @@ export function useLoanPaymentsByYear(year: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.transactional.loans.paymentsByYear(year),
     queryFn: () => getLoanPaymentsByYear(year),
+    enabled,
+  });
+}
+
+// Transactional stale time: loan originations are money-movement rows
+// merged into History beside payments, transactions and transfers, so
+// they carry the identical staleness tolerance as those. They also move
+// on a plain loan EDIT (updateLoanAccount rewrites the latest row), not
+// only on a new loan — which is why the loan-account write invalidation
+// covers this prefix too.
+export function useLoanOriginationsByMonth(month: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.transactional.loans.originationsByMonth(month),
+    queryFn: () => getLoanOriginationsByMonth(month),
+    enabled,
+  });
+}
+
+// Transactional stale time: the yearly slice of the same origination
+// ledger, stale for the same reasons on the same clock.
+export function useLoanOriginationsByYear(year: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.transactional.loans.originationsByYear(year),
+    queryFn: () => getLoanOriginationsByYear(year),
     enabled,
   });
 }

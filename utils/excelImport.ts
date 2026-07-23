@@ -726,6 +726,11 @@ export async function validateExcelFile(
           message: `InterestPeriod "${interestPeriod}" must be "monthly" or "annual" if present.`,
         });
       }
+      const counterpartAccountName = v.optionalResolvedName(
+        'CounterpartAccountName',
+        accountNameSet,
+        'account',
+      );
       sheetRows.push({
         AccountName: accountName,
         CounterpartyName: counterpartyName,
@@ -734,10 +739,58 @@ export async function validateExcelFile(
         DueDate: dueDate,
         InterestRate: interestRate ?? '',
         InterestPeriod: interestPeriod,
+        CounterpartAccountName: counterpartAccountName,
       });
     });
     data.LoanDetails = sheetRows;
     rowCounts.LoanDetails = sheetRows.length;
+  }
+
+  // ---- LoanOriginations ----
+  // CounterpartAccountName is OPTIONAL here, unlike LoanPayments below:
+  // rows backfilled by migration 0027 legitimately have none, and
+  // rejecting them would throw away the only record that those loans
+  // were ever opened.
+  if (present('LoanOriginations')) {
+    const { headers, rows } = readSheetRows(workbook, 'LoanOriginations');
+    checkRequiredHeaders(
+      'LoanOriginations',
+      headers,
+      ['Date', 'LoanAccountName', 'Amount', 'CurrencyCode'],
+      errors,
+    );
+    const sheetRows: ExportRow[] = [];
+    rows.forEach((row, i) => {
+      const v = new RowValidator('LoanOriginations', row, i + 2, errors);
+      const date = v.requiredDate('Date');
+      const loanAccountName = v.requiredResolvedName(
+        'LoanAccountName',
+        accountNameSet,
+        'account',
+      );
+      const counterpartAccountName = v.optionalResolvedName(
+        'CounterpartAccountName',
+        accountNameSet,
+        'account',
+      );
+      const amount = v.requiredNumber('Amount');
+      const currencyCode = v.requiredResolvedName(
+        'CurrencyCode',
+        currencyCodeSet,
+        'currency',
+      );
+      const createdAt = v.string('CreatedAt');
+      sheetRows.push({
+        Date: date,
+        LoanAccountName: loanAccountName,
+        CounterpartAccountName: counterpartAccountName,
+        Amount: amount,
+        CurrencyCode: currencyCode,
+        CreatedAt: createdAt,
+      });
+    });
+    data.LoanOriginations = sheetRows;
+    rowCounts.LoanOriginations = sheetRows.length;
   }
 
   // ---- LoanPayments ----

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getAccountBalances } from '../db/queries';
+import { preferredCurrencyId } from '../utils/currencyHelpers';
+import { useDefaultCurrency } from './queries';
 
 type AccountBalanceRow = Awaited<ReturnType<typeof getAccountBalances>>[number];
 
@@ -35,6 +37,7 @@ export function useAccountCurrency(
   // honors initialCurrencyId; every run after an actual account switch
   // resets to "no selection" or the account's one currency instead.
   const [hasInitializedCurrency, setHasInitializedCurrency] = useState(false);
+  const { data: defaultCurrency } = useDefaultCurrency();
 
   useEffect(() => {
     if (accountId == null) {
@@ -71,6 +74,28 @@ export function useAccountCurrency(
     // meaningful on this effect's very first run anyway.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
+
+  // Preselects the user's default currency on an account that holds
+  // several — the old behavior left the picker empty and made them pick
+  // the same answer every time (see preferredCurrencyId). Split out from
+  // the effect above rather than folded into it because the default
+  // currency arrives from its own cached query, which can resolve AFTER
+  // the balances do on a cold start; this way the preselect still lands
+  // when it does.
+  //
+  // Only ever fills an EMPTY selection, so it can never overwrite the
+  // currency of a transaction being edited, nor a choice the user has
+  // already made — there is no control in this app that sets the
+  // currency back to null.
+  useEffect(() => {
+    if (currencyId != null || accountBalances.length === 0) {
+      return;
+    }
+    const preferred = preferredCurrencyId(accountBalances, defaultCurrency?.id);
+    if (preferred != null) {
+      setCurrencyId(preferred);
+    }
+  }, [currencyId, accountBalances, defaultCurrency?.id]);
 
   return { accountBalances, currencyId, setCurrencyId };
 }

@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import {
   useDefaultCurrency,
+  useLoanOriginationsByMonth,
+  useLoanOriginationsByYear,
   useLoanPaymentsByMonth,
   useLoanPaymentsByYear,
   useTagsForTransactions,
@@ -11,6 +13,7 @@ import {
   useTransfersByYear,
 } from './queries';
 import {
+  getLoanOriginationsByMonth,
   getLoanPaymentsByMonth,
   getTransactionsByMonth,
   getTransfers,
@@ -19,6 +22,9 @@ import type { TagRow } from './useTransactionHistoryFilters';
 
 export type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
 export type LoanPaymentRow = Awaited<ReturnType<typeof getLoanPaymentsByMonth>>[number];
+export type LoanOriginationRow = Awaited<
+  ReturnType<typeof getLoanOriginationsByMonth>
+>[number];
 export type TransferRow = Awaited<ReturnType<typeof getTransfers>>[number];
 
 // A tagged union so one FlatList can render every kind of money-movement
@@ -34,6 +40,12 @@ export type TransferRow = Awaited<ReturnType<typeof getTransfers>>[number];
 export type HistoryRow =
   | { kind: 'transaction'; date: string; createdAt: number; data: TransactionRow }
   | { kind: 'loanPayment'; date: string; createdAt: number; data: LoanPaymentRow }
+  | {
+      kind: 'loanOrigination';
+      date: string;
+      createdAt: number;
+      data: LoanOriginationRow;
+    }
   | { kind: 'transfer'; date: string; createdAt: number; data: TransferRow };
 
 
@@ -108,10 +120,12 @@ export function useTransactionHistoryData(
 
   const monthTransactions = useTransactionsByMonth(period, monthMode);
   const monthLoanPayments = useLoanPaymentsByMonth(period, monthMode);
+  const monthLoanOriginations = useLoanOriginationsByMonth(period, monthMode);
   const monthTransfers = useTransfersByMonth(period, monthMode);
 
   const yearTransactions = useTransactionsByYear(year, yearMode);
   const yearLoanPayments = useLoanPaymentsByYear(year, yearMode);
+  const yearLoanOriginations = useLoanOriginationsByYear(year, yearMode);
   const yearTransfers = useTransfersByYear(year, yearMode);
 
   const rows = useMemo<HistoryRow[]>(() => {
@@ -131,6 +145,9 @@ export function useTransactionHistoryData(
     const loanPaymentRows = monthMode
       ? monthLoanPayments.data
       : yearLoanPayments.data;
+    const loanOriginationRows = monthMode
+      ? monthLoanOriginations.data
+      : yearLoanOriginations.data;
     const transferRows = monthMode ? monthTransfers.data : yearTransfers.data;
     return mergeHistoryRows(
       (transactionRows ?? []).map(
@@ -144,6 +161,14 @@ export function useTransactionHistoryData(
       (loanPaymentRows ?? []).map(
         (data): HistoryRow => ({
           kind: 'loanPayment',
+          date: data.date,
+          createdAt: data.createdAt,
+          data,
+        }),
+      ),
+      (loanOriginationRows ?? []).map(
+        (data): HistoryRow => ({
+          kind: 'loanOrigination',
           date: data.date,
           createdAt: data.createdAt,
           data,
@@ -164,9 +189,11 @@ export function useTransactionHistoryData(
     search.data,
     monthTransactions.data,
     monthLoanPayments.data,
+    monthLoanOriginations.data,
     monthTransfers.data,
     yearTransactions.data,
     yearLoanPayments.data,
+    yearLoanOriginations.data,
     yearTransfers.data,
   ]);
 
@@ -193,9 +220,11 @@ export function useTransactionHistoryData(
     : monthMode
       ? monthTransactions.isPending ||
         monthLoanPayments.isPending ||
+        monthLoanOriginations.isPending ||
         monthTransfers.isPending
       : yearTransactions.isPending ||
         yearLoanPayments.isPending ||
+        yearLoanOriginations.isPending ||
         yearTransfers.isPending;
 
   return {

@@ -37,6 +37,15 @@ const DEFAULT_CASH_ACCOUNT_NAME = 'Cash in wallet';
 // never touched.
 const LEGACY_DEFAULT_CASH_ACCOUNT_NAME = 'Cash';
 
+// One sentence, said the same way by every account-creation path, and
+// safe to state as fact because those paths are transactional: if this
+// is thrown, no account row survives. The wording matters — the failure
+// this exists for is a low-end device running out of memory or storage
+// mid-write, where the user's real question is not "what went wrong" but
+// "do I now have half an account?".
+const ACCOUNT_NOT_CREATED_MESSAGE =
+  'The account could not be created. Nothing was saved — please check your device storage and try again.';
+
 export async function ensureDefaultAccount() {
   const existing = await db.select().from(accounts).limit(1);
   if (existing.length > 0) {
@@ -111,22 +120,66 @@ async function upsertAccountBalance(
 // /api/accounts), keeping the same input/return shape. Creates the
 // account and its first account_balances row together, in the given
 // currency.
+//
+// ATOMIC AND VERIFIED, both for the same reason: on a slow or nearly-full
+// device these two inserts can fail independently. Previously they ran
+// as two bare statements with no transaction and no error handling, so a
+// device that died between them left an account row with no balance row
+// — an account that lists but cannot hold or move money — and a device
+// that failed on the FIRST one left `account` undefined and crashed on
+// `account.id` with "Cannot read property 'id' of undefined", which is
+// what the user would then see in the failure alert. Neither told anyone
+// that the account had not really been created.
+//
+// The read-back at the end is not paranoia about SQLite; it is the
+// difference between "the write threw" and "the write silently did
+// nothing", and only the second one is hard to notice. It costs one
+// indexed lookup on a table with a handful of rows.
 export async function addAccountWithBalance(
   name: string,
   type: string,
   currencyId: number,
   initialBalance: number,
 ): Promise<Account> {
-  const [account] = await db
-    .insert(accounts)
-    .values({ name, type, createdAt: Date.now() })
-    .returning();
-  await db.insert(accountBalances).values({
-    accountId: account.id,
-    currencyId,
-    balance: initialBalance,
-  });
-  return account;
+  try {
+    const account = await db.transaction(async tx => {
+      const [inserted] = await tx
+        .insert(accounts)
+        .values({ name, type, createdAt: Date.now() })
+        .returning();
+      if (!inserted) {
+        throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+      }
+      await tx.insert(accountBalances).values({
+        accountId: inserted.id,
+        currencyId,
+        balance: initialBalance,
+      });
+      return inserted;
+    });
+
+    const [confirmed] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, account.id))
+      .limit(1);
+    if (!confirmed) {
+      throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+    }
+    return confirmed;
+  } catch (error) {
+    // The technical cause goes to the log; the user gets one sentence
+    // that is TRUE — and it is only true because of the transaction
+    // above. Re-throwing the raw SQLite text here ("no such table",
+    // "database or disk is full", "database is locked") would tell
+    // someone on a nearly-full phone nothing they can act on, and worse,
+    // would leave them guessing whether the account half-exists.
+    console.error(
+      `addAccountWithBalance: failed to create account name="${name}" type=${type} currencyId=${currencyId}`,
+      error,
+    );
+    throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+  }
 }
 
 // NETWORK-READY: If a backend is added later, replace this with fetch(POST
@@ -162,20 +215,39 @@ export async function addCurrencyToAccount(
 // If a backend is added later, replace this with a fetch() call to POST
 // /api/accounts, keeping the same input/return shape. The opening balance
 // is stored in account_balances under the default currency.
+//
+// Same guard as addAccountWithBalance above: an insert that comes back
+// with no row must say so, rather than crashing on `account.id` one line
+// later with an error that names a property instead of the problem.
 export async function addAccount(data: NewAccount): Promise<Account> {
-  const [account] = await db
-    .insert(accounts)
-    .values({
-      name: data.name,
-      type: data.type,
-      createdAt: Date.now(),
-    })
-    .returning();
-  const defaultCurrency = await getDefaultCurrency();
-  if (defaultCurrency) {
-    await upsertAccountBalance(account.id, defaultCurrency.id, data.openingBalance);
+  try {
+    const [account] = await db
+      .insert(accounts)
+      .values({
+        name: data.name,
+        type: data.type,
+        createdAt: Date.now(),
+      })
+      .returning();
+    if (!account) {
+      throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+    }
+    const defaultCurrency = await getDefaultCurrency();
+    if (defaultCurrency) {
+      await upsertAccountBalance(
+        account.id,
+        defaultCurrency.id,
+        data.openingBalance,
+      );
+    }
+    return account;
+  } catch (error) {
+    console.error(
+      `addAccount: failed to create account name="${data.name}" type=${data.type}`,
+      error,
+    );
+    throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
   }
-  return account;
 }
 
 // If a backend is added later, replace this with fetch(PATCH

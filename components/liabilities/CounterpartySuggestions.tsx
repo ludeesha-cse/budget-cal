@@ -9,18 +9,28 @@ type Props = {
   activeMatches: ActiveLoan[];
   inactiveMatches: InactiveLoan[];
   onPickSuggestion: (loan: InactiveLoan) => void;
+  onPickOpenLoan: (loan: ActiveLoan) => void;
 };
 
 // Every existing loan (open or closed) whose counterparty matches what's
-// been typed so far in the name field — open ones surface an
-// about-to-be-duplicated name before Save creates a second account for
-// the same person; closed ones are tappable to reuse instead. Renders
-// nothing once both lists are empty, so the caller never needs its own
-// "any matches at all" gate.
+// been typed so far in the name field. BOTH kinds are tappable and both
+// lead somewhere real: an open one adds this amount to the loan that
+// already exists, a closed one reopens it.
+//
+// Open matches used to render greyed out and inert, which named the
+// problem ("already open · LKR 6,000 outstanding") while offering no way
+// out of it — the only move left was to save anyway and end up with two
+// accounts called Hasindu, each holding half of what one person owes.
+// Making the row itself the fix is the whole point: the duplicate is now
+// harder to reach than the correct thing.
+//
+// Renders nothing once both lists are empty, so the caller never needs
+// its own "any matches at all" gate.
 function CounterpartySuggestions({
   activeMatches,
   inactiveMatches,
   onPickSuggestion,
+  onPickOpenLoan,
 }: Props): React.JSX.Element | null {
   const { colors } = useTheme();
 
@@ -38,16 +48,17 @@ function CounterpartySuggestions({
         Existing accounts matching this name:
       </Text>
       {activeMatches.map(loan => (
-        <View
+        <Pressable
           key={`active-${loan.accountId}`}
-          style={[styles.suggestionRowInactive, { borderTopColor: colors.border }]}>
+          style={[styles.suggestionRow, { borderTopColor: colors.border }]}
+          onPress={() => onPickOpenLoan(loan)}>
           <Text style={[styles.suggestionName, { color: colors.primary }]}>
             {loan.counterpartyName}
           </Text>
           <Text style={[styles.loanDetail, { color: colors.textSecondary }]}>
-            Already open · {formatAmount(loan.currentBalance, loan.currencyCode)} outstanding
+            Already open · {formatAmount(loan.currentBalance, loan.currencyCode)} outstanding · tap to add to it
           </Text>
-        </View>
+        </Pressable>
       ))}
       {inactiveMatches.map(loan => (
         <Pressable
@@ -83,13 +94,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 6,
-  },
-  suggestionRowInactive: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: 6,
-    opacity: 0.6,
   },
   suggestionName: {
     fontSize: 16,

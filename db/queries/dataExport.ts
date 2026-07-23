@@ -18,6 +18,7 @@ import {
   installmentPayments,
   installmentPlans,
   loanDetails,
+  loanOriginations,
   loanPayments,
   recurringOccurrences,
   recurringRules,
@@ -75,6 +76,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       allCategoryBudgets,
       allTransfers,
       allLoanDetails,
+      allLoanOriginations,
       allLoanPayments,
       allCreditCardPayoffs,
       allInstallmentPlans,
@@ -96,6 +98,7 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
       db.select().from(categoryBudgets),
       db.select().from(transfers),
       db.select().from(loanDetails),
+      db.select().from(loanOriginations),
       db.select().from(loanPayments),
       db.select().from(creditCardPayoffs),
       db.select().from(installmentPlans),
@@ -265,6 +268,23 @@ export async function getAllDataForExport(): Promise<ExportWorkbookData> {
           DueDate: l.dueDate ?? '',
           InterestRate: l.interestRate ?? '',
           InterestPeriod: l.interestPeriod ?? '',
+          CounterpartAccountName:
+            l.counterpartAccountId == null
+              ? ''
+              : accountName.get(l.counterpartAccountId) ?? '',
+        }),
+      ),
+      LoanOriginations: allLoanOriginations.map(
+        (o): ExportRow => ({
+          Date: o.date,
+          LoanAccountName: accountName.get(o.loanAccountId) ?? '',
+          CounterpartAccountName:
+            o.counterpartAccountId == null
+              ? ''
+              : accountName.get(o.counterpartAccountId) ?? '',
+          Amount: o.amount,
+          CurrencyCode: currencyCode.get(o.currencyId) ?? '',
+          CreatedAt: toDateOnly(o.createdAt),
         }),
       ),
       LoanPayments: allLoanPayments.map(
@@ -447,6 +467,7 @@ async function wipeAllDataWithin(tx: DbTransaction): Promise<void> {
   await tx.delete(transactions);
   await tx.delete(transfers);
   await tx.delete(loanPayments);
+  await tx.delete(loanOriginations);
   await tx.delete(creditCardPayoffs);
   await tx.delete(installmentPlans);
   await tx.delete(recurringRules);
@@ -845,6 +866,13 @@ export async function importData(
               | 'monthly'
               | 'annual'
               | null,
+          // Blank in workbooks written before this column existed, and
+          // on loans that never had one — null is the correct restore
+          // in both cases, and is exactly what updateLoanAccount
+          // already knows how to cope with.
+          counterpartAccountId:
+            accountIdByName.get(String(row.CounterpartAccountName ?? '')) ??
+            null,
         };
         const [existing] = await tx
           .select()
@@ -862,8 +890,31 @@ export async function importData(
       }
       rowCounts.LoanDetails = data.LoanDetails?.length ?? 0;
 
-      // ---- LoanPayments / CreditCardPayoffs: pure historical-record
-      // inserts, no balance shift — same reasoning as Transfers. ----
+      // ---- LoanOriginations / LoanPayments / CreditCardPayoffs: pure
+      // historical-record inserts, no balance shift — same reasoning as
+      // Transfers. ----
+      for (const row of data.LoanOriginations ?? []) {
+        const loanAccountId = accountIdByName.get(String(row.LoanAccountName));
+        const currencyId = currencyIdByCode.get(String(row.CurrencyCode));
+        if (loanAccountId == null || currencyId == null) {
+          continue;
+        }
+        await tx.insert(loanOriginations).values({
+          loanAccountId,
+          // Optional, unlike a payment's: a backfilled row genuinely has
+          // no counterpart account, so a missing one is restored as null
+          // rather than dropping the whole row.
+          counterpartAccountId:
+            accountIdByName.get(String(row.CounterpartAccountName ?? '')) ??
+            null,
+          amount: Number(row.Amount),
+          currencyId,
+          date: String(row.Date),
+          createdAt: dateOnlyToEpoch(String(row.CreatedAt ?? '')),
+        });
+      }
+      rowCounts.LoanOriginations = data.LoanOriginations?.length ?? 0;
+
       for (const row of data.LoanPayments ?? []) {
         const loanAccountId = accountIdByName.get(String(row.LoanAccountName));
         const counterpartAccountId = accountIdByName.get(

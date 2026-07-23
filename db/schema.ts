@@ -132,6 +132,53 @@ export const loanDetails = sqliteTable('loan_details', {
   // float rounding drift in Stage 9b's interest math.
   interestRate: int('interest_rate'),
   interestPeriod: text('interest_period').$type<'monthly' | 'annual'>(),
+  // The real account this loan's money most recently moved through —
+  // the one credited when a Liability was borrowed, or debited when a
+  // Receivable was lent. Stored (rather than re-derived) because EDITING
+  // a loan has to put the old amount back where it came from before
+  // applying the new one, and nothing else in the schema remembers where
+  // that was. Nullable purely for loans that pre-date this column: their
+  // backfilled origination row has no counterpart either, so an edit on
+  // one of them applies the new amount forward without a reversal it
+  // cannot compute. Kept in sync by createLoanAccount,
+  // reactivateLoanAccount, topUpLoanAccount and updateLoanAccount.
+  counterpartAccountId: int('counterpart_account_id').references(
+    () => accounts.id,
+  ),
+});
+
+// The other half of the loan ledger from loanPayments below: a payment
+// records money flowing BACK across the loan edge, this records it
+// flowing out in the first place — borrowing (money in) and lending
+// (money out), plus every later top-up of an already-open loan.
+//
+// WHY A ROW AT ALL, given createLoanAccount already moves both balances:
+// History is a list of money-movement events, and "borrowed LKR 6,000
+// from Hasindu" is exactly such an event. Before this table the opening
+// of a loan was the one movement in the app that left no trace in
+// History at all — the balances simply changed between one visit and the
+// next. It is deliberately NOT a `transactions` row: a loan is not
+// income and not spending, so it must never reach a budget or a
+// category report (same reasoning as transfers, credit-card payoffs and
+// loan payments, all of which have their own table for the same reason).
+export const loanOriginations = sqliteTable('loan_originations', {
+  id: int('id').primaryKey({ autoIncrement: true }),
+  loanAccountId: int('loan_account_id')
+    .notNull()
+    .references(() => accounts.id),
+  // Nullable only for rows backfilled by migration 0027 from loans that
+  // existed before this table — nothing recorded which account their
+  // principal came from or went to. Every row written from here on has
+  // it set.
+  counterpartAccountId: int('counterpart_account_id').references(
+    () => accounts.id,
+  ),
+  amount: real('amount').notNull(),
+  currencyId: int('currency_id')
+    .notNull()
+    .references(() => currencies.id),
+  date: text('date').notNull(), // 'YYYY-MM-DD'
+  createdAt: int('created_at').notNull(),
 });
 
 // Scaffolded now, unused until Stage 9b's settlement flow — a payment
