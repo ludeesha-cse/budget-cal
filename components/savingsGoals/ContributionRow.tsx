@@ -9,23 +9,28 @@ type Props = {
   contribution: SavingsContributionRow;
   currencyCode: string;
   onDelete: () => void;
+  // Omitted where there is nowhere to edit from (the card's own compact
+  // list). The goal's details screen passes it.
+  onEdit?: () => void;
 };
 
 // One entry in a goal's funding history.
 //
-// THERE IS NO INLINE EDIT HERE ANY MORE, on purpose. A contribution used
-// to be a free-standing number the user could retype; it is now the
-// earmark attached to a real transfer, and the amount that matters is
-// the transfer's. Editing it here would mean either changing the earmark
-// without moving the money (the two would disagree) or quietly moving
-// money from a row that does not look like it moves money. So amounts
-// are edited on the transfer itself in History, which carries this row
-// with it — and Remove, below, reverses the transfer rather than
-// deleting a note about it.
+// EDIT MOVES THE MONEY, it does not retype a note. A contribution is the
+// earmark attached to a real transfer, so Edit opens a form that
+// corrects that transfer and lets it carry this row's amount with it
+// (see useEditContributionModal). What is deliberately still impossible
+// is editing the earmark alone: the goal would then claim money the
+// accounts do not agree has moved.
+//
+// A legacy contribution — logged before goals were tied to an account —
+// has no transfer behind it and therefore nothing to correct, so it gets
+// no Edit button at all rather than one that fails on press.
 function ContributionRow({
   contribution,
   currencyCode,
   onDelete,
+  onEdit,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const isLinked = contribution.transferId != null;
@@ -41,6 +46,15 @@ function ContributionRow({
           : 'logged before goals were tied to an account'}
       </Text>
       <View style={styles.rowActions}>
+        {onEdit && isLinked && (
+          <Pressable
+            style={[styles.smallPillButton, { borderColor: colors.border }]}
+            onPress={onEdit}>
+            <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
+              Edit
+            </Text>
+          </Pressable>
+        )}
         <Pressable
           style={[styles.smallPillButton, { borderColor: colors.dangerSoft }]}
           onPress={onDelete}>

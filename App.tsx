@@ -57,8 +57,10 @@ import CategoryBudgetsScreen from './screens/CategoryBudgetsScreen';
 import CurrenciesScreen from './screens/CurrenciesScreen';
 import ExchangeRatesScreen from './screens/ExchangeRatesScreen';
 import InstallmentPlansScreen from './screens/InstallmentPlansScreen';
+import InstallmentPlanDetailsScreen from './screens/InstallmentPlanDetailsScreen';
 import RecurringRulesScreen from './screens/RecurringRulesScreen';
 import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
+import SavingsGoalDetailsScreen from './screens/SavingsGoalDetailsScreen';
 import TagsScreen from './screens/TagsScreen';
 import ReviewOccurrencesScreen from './screens/ReviewOccurrencesScreen';
 import AccountScreen from './screens/AccountScreen';
@@ -185,6 +187,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         options={{ title: 'Installment Plans' }}
       />
       <SettingsStack.Screen
+        name="InstallmentPlanDetails"
+        component={InstallmentPlanDetailsScreen}
+        options={{ title: 'Plan Details' }}
+      />
+      <SettingsStack.Screen
         name="RecurringRules"
         component={RecurringRulesScreen}
         options={{ title: 'Recurring' }}
@@ -193,6 +200,11 @@ function SettingsStackNavigator(): React.JSX.Element {
         name="SavingsGoals"
         component={SavingsGoalsScreen}
         options={{ title: 'Savings Goals' }}
+      />
+      <SettingsStack.Screen
+        name="SavingsGoalDetails"
+        component={SavingsGoalDetailsScreen}
+        options={{ title: 'Goal Details' }}
       />
       <SettingsStack.Screen
         name="Tags"

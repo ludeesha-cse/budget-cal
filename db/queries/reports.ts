@@ -4,6 +4,8 @@ import {
   accounts,
   categories,
   currencies,
+  installmentPayments,
+  recurringOccurrences,
   transactionTags,
   transactions,
 } from '../schema';
@@ -93,11 +95,31 @@ export async function searchTransactions(params: SearchTransactionsParams) {
         currencyCode: currencies.code,
         excludeFromBudget: transactions.excludeFromBudget,
         createdAt: transactions.createdAt,
+        // What this transaction really is, beyond an expense with a
+        // date. A scheduled payment — an installment slot or a confirmed
+        // recurring occurrence — is a real transactions row like any
+        // other, but it is ALSO a step in a plan, and editing it alone
+        // would leave the plan saying something the money no longer
+        // supports. History reads these three to decide whether to offer
+        // the edit action, and to route delete through the matching undo
+        // rather than a bare row delete. Null on an ordinary
+        // transaction, which stays fully editable.
+        installmentPaymentId: installmentPayments.id,
+        installmentIsCustomAmount: installmentPayments.isCustomAmount,
+        recurringOccurrenceId: recurringOccurrences.id,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .leftJoin(
+        installmentPayments,
+        eq(installmentPayments.transactionId, transactions.id),
+      )
+      .leftJoin(
+        recurringOccurrences,
+        eq(recurringOccurrences.transactionId, transactions.id),
+      )
       .where(and(...conditions))
       .orderBy(desc(transactions.date), desc(transactions.id))
       .limit(limit);

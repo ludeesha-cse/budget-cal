@@ -1,38 +1,35 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ban, CheckCircle2, Pencil, Trash2 } from 'lucide-react-native';
+import { Ban, CheckCircle2, ChevronRight, Pencil, Trash2 } from 'lucide-react-native';
 import Card from '../Card';
 import ActionButtons from '../common/ActionButtons';
-import OccurrenceHistoryList from './OccurrenceHistoryList';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
 import { avatarColorsFor } from '../../utils/avatarColor';
 import { formatAmount } from '../../utils/formatAmount';
-import type { getOccurrenceHistory } from '../../db/queries';
 import type { RecurringRuleRow } from '../../hooks/useRecurringRulesData';
-
-type HistoryRow = Awaited<ReturnType<typeof getOccurrenceHistory>>[number];
 
 type Props = {
   rule: RecurringRuleRow;
   index: number;
-  expanded: boolean;
-  history: HistoryRow[] | undefined;
-  onToggleHistory: () => void;
+  onOpenHistory: () => void;
   onEdit: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
 };
 
 // One recurring rule card — badge/name/amount/meta header, action row
-// (Edit/Activate-Deactivate/Delete), and the expandable occurrence
+// (Edit/Activate-Deactivate/Delete), and the link to its occurrence
 // history.
+//
+// The history opens in a bottom sheet rather than unfolding here. A rule
+// that has been running for a year has a long list, and expanding it in
+// place shifted every card below it — a sheet keeps the list still and
+// gives the history its own scroll.
 function RuleCard({
   rule,
   index,
-  expanded,
-  history,
-  onToggleHistory,
+  onOpenHistory,
   onEdit,
   onToggleActive,
   onDelete,
@@ -83,13 +80,12 @@ function RuleCard({
         ]}
       />
 
-      <Pressable onPress={onToggleHistory}>
+      <Pressable style={styles.historyRow} onPress={onOpenHistory}>
         <Text style={[styles.historyLink, { color: colors.primary }]}>
-          {expanded ? 'Hide history' : 'View history'}
+          View history
         </Text>
+        <ChevronRight size={15} color={colors.primary} />
       </Pressable>
-
-      {expanded && <OccurrenceHistoryList history={history} currencyCode={rule.currencyCode} />}
     </Card>
   );
 }
@@ -142,6 +138,11 @@ const styles = StyleSheet.create({
   },
   ruleActionsRow: {
     marginBottom: 10,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   historyLink: {
     fontWeight: '600',

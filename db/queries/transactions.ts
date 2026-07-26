@@ -4,6 +4,8 @@ import {
   accounts,
   categories,
   currencies,
+  installmentPayments,
+  recurringOccurrences,
   transactions,
 } from '../schema';
 
@@ -125,11 +127,31 @@ export async function getTransactionsByMonth(month: string) {
         currencyCode: currencies.code,
         excludeFromBudget: transactions.excludeFromBudget,
         createdAt: transactions.createdAt,
+        // What this transaction really is, beyond an expense with a
+        // date. A scheduled payment — an installment slot or a confirmed
+        // recurring occurrence — is a real transactions row like any
+        // other, but it is ALSO a step in a plan, and editing it alone
+        // would leave the plan saying something the money no longer
+        // supports. History reads these three to decide whether to offer
+        // the edit action, and to route delete through the matching undo
+        // rather than a bare row delete. Null on an ordinary
+        // transaction, which stays fully editable.
+        installmentPaymentId: installmentPayments.id,
+        installmentIsCustomAmount: installmentPayments.isCustomAmount,
+        recurringOccurrenceId: recurringOccurrences.id,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .leftJoin(
+        installmentPayments,
+        eq(installmentPayments.transactionId, transactions.id),
+      )
+      .leftJoin(
+        recurringOccurrences,
+        eq(recurringOccurrences.transactionId, transactions.id),
+      )
       .where(like(transactions.date, `${month}%`));
   } catch (error) {
     console.error(
@@ -160,11 +182,31 @@ export async function getTransactionsByYear(year: string) {
         currencyCode: currencies.code,
         excludeFromBudget: transactions.excludeFromBudget,
         createdAt: transactions.createdAt,
+        // What this transaction really is, beyond an expense with a
+        // date. A scheduled payment — an installment slot or a confirmed
+        // recurring occurrence — is a real transactions row like any
+        // other, but it is ALSO a step in a plan, and editing it alone
+        // would leave the plan saying something the money no longer
+        // supports. History reads these three to decide whether to offer
+        // the edit action, and to route delete through the matching undo
+        // rather than a bare row delete. Null on an ordinary
+        // transaction, which stays fully editable.
+        installmentPaymentId: installmentPayments.id,
+        installmentIsCustomAmount: installmentPayments.isCustomAmount,
+        recurringOccurrenceId: recurringOccurrences.id,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .innerJoin(currencies, eq(transactions.currencyId, currencies.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .leftJoin(
+        installmentPayments,
+        eq(installmentPayments.transactionId, transactions.id),
+      )
+      .leftJoin(
+        recurringOccurrences,
+        eq(recurringOccurrences.transactionId, transactions.id),
+      )
       .where(like(transactions.date, `${year}%`));
   } catch (error) {
     console.error(
@@ -366,3 +408,47 @@ export async function deleteTransaction(id: number) {
   return db.delete(transactions).where(eq(transactions.id, id)).returning();
 }
 
+
+// NETWORK-READY: If a backend is added later, replace this with
+// fetch(DELETE /api/history/transactions/:id), keeping the same
+// behavior. THE one delete History should ever call for a transaction
+// row, because a transaction row in History is not always just a
+// transaction.
+//
+// Three kinds of row reach this function and each has to be unwound its
+// own way:
+//   * an installment payment — also a slot in a plan, so removing it has
+//     to free that slot and reopen the month's reminder;
+//   * a confirmed recurring occurrence — also a month in a schedule, so
+//     removing it has to send that month back to pending;
+//   * everything else — an ordinary expense or income, deleted outright.
+//
+// Deleting the bare transactions row in the first two cases is the bug
+// this prevents: the plan or the schedule would go on claiming the month
+// was handled, pointing at money that no longer exists, with no way back.
+// Dispatching here rather than in the UI means every future caller gets
+// that for free, and the three undos cannot drift apart.
+//
+// Imported lazily for the same reason deleteContribution imports
+// deleteTransfer that way: both modules write to tables this one owns,
+// so resolving them at call time keeps the module graph one-directional
+// at load.
+export async function deleteHistoryTransaction(id: number): Promise<void> {
+  try {
+    const { unpayInstallmentByTransaction } = await import('./installments');
+    if (await unpayInstallmentByTransaction(id)) {
+      return;
+    }
+    const { unconfirmOccurrenceByTransaction } = await import('./recurring');
+    if (await unconfirmOccurrenceByTransaction(id)) {
+      return;
+    }
+    await deleteTransaction(id);
+  } catch (error) {
+    console.error(
+      `deleteHistoryTransaction: failed to delete transaction id=${id}`,
+      error,
+    );
+    throw error;
+  }
+}

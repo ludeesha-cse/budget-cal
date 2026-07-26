@@ -15,6 +15,7 @@ import {
   getActiveCurrencies,
   getCategories,
 } from '../db/queries';
+import { isPayableAccount } from '../utils/accountTypes';
 
 export type { InstallmentPlanRow, InstallmentPaymentRow, InstallmentOccurrenceRow };
 export type InstallmentCategoryRow = Awaited<
@@ -43,6 +44,7 @@ export interface UseInstallmentPlansDataResult {
   nextAmountDueFor: (plan: InstallmentPlanRow) => number | null;
   expandedPlanId: number | null;
   toggleExpanded: (planId: number) => void;
+  loading: boolean;
 }
 
 // Plans from the transactional cache; categories, currencies and the
@@ -50,10 +52,18 @@ export interface UseInstallmentPlansDataResult {
 // — paid count, paid amount, remaining, next amount due — is arithmetic
 // over rows already in hand and stays that way: an installment schedule
 // preview is a calculation, not a read worth caching.
-export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
+// `forcedPlanId` is for InstallmentPlanDetailsScreen, which is about
+// exactly one plan and has no expand/collapse of its own: passing the
+// plan's id here makes its schedule the one this hook fetches, reusing
+// the same cached query the list screen was already filling rather than
+// adding a second per-plan hook that would have to be kept in step with
+// this one.
+export function useInstallmentPlansData(
+  forcedPlanId?: number | null,
+): UseInstallmentPlansDataResult {
   const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
 
-  const { data: plans } = useInstallmentPlans();
+  const { data: plans, isPending: plansPending } = useInstallmentPlans();
   const { data: categories } = useCategories();
   const { data: currencies } = useActiveCurrencies();
   const { data: accounts } = useAccountList();
@@ -82,11 +92,17 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
   // front would be work for a list nobody is looking at. Passing
   // expandedPlanId straight in means collapsing simply disables the
   // query rather than needing a separate teardown.
+  const detailPlanId = forcedPlanId ?? expandedPlanId;
   const { data: expandedOccurrences } =
-    useInstallmentOccurrenceHistory(expandedPlanId);
+    useInstallmentOccurrenceHistory(detailPlanId);
 
+  // Loan-tracking accounts are filtered out here as well as everywhere
+  // else money is paid from (see utils/accountTypes.ts). This picker was
+  // the one that still offered them: an installment could be paid "from"
+  // Borrowed_from_Asith, which posted a real expense against a balance
+  // that only the loan flows are supposed to move.
   const activeAccounts = useMemo(
-    () => (accounts ?? []).filter(a => a.active),
+    () => (accounts ?? []).filter(isPayableAccount),
     [accounts],
   );
 
@@ -148,5 +164,6 @@ export function useInstallmentPlansData(): UseInstallmentPlansDataResult {
     nextAmountDueFor,
     expandedPlanId,
     toggleExpanded,
+    loading: plansPending,
   };
 }

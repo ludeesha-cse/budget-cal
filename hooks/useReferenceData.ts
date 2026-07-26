@@ -1,15 +1,11 @@
 import { useMemo } from 'react';
 import { useAccountList, useCategories, useTags } from './queries';
 import { getAccounts, getCategories, getTags } from '../db/queries';
+import { isPayableAccount } from '../utils/accountTypes';
 
-// Liability/Receivable accounts are managed exclusively through the loan
-// flows (create/reactivate a loan, and Stage 9b's settlement) — posting
-// an ordinary Expense/Income straight to one would move money without
-// going through that bookkeeping (no loan_payments row, no interest
-// accrual reset), so they're never offered as a transaction account here.
-// Closed accounts can't take new activity either, for a different reason
-// (deliberately shut down) — both exclusions live in the one filter below.
-export const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+// Re-exported for the call sites that already import it from here. The
+// definition, and the reasoning, now live in utils/accountTypes.ts.
+export { NON_TRANSACTABLE_ACCOUNT_TYPES } from '../utils/accountTypes';
 
 type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
@@ -46,10 +42,7 @@ export function useReferenceData(): UseReferenceDataResult {
   const { data: tags } = useTags();
 
   const accounts = useMemo(
-    () =>
-      (accountRows ?? []).filter(
-        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
-      ),
+    () => (accountRows ?? []).filter(isPayableAccount),
     [accountRows],
   );
 

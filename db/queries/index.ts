@@ -56,6 +56,7 @@ export type {
   TopUpLoanAccountParams,
   UpdateLoanAccountParams,
   SettleLoanParams,
+  UpdateLoanPaymentParams,
 } from './loans';
 export type {
   CreateTransferParams,
@@ -110,6 +111,7 @@ export const {
   addTransaction,
   addIncome,
   getTransactionsByMonth,
+  deleteHistoryTransaction,
   getTransactionsByYear,
   getExpensesByType,
   getExpenseCurrenciesForMonth,
@@ -162,6 +164,8 @@ export const {
   updateLoanAccount,
   getLoanTotalOwed,
   settleLoan,
+  updateLoanPayment,
+  deleteLoanPayment,
   getLoanPaymentsByMonth,
   getLoanPaymentsByYear,
   getLoanOriginationsByMonth,
@@ -212,6 +216,8 @@ export const {
   getInstallmentOccurrenceHistory,
   payInstallment,
   unpayInstallment,
+  unpayInstallmentByTransaction,
+  getInstallmentPaymentForTransaction,
   getRemainingInstallmentBalance,
   // --- recurring ---
   getRecurringRules,
@@ -223,6 +229,7 @@ export const {
   getPendingOccurrences,
   confirmOccurrence,
   skipOccurrence,
+  unconfirmOccurrenceByTransaction,
   getOccurrenceHistory,
   // --- scheduled (recurring + installment occurrences, merged) ---
   getPendingScheduledPayments,

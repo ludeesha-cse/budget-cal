@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Trash2, Wallet } from 'lucide-react-native';
 import HistoryRowDateBlock from './HistoryRowDateBlock';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -19,6 +19,58 @@ type Props = {
   onDelete: () => void;
 };
 
+// Whether tapping this row should open the editor.
+//
+// A scheduled payment is a real transactions row, but it is also a step
+// in a plan: an installment slot, or a month of a recurring rule. Its
+// amount belongs to that plan, not to this row, so editing it here would
+// let the payments quietly stop summing to what the plan says is owed —
+// and there would be nothing on the plan's own screen to explain the
+// discrepancy. Those rows are therefore delete-only, and deleting one
+// unwinds the plan step with it (see deleteHistoryTransaction).
+//
+// The exception is a "Pay custom" installment payment: that amount was
+// always the user's own number rather than the plan's, so correcting it
+// is correcting a typo, exactly like any ordinary expense.
+function isEditable(transaction: TransactionRowData): boolean {
+  if (transaction.recurringOccurrenceId != null) {
+    return false;
+  }
+  if (transaction.installmentPaymentId != null) {
+    return transaction.installmentIsCustomAmount === true;
+  }
+  return true;
+}
+
+function lockedLabel(transaction: TransactionRowData): string | null {
+  if (transaction.recurringOccurrenceId != null) {
+    return 'RECURRING';
+  }
+  if (
+    transaction.installmentPaymentId != null &&
+    transaction.installmentIsCustomAmount !== true
+  ) {
+    return 'INSTALLMENT';
+  }
+  return null;
+}
+
+// Said on the press rather than left to be inferred from a tap that does
+// nothing — and it names the way forward, because there always is one.
+function explainLocked(transaction: TransactionRowData): void {
+  if (transaction.recurringOccurrenceId != null) {
+    Alert.alert(
+      'Recurring payment',
+      'This came from a recurring rule, so its amount belongs to that rule rather than to this entry. Delete it here to send the month back to pending, then confirm it again with the right figure — or change the rule itself under Recurring Rules.',
+    );
+    return;
+  }
+  Alert.alert(
+    'Scheduled installment',
+    'This paid a fixed installment, so its amount is the plan\u2019s rather than yours to change here. Delete it to free that installment up again, then use Pay custom on the plan if you meant to pay a different amount.',
+  );
+}
+
 function TransactionRow({
   transaction,
   tags,
@@ -28,6 +80,8 @@ function TransactionRow({
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const isIncome = transaction.entryType === 'Income';
+  const editable = isEditable(transaction);
+  const scheduledBadge = lockedLabel(transaction);
   // Highlights any transaction recorded in a currency other than the
   // app's current default — this is the fix for the "an expense in a
   // different currency silently deducted from the wrong budget" report:
@@ -37,7 +91,12 @@ function TransactionRow({
     defaultCurrencyId != null && transaction.currencyId !== defaultCurrencyId;
 
   return (
-    <Pressable style={styles.row} onPress={onPress}>
+    // A locked row is deliberately still a Pressable rather than a plain
+    // View: pressing it says why it cannot be edited, which is more
+    // useful than a tap that does nothing at all.
+    <Pressable
+      style={styles.row}
+      onPress={editable ? onPress : () => explainLocked(transaction)}>
       <HistoryRowDateBlock date={transaction.date} />
       <View style={styles.rowDetails}>
         <Text style={[styles.rowTitle, { color: colors.text }]}>
@@ -45,8 +104,19 @@ function TransactionRow({
             transaction.categoryName ||
             (isIncome ? 'Income' : 'Expense')}
         </Text>
-        {(transaction.categoryName || tags.length > 0 || isNonDefaultCurrency) && (
+        {(transaction.categoryName ||
+          tags.length > 0 ||
+          isNonDefaultCurrency ||
+          scheduledBadge) && (
           <View style={styles.badgeRow}>
+            {scheduledBadge && (
+              <View style={[styles.badge, { borderColor: colors.textSecondary }]}>
+                <Text
+                  style={[typography.eyebrow, styles.badgeText, { color: colors.textSecondary }]}>
+                  {scheduledBadge}
+                </Text>
+              </View>
+            )}
             {isNonDefaultCurrency && (
               <View style={[styles.badge, styles.currencyBadge, { borderColor: colors.primary }]}>
                 <Text style={[typography.eyebrow, styles.badgeText, { color: colors.primary }]}>

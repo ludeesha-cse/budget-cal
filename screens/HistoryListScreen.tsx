@@ -12,9 +12,11 @@ import LoanOriginationRow from '../components/history/LoanOriginationRow';
 import TransferRow from '../components/history/TransferRow';
 import TransactionRow from '../components/history/TransactionRow';
 import EditTransferModal from '../components/history/EditTransferModal';
+import EditLoanPaymentModal from '../components/history/EditLoanPaymentModal';
 import { useTransactionHistoryFilters } from '../hooks/useTransactionHistoryFilters';
 import { useTransactionHistoryData } from '../hooks/useTransactionHistoryData';
 import { useEditTransferModal } from '../hooks/useEditTransferModal';
+import { useEditLoanPaymentModal } from '../hooks/useEditLoanPaymentModal';
 import { useTransactionActions } from '../hooks/useTransactionActions';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography } from '../theme/typography';
@@ -41,7 +43,9 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
     });
 
   const editTransferModal = useEditTransferModal();
-  const { handleDelete, handleDeleteTransfer } = useTransactionActions();
+  const editLoanPaymentModal = useEditLoanPaymentModal();
+  const { handleDelete, handleDeleteTransfer, handleDeleteLoanPayment } =
+    useTransactionActions();
 
   return (
     <ScreenBackground colors={colors} edges={['top']}>
@@ -79,7 +83,18 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
             ItemSeparatorComponent={RowSeparator}
             renderItem={({ item }) => {
               if (item.kind === 'loanPayment') {
-                return <LoanPaymentRow loanPayment={item.data} />;
+                return (
+                  <LoanPaymentRow
+                    loanPayment={item.data}
+                    onPress={() => editLoanPaymentModal.open(item.data)}
+                    onDelete={() =>
+                      handleDeleteLoanPayment(
+                        item.data.id,
+                        item.data.loanAccountType === 'Liability',
+                      )
+                    }
+                  />
+                );
               }
 
               if (item.kind === 'loanOrigination') {
@@ -110,6 +125,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
         )}
 
         <EditTransferModal modal={editTransferModal} />
+        <EditLoanPaymentModal modal={editLoanPaymentModal} />
 
         <NumericInputAccessory />
       </View>

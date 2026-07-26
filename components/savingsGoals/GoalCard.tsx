@@ -1,45 +1,47 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, PiggyBank, Wallet } from 'lucide-react-native';
+import {
+  AlertTriangle,
+  ChevronRight,
+  PiggyBank,
+  Plus,
+  Wallet,
+} from 'lucide-react-native';
 import Card from '../Card';
 import ProgressBar from '../common/ProgressBar';
-import GoalDetails from './GoalDetails';
+import ActionButtons, { type ActionButtonItem } from '../common/ActionButtons';
+import { Pencil } from 'lucide-react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
 import { formatAmount, formatPercent } from '../../utils/formatAmount';
 import { getProgress, getRequiredPerMonth } from '../../utils/savingsMath';
-import type {
-  SavingsContributionRow,
-  UseSavingsTransferFormResult,
-} from '../../hooks/useSavingsTransferForm';
 import type { SavingsGoalRow } from '../../hooks/useSavingsGoalsData';
 
 type Props = {
   goal: SavingsGoalRow;
   today: string;
-  expanded: boolean;
-  contributions: SavingsContributionRow[] | undefined;
-  onToggleExpand: () => void;
-  transferForm: UseSavingsTransferFormResult;
+  onAddMoney: () => void;
   onEditGoal: () => void;
-  onSetStatus: (status: 'active' | 'achieved' | 'abandoned') => void;
-  onDeleteGoal: () => void;
+  onOpenDetails: () => void;
 };
 
-// The single largest JSX block in the codebase before this refactor —
-// card header (icon/name/status/amount/percent-funded pill), progress
-// bar, target-date meta line, the Details toggle, and (when expanded)
-// GoalDetails.
+// Card header (icon/name/status/amount/percent-funded pill), progress
+// bar, target-date meta line, and the two actions worth reaching for
+// every time.
+//
+// WHAT MOVED, AND WHY. "Add money" used to be buried two taps deep,
+// inside an expanded Details section — the single most common thing
+// anyone does with a savings goal, hidden behind the least common.
+// It is now the card's primary button. Everything rare (mark achieved,
+// abandon, delete) and everything long (the funding history) moved the
+// other way, onto the goal's own screen, where a history row has room to
+// carry its own edit and remove controls.
 function GoalCard({
   goal,
   today,
-  expanded,
-  contributions,
-  onToggleExpand,
-  transferForm,
+  onAddMoney,
   onEditGoal,
-  onSetStatus,
-  onDeleteGoal,
+  onOpenDetails,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
 
@@ -55,6 +57,20 @@ function GoalCard({
     ? getRequiredPerMonth(remaining, goal.targetDate, today)
     : undefined;
   const funded = progressPct >= 100;
+  const canAddMoney = goal.status === 'active' && !goal.needsAccount;
+
+  const actionItems: ActionButtonItem[] = [];
+  if (canAddMoney) {
+    actionItems.push({
+      key: 'add',
+      icon: Plus,
+      label: 'Add money',
+      solid: true,
+      grow: true,
+      onPress: onAddMoney,
+    });
+  }
+  actionItems.push({ key: 'edit', icon: Pencil, onPress: onEditGoal });
 
   return (
     <Card colors={colors} style={styles.card}>
@@ -147,22 +163,19 @@ function GoalCard({
         <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>No target date set</Text>
       )}
 
-      <Pressable onPress={onToggleExpand}>
-        <Text style={[styles.detailsLink, { color: colors.primary }]}>
-          {expanded ? 'Hide details' : 'Details'}
-        </Text>
-      </Pressable>
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-      {expanded && (
-        <GoalDetails
-          goal={goal}
-          contributions={contributions}
-          transferForm={transferForm}
-          onEditGoal={onEditGoal}
-          onSetStatus={onSetStatus}
-          onDeleteGoal={onDeleteGoal}
-        />
-      )}
+      {/* A goal with no usable account cannot receive money — the line
+          above already says to pick one, so the button that would fail is
+          simply not offered. Same for a goal that is no longer active. */}
+      <ActionButtons style={styles.actionsRow} items={actionItems} />
+
+      <Pressable style={styles.detailsRow} onPress={onOpenDetails}>
+        <Text style={[styles.detailsLink, { color: colors.primary }]}>
+          History &amp; settings
+        </Text>
+        <ChevronRight size={15} color={colors.primary} />
+      </Pressable>
     </Card>
   );
 }
@@ -233,8 +246,19 @@ const styles = StyleSheet.create({
   progressBarBg: {
     marginTop: 10,
   },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 12,
+  },
+  actionsRow: {
+    marginBottom: 10,
+  },
+  detailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   detailsLink: {
-    marginTop: 10,
     fontWeight: '600',
     fontSize: scaleFont(13),
   },

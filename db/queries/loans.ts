@@ -854,6 +854,196 @@ export async function settleLoan(params: SettleLoanParams): Promise<void> {
   }
 }
 
+export type UpdateLoanPaymentParams = {
+  paymentId: number;
+  paymentAmount: number;
+  counterpartAccountId: number;
+  date: string; // 'YYYY-MM-DD'
+};
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PUT
+// /api/loan-payments/:id), keeping the same input shape. Corrects a
+// repayment or collection that was recorded wrong — the mistyped-amount
+// case, which until now had no fix anywhere in the app short of deleting
+// the whole loan.
+//
+// HOW THE LOAN BALANCE IS CORRECTED, and why by the DIFFERENCE rather
+// than by recomputing from the loan's original principal: a loan can
+// have several payments against it, and each later one was applied to
+// the balance the earlier ones left behind. Re-deriving "principal minus
+// this payment" would silently discard every payment made after this
+// one. Moving the balance by exactly (old − new) leaves all of those
+// intact and lands on the right figure whichever order they were made
+// in.
+//
+// The one case the difference rule cannot reconstruct is an OVERPAYMENT:
+// settleLoan treats any amount at or above what is owed as a full
+// payoff and zeroes the balance, so the surplus is not recorded
+// anywhere. Editing such a payment down restores the surplus as
+// outstanding debt. That is a self-inflicted and rare situation, and the
+// alternative — storing the pre-payment balance on every row forever to
+// serve it — would cost more than it is worth.
+//
+// Interest is deliberately NOT re-accrued here. lastAccrualAnchorDate
+// records when accrual restarted, and correcting how much was paid does
+// not change when that happened; the interest already folded into the
+// principal stays folded.
+export async function updateLoanPayment(
+  params: UpdateLoanPaymentParams,
+): Promise<void> {
+  try {
+    if (params.paymentAmount <= 0) {
+      throw new Error('Enter a payment amount greater than zero.');
+    }
+    const [payment] = await db
+      .select()
+      .from(loanPayments)
+      .where(eq(loanPayments.id, params.paymentId))
+      .limit(1);
+    if (!payment) {
+      throw new Error('That payment no longer exists.');
+    }
+    const [loanAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, payment.loanAccountId))
+      .limit(1);
+    if (!loanAccount) {
+      throw new Error('That loan account no longer exists.');
+    }
+    const type = loanAccount.type as LoanAccountType;
+    const sign = counterpartDeltaSign(type);
+    const difference = payment.amount - params.paymentAmount;
+
+    const [balanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(
+        and(
+          eq(accountBalances.accountId, payment.loanAccountId),
+          eq(accountBalances.currencyId, payment.currencyId),
+        ),
+      )
+      .limit(1);
+    const newOutstanding = Math.max(0, (balanceRow?.balance ?? 0) + difference);
+
+    await db.transaction(async tx => {
+      await upsertAccountBalanceWithin(
+        tx,
+        payment.loanAccountId,
+        payment.currencyId,
+        newOutstanding,
+      );
+      // A payment that closed the loan and is now smaller leaves debt
+      // behind, so the loan has to come back — and one edited UP to
+      // cover everything closes it, exactly as settleLoan would have.
+      await tx
+        .update(accounts)
+        .set({ active: newOutstanding > 0 })
+        .where(eq(accounts.id, payment.loanAccountId));
+
+      // The real account, in two moves rather than one, because the
+      // money may have been recorded against the wrong account as well
+      // as the wrong amount: take the original amount back out of
+      // wherever it was put, then apply the new amount where it belongs.
+      // When neither changed these cancel to nothing.
+      await shiftAccountBaselineWithin(
+        tx,
+        payment.counterpartAccountId,
+        payment.currencyId,
+        sign * payment.amount,
+      );
+      await shiftAccountBaselineWithin(
+        tx,
+        params.counterpartAccountId,
+        payment.currencyId,
+        -sign * params.paymentAmount,
+      );
+
+      await tx
+        .update(loanPayments)
+        .set({
+          amount: params.paymentAmount,
+          counterpartAccountId: params.counterpartAccountId,
+          date: params.date,
+        })
+        .where(eq(loanPayments.id, params.paymentId));
+    });
+  } catch (error) {
+    console.error(
+      `updateLoanPayment: failed to update loan payment id=${params.paymentId}`,
+      params,
+      error,
+    );
+    throw error;
+  }
+}
+
+// NETWORK-READY: If a backend is added later, replace this with
+// fetch(DELETE /api/loan-payments/:id). Undoes a repayment or collection
+// outright: the money goes back where it came from and the debt returns.
+// Reopens the loan if this payment is what closed it — same reasoning as
+// updateLoanPayment above, and the same difference rule, since deleting
+// is just editing the amount to nothing.
+export async function deleteLoanPayment(paymentId: number): Promise<void> {
+  try {
+    const [payment] = await db
+      .select()
+      .from(loanPayments)
+      .where(eq(loanPayments.id, paymentId))
+      .limit(1);
+    if (!payment) {
+      throw new Error('That payment no longer exists.');
+    }
+    const [loanAccount] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, payment.loanAccountId))
+      .limit(1);
+    if (!loanAccount) {
+      throw new Error('That loan account no longer exists.');
+    }
+    const sign = counterpartDeltaSign(loanAccount.type as LoanAccountType);
+    const [balanceRow] = await db
+      .select()
+      .from(accountBalances)
+      .where(
+        and(
+          eq(accountBalances.accountId, payment.loanAccountId),
+          eq(accountBalances.currencyId, payment.currencyId),
+        ),
+      )
+      .limit(1);
+    const restored = (balanceRow?.balance ?? 0) + payment.amount;
+
+    await db.transaction(async tx => {
+      await upsertAccountBalanceWithin(
+        tx,
+        payment.loanAccountId,
+        payment.currencyId,
+        restored,
+      );
+      await tx
+        .update(accounts)
+        .set({ active: restored > 0 })
+        .where(eq(accounts.id, payment.loanAccountId));
+      await shiftAccountBaselineWithin(
+        tx,
+        payment.counterpartAccountId,
+        payment.currencyId,
+        sign * payment.amount,
+      );
+      await tx.delete(loanPayments).where(eq(loanPayments.id, paymentId));
+    });
+  } catch (error) {
+    console.error(
+      `deleteLoanPayment: failed to delete loan payment id=${paymentId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
 // Aliased twice because a loan_payments row references `accounts` from
 // both sides (the loan account and the counterpart account) — a plain
 // join can't disambiguate two references to the same table.
@@ -867,6 +1057,10 @@ function selectLoanPaymentColumns() {
     loanAccountId: loanPayments.loanAccountId,
     loanAccountName: loanAccountAlias.name,
     loanAccountType: loanAccountAlias.type,
+    // The bare counterparty name, so History can title an edit sheet
+    // "Edit repayment — Asith" rather than with the prefixed account
+    // name. Same reason the origination rows already carry it.
+    counterpartyName: loanDetails.counterpartyName,
     counterpartAccountId: loanPayments.counterpartAccountId,
     counterpartAccountName: counterpartAccountAlias.name,
     amount: loanPayments.amount,
@@ -895,6 +1089,10 @@ export async function getLoanPaymentsByMonth(month: string) {
         counterpartAccountAlias,
         eq(loanPayments.counterpartAccountId, counterpartAccountAlias.id),
       )
+      .innerJoin(
+        loanDetails,
+        eq(loanDetails.accountId, loanPayments.loanAccountId),
+      )
       .innerJoin(currencies, eq(loanPayments.currencyId, currencies.id))
       .where(like(loanPayments.date, `${month}%`));
   } catch (error) {
@@ -920,6 +1118,10 @@ export async function getLoanPaymentsByYear(year: string) {
       .innerJoin(
         counterpartAccountAlias,
         eq(loanPayments.counterpartAccountId, counterpartAccountAlias.id),
+      )
+      .innerJoin(
+        loanDetails,
+        eq(loanDetails.accountId, loanPayments.loanAccountId),
       )
       .innerJoin(currencies, eq(loanPayments.currencyId, currencies.id))
       .where(like(loanPayments.date, `${year}%`));

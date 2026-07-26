@@ -1,13 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, TextInput } from 'react-native';
 import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
 import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
-import NumericInputAccessory from '../NumericInputAccessory';
+import NumericInputAccessory, {
+  NUMERIC_KEYBOARD_ACCESSORY_ID,
+} from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
+import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import type { UseInstallmentPayResult } from '../../hooks/useInstallmentPay';
 import type {
   InstallmentAccountRow,
@@ -21,6 +24,10 @@ type Props = {
   nextAmountDueFor: (plan: InstallmentPlanRow) => number | null;
 };
 
+// One sheet for both "Pay Next" and "Pay custom" — everything except the
+// amount is the same question, so splitting them into two components
+// would be two copies of the account picker and the date field kept in
+// step by hand. `pay.isCustom` is the only branch.
 function InstallmentPayModal({
   pay,
   activeAccounts,
@@ -28,8 +35,18 @@ function InstallmentPayModal({
   nextAmountDueFor,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
-  const { target, values, setAccountId, setDate, canSave, isMissing, close, submit } =
-    pay;
+  const {
+    target,
+    values,
+    setAccountId,
+    setDate,
+    setAmount,
+    isCustom,
+    canSave,
+    isMissing,
+    close,
+    submit,
+  } = pay;
 
   return (
     <BottomSheetModal
@@ -39,15 +56,56 @@ function InstallmentPayModal({
       canSave={canSave}
       title={
         target
-          ? `Pay installment ${paidCountFor(target.id) + 1} of ${target.numberOfMonths} — ${target.name}`
+          ? `${isCustom ? 'Pay custom' : 'Pay'} installment ${
+              paidCountFor(target.id) + 1
+            } of ${target.numberOfMonths} — ${target.name}`
           : undefined
       }
       saveLabel="Pay">
       {target && (
         <>
-          <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
-            Amount: {formatAmount(nextAmountDueFor(target) ?? 0, target.currencyCode)}
-          </Text>
+          {isCustom ? (
+            <>
+              {/* Names the scheduled figure rather than hiding it: the
+                  point of a custom payment is almost always that it
+                  differs from this number, so it is the reference the
+                  user is typing against. */}
+              <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
+                Scheduled amount is{' '}
+                {formatAmount(
+                  nextAmountDueFor(target) ?? 0,
+                  target.currencyCode,
+                )}
+                . Paying more clears the plan sooner; this still ticks off
+                installment {paidCountFor(target.id) + 1}.
+              </Text>
+              <Text style={[styles.label, { color: colors.text }]}>
+                Amount ({target.currencyCode})
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.border,
+                    color: colors.text,
+                    backgroundColor: colors.surface,
+                  },
+                  fieldErrorStyle(colors, isMissing('amount')),
+                ]}
+                value={values.amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+                returnKeyType="done"
+                inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
+                placeholder="0.00"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </>
+          ) : (
+            <Text style={[styles.modalHint, { color: colors.textSecondary }]}>
+              Amount: {formatAmount(nextAmountDueFor(target) ?? 0, target.currencyCode)}
+            </Text>
+          )}
 
           <Text style={[styles.label, { color: colors.text }]}>Pay from</Text>
           {activeAccounts.length === 0 ? (
@@ -86,6 +144,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 12,
     marginBottom: 4,
+  },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 16,
   },
 });
 

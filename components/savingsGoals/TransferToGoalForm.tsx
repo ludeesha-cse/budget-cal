@@ -18,9 +18,15 @@ type Props = {
   form: UseSavingsTransferFormResult;
 };
 
-// The "Transfer & Save" mini-form inside an expanded goal card. Moves
-// real money from another account into the goal's own account and
-// records the earmark in the same write — see createSavingsTransfer.
+// The body of the "Add money" bottom sheet. Moves real money from
+// another account into the goal's own account and records the earmark in
+// the same write — see createSavingsTransfer.
+//
+// NO BUTTONS OF ITS OWN. This used to be a mini-form expanded inside a
+// goal card, so it carried its own Cancel / Transfer & Save pair. It now
+// has exactly one host — the sheet on SavingsGoalsScreen — whose footer
+// already calls form.close and form.submit, and two rows of buttons
+// saying the same thing is worse than one.
 //
 // There is no currency picker: a goal's funding is always in the goal's
 // own currency, and the source list is already filtered to accounts that
@@ -29,7 +35,7 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
   const { colors } = useTheme();
 
   return (
-    <View style={[styles.form, { borderColor: colors.border }]}>
+    <View style={styles.form}>
       <Text style={[styles.label, { color: colors.text }]}>
         Transfer from
       </Text>
@@ -104,35 +110,6 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
         records it in History as "{goal.name}".
       </Text>
 
-      <View style={styles.rowActions}>
-        <Pressable
-          style={[styles.smallPillButton, { borderColor: colors.border }]}
-          onPress={form.close}>
-          <Text style={[styles.smallPillButtonText, { color: colors.text }]}>
-            Cancel
-          </Text>
-        </Pressable>
-        {/* Muted but still pressable while incomplete — pressing is what
-            reveals which controls are missing. Same reasoning as
-            BottomSheetModal's footer button. */}
-        <Pressable
-          style={[
-            styles.smallPillButtonSolid,
-            {
-              backgroundColor: form.canSave ? colors.primary : colors.neutralSoft,
-            },
-          ]}
-          onPress={form.submit}>
-          <Text
-            style={[
-              styles.smallPillButtonText,
-              { color: form.canSave ? colors.primaryText : colors.textSecondary },
-            ]}>
-            Transfer &amp; Save
-          </Text>
-        </Pressable>
-      </View>
-
       <NumericInputAccessory />
     </View>
   );
@@ -168,21 +145,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     lineHeight: scaleFont(17),
   },
-  rowActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 8,
-    marginTop: 10,
-  },
   smallPillButton: {
     alignSelf: 'flex-start',
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  smallPillButtonSolid: {
-    alignSelf: 'flex-start',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,

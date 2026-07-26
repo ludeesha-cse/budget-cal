@@ -454,6 +454,17 @@ export const installmentPayments = sqliteTable(
       .notNull()
       .references(() => transactions.id),
     paidDate: text('paid_date').notNull(), // 'YYYY-MM-DD'
+    // Whether this slot was paid with an amount the user typed rather
+    // than the plan's own scheduled figure ("Pay custom"). It decides
+    // one thing only: a fixed payment can be UNDONE but not edited —
+    // its amount is the plan's, and letting it be edited row by row
+    // would let the payments quietly stop summing to the plan — while a
+    // custom one was always the user's own number, so correcting it is
+    // just correcting a typo. History reads this to know whether to
+    // offer the edit action at all.
+    isCustomAmount: integer('is_custom_amount', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     createdAt: int('created_at').notNull(),
   },
   table => ({

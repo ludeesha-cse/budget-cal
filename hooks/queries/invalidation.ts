@@ -266,6 +266,24 @@ export const invalidates = {
   ] as QueryKey[],
   occurrenceSkip: [...RECURRING_STATE, ...SCHEDULED_STATE] as QueryKey[],
 
+  // Deleting a transaction from History, where the row might turn out to
+  // be an installment payment or a confirmed recurring occurrence rather
+  // than an ordinary expense (see deleteHistoryTransaction). Which of the
+  // three it is, is decided inside the write — so this is the union of
+  // all three blast radii rather than an attempt to guess in advance.
+  // The asymmetry this file is built on applies exactly here: a
+  // redundant invalidation costs one database read, a missing one leaves
+  // a wrong number on screen.
+  historyTransactionDelete: [
+    ...LEDGER,
+    ...ACCOUNT_MONEY,
+    ...BUDGET_FIGURES,
+    ...INSTALLMENT_POSITIONS,
+    ...RECURRING_STATE,
+    ...SCHEDULED_STATE,
+    ...SAVINGS_POSITIONS,
+  ] as QueryKey[],
+
   // Editing a goal's own fields — name, target, target date, or which
   // account it saves into. None of those move money, so balances are
   // deliberately left alone; the goal's saved figure is re-derived from

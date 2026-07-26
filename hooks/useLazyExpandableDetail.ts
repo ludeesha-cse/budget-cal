@@ -13,6 +13,13 @@ export interface UseLazyExpandableDetailResult<T> {
   // history is read-only once fetched), so it's a separate method rather
   // than something toggle itself has to account for.
   refresh: (id: number) => Promise<void>;
+  // Explicit open/close, for consumers whose detail lives in a modal
+  // rather than in an expanding card. A sheet's Close button has to mean
+  // "close" — routing it through toggle would need the caller to pass
+  // back the id it is closing, and toggling the id the sheet was opened
+  // with would reopen it just as often as it closed it.
+  open: (id: number) => void;
+  close: () => void;
 }
 
 // The "tap a row to expand its detail, fetched once and cached from then
@@ -31,6 +38,24 @@ export function useLazyExpandableDetail<T>(
 ): UseLazyExpandableDetailResult<T> {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [dataById, setDataById] = useState<Record<number, T[]>>({});
+
+  const open = useCallback(
+    (id: number) => {
+      if (id in dataById) {
+        setExpandedId(id);
+        return;
+      }
+      // Not cached yet — fetch, store, and only then expand; see the
+      // note in toggle below for why that order matters.
+      fetchFn(id).then(result => {
+        setDataById(current => ({ ...current, [id]: result }));
+        setExpandedId(id);
+      });
+    },
+    [dataById, fetchFn],
+  );
+
+  const close = useCallback(() => setExpandedId(null), []);
 
   const toggle = useCallback(
     (id: number) => {
@@ -63,5 +88,5 @@ export function useLazyExpandableDetail<T>(
     [fetchFn],
   );
 
-  return { expandedId, dataById, toggle, refresh };
+  return { expandedId, dataById, toggle, refresh, open, close };
 }

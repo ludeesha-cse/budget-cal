@@ -503,3 +503,51 @@ export async function getOccurrenceHistory(ruleId: number) {
   }
 }
 
+
+// NETWORK-READY: If a backend is added later, replace this with
+// fetch(DELETE /api/transactions/:id/occurrence). The mirror of
+// unpayInstallmentByTransaction, for the other kind of scheduled money:
+// deleting a confirmed recurring payment from History has to send its
+// occurrence back to pending, not just remove the transaction.
+//
+// Otherwise the occurrence stays 'confirmed' pointing at a transaction
+// that is gone: the Dashboard would count the month as handled while the
+// money it was supposed to record no longer exists, and there would be
+// no way to confirm it again.
+//
+// Returns false when the transaction is not a recurring occurrence, so
+// the caller can fall through to an ordinary delete.
+export async function unconfirmOccurrenceByTransaction(
+  transactionId: number,
+): Promise<boolean> {
+  try {
+    const [occurrence] = await db
+      .select()
+      .from(recurringOccurrences)
+      .where(eq(recurringOccurrences.transactionId, transactionId))
+      .limit(1);
+    if (!occurrence) {
+      return false;
+    }
+    await db.transaction(async tx => {
+      // Order matters: the occurrence's link to the transaction is
+      // cleared BEFORE the transaction row goes, so there is never a
+      // moment where a confirmed occurrence points at nothing.
+      await tx
+        .update(recurringOccurrences)
+        .set({ status: 'pending', transactionId: null, resolvedAt: null })
+        .where(eq(recurringOccurrences.id, occurrence.id));
+      // Deleting the transaction IS the balance reversal — every account
+      // balance is derived from the transactions table, so removing the
+      // row takes its effect out on the very next read.
+      await tx.delete(transactions).where(eq(transactions.id, transactionId));
+    });
+    return true;
+  } catch (error) {
+    console.error(
+      `unconfirmOccurrenceByTransaction: failed to unconfirm the occurrence behind transaction id=${transactionId}`,
+      error,
+    );
+    throw error;
+  }
+}

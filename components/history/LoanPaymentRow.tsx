@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Wallet } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Trash2, Wallet } from 'lucide-react-native';
 import HistoryRowDateBlock from './HistoryRowDateBlock';
 import { useTheme } from '../../contexts/ThemeContext';
 import { typography, scaleFont } from '../../theme/typography';
@@ -9,15 +9,26 @@ import type { LoanPaymentRow as LoanPaymentRowData } from '../../hooks/useTransa
 
 type Props = {
   loanPayment: LoanPaymentRowData;
+  onPress: () => void;
+  onDelete: () => void;
 };
 
 // A repayment or a collection — the money-flowing-BACK half of the loan
 // ledger, whose other half is LoanOriginationRow.
 //
-// Read-only — unlike transfers and transactions, a loan payment row has
-// no edit or delete action of its own here (settling/undoing a payment
-// is done from LiabilitiesReceivablesScreen).
-function LoanPaymentRow({ loanPayment }: Props): React.JSX.Element {
+// EDITABLE AND DELETABLE, unlike the origination row beside it. The
+// asymmetry is deliberate and follows what each row means: an
+// origination is the loan itself, and correcting how much was borrowed
+// is editing the LOAN (that is what the Liabilities & Receivables screen
+// is for), whereas a payment is a single event against a loan that
+// already exists — the same kind of thing as a transfer, and correctable
+// in the same place. Before this, a mistyped repayment could not be
+// fixed anywhere in the app.
+function LoanPaymentRow({
+  loanPayment,
+  onPress,
+  onDelete,
+}: Props): React.JSX.Element {
   const { colors } = useTheme();
 
   // Money flows from the real account into the loan account when paying
@@ -33,7 +44,7 @@ function LoanPaymentRow({ loanPayment }: Props): React.JSX.Element {
     : loanPayment.counterpartAccountName;
 
   return (
-    <View style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <HistoryRowDateBlock date={loanPayment.date} />
       <View style={styles.rowDetails}>
         <Text style={[styles.rowTitle, { color: colors.text }]}>
@@ -59,16 +70,21 @@ function LoanPaymentRow({ loanPayment }: Props): React.JSX.Element {
           used to be brand-teal in both directions, which read as
           "something loan-ish happened" and left the direction to be
           worked out from the account arrow. */}
-      <Text
-        style={[
-          typography.amountMono,
-          styles.amount,
-          { color: isLiability ? colors.danger : colors.success },
-        ]}>
-        {isLiability ? '-' : '+'}
-        {formatAmount(loanPayment.amount, loanPayment.currencyCode)}
-      </Text>
-    </View>
+      <View style={styles.rowActions}>
+        <Text
+          style={[
+            typography.amountMono,
+            styles.amount,
+            { color: isLiability ? colors.danger : colors.success },
+          ]}>
+          {isLiability ? '-' : '+'}
+          {formatAmount(loanPayment.amount, loanPayment.currencyCode)}
+        </Text>
+        <Pressable hitSlop={8} style={styles.deleteButton} onPress={onDelete}>
+          <Trash2 size={15} color={colors.danger} />
+        </Pressable>
+      </View>
+    </Pressable>
   );
 }
 
@@ -113,6 +129,12 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: scaleFont(15),
     fontWeight: '700',
+  },
+  rowActions: {
+    alignItems: 'flex-end',
+  },
+  deleteButton: {
+    marginTop: 6,
   },
 });
 

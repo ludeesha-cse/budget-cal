@@ -1,0 +1,1 @@
+ALTER TABLE `installment_payments` ADD `is_custom_amount` integer DEFAULT false NOT NULL;

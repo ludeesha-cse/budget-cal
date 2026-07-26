@@ -2,6 +2,7 @@ import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import BottomSheetModal from '../components/BottomSheetModal';
+import OccurrenceHistoryList from '../components/recurringRules/OccurrenceHistoryList';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
 import SegmentedToggle, {
@@ -58,6 +59,8 @@ function RecurringRulesScreen(): React.JSX.Element {
   // will never be expanded in a given session. Read-only, unlike
   // SavingsGoalsScreen's contributions, so no refresh() call is needed.
   const historyDetail = useLazyExpandableDetail(getOccurrenceHistory);
+  const historyRule =
+    visibleRules.find(rule => rule.id === historyDetail.expandedId) ?? null;
 
   const ruleForm = useRecurringRuleForm(accounts, categories);
 
@@ -121,9 +124,7 @@ function RecurringRulesScreen(): React.JSX.Element {
             <RuleCard
               rule={item}
               index={index}
-              expanded={historyDetail.expandedId === item.id}
-              history={historyDetail.dataById[item.id]}
-              onToggleHistory={() => historyDetail.toggle(item.id)}
+              onOpenHistory={() => historyDetail.open(item.id)}
               onEdit={() => ruleForm.openEdit(item)}
               onToggleActive={() => handleToggleActive(item)}
               onDelete={() => handleDelete(item)}
@@ -155,6 +156,23 @@ function RecurringRulesScreen(): React.JSX.Element {
           categories={categories}
         />
         <NumericInputAccessory />
+      </BottomSheetModal>
+
+      {/* One rule's occurrence history. A sheet rather than an in-card
+          expansion: a rule that has run for a year has a long list, and
+          unfolding it in place shifted every card below it and gave the
+          list no scroll of its own. */}
+      <BottomSheetModal
+        visible={historyDetail.expandedId != null}
+        onClose={historyDetail.close}
+        title={historyRule ? `History — ${historyRule.name}` : undefined}
+        cancelLabel="Close">
+        {historyRule && (
+          <OccurrenceHistoryList
+            history={historyDetail.dataById[historyRule.id]}
+            currencyCode={historyRule.currencyCode}
+          />
+        )}
       </BottomSheetModal>
     </View>
   );

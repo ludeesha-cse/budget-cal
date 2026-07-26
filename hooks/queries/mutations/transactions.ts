@@ -1,6 +1,7 @@
 import {
   addIncome,
   addTransaction,
+  deleteHistoryTransaction,
   deleteTransaction,
   setTransactionTags,
   updateTransaction,
@@ -38,4 +39,17 @@ export function useDeleteTransaction() {
 // the tag roster itself, which nothing here creates or renames.
 export function useSetTransactionTags() {
   return useDbMutation(setTransactionTags, invalidates.transactionTagAssignment);
+}
+
+// The delete History itself should call. Unlike useDeleteTransaction
+// above, this one knows the row might be an installment payment or a
+// confirmed recurring occurrence and unwinds the plan or the schedule to
+// match — see deleteHistoryTransaction. Its invalidation is the union of
+// all three outcomes, since which one happens is decided inside the
+// write.
+export function useDeleteHistoryTransaction() {
+  return useDbMutation(
+    deleteHistoryTransaction,
+    invalidates.historyTransactionDelete,
+  );
 }

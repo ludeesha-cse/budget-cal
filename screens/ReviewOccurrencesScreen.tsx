@@ -14,6 +14,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useRowEditState } from '../hooks/useRowEditState';
+import { isPayableAccount } from '../utils/accountTypes';
 import {
   useAccountList,
   useAdvanceInstallmentSchedule as useAdvanceInstallmentScheduleMutation,
@@ -24,7 +25,7 @@ import {
   useSkipOccurrence as useSkipOccurrenceMutation,
 } from '../hooks/queries';
 
-const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+// See utils/accountTypes.ts.
 
 type AccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
@@ -63,7 +64,7 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   const accounts = useMemo<AccountRow[]>(
     () =>
       (accountRows ?? []).filter(
-        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
+        isPayableAccount,
       ),
     [accountRows],
   );

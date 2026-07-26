@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAccountList, useCategories, useRecurringRules } from './queries';
 import { getAccounts, getCategories, getRecurringRules } from '../db/queries';
+import { isPayableAccount } from '../utils/accountTypes';
 
 export type RecurringRuleRow = Awaited<ReturnType<typeof getRecurringRules>>[number];
 export type RecurringRuleAccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
@@ -11,7 +12,8 @@ export type RecurringRuleListType = 'Income' | 'Expense';
 // Same exclusion as TransactionForm/IncomeForm — a Liability/Receivable
 // account only ever moves through the loan flows, never an ordinary
 // Expense/Income posting, so a recurring rule can't point at one either.
-const NON_TRANSACTABLE_ACCOUNT_TYPES = ['Liability', 'Receivable'];
+// See utils/accountTypes.ts — a recurring rule posts an ordinary
+// transaction, so it is bound by the same rule as any other spend.
 
 export interface UseRecurringRulesDataResult {
   listType: RecurringRuleListType;
@@ -38,7 +40,7 @@ export function useRecurringRulesData(): UseRecurringRulesDataResult {
   const accounts = useMemo(
     () =>
       (accountRows ?? []).filter(
-        a => a.active && !NON_TRANSACTABLE_ACCOUNT_TYPES.includes(a.type),
+        isPayableAccount,
       ),
     [accountRows],
   );

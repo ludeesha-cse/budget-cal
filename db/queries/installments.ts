@@ -370,19 +370,26 @@ export async function getInstallmentPayments(planId: number) {
         id: installmentPayments.id,
         installmentPlanId: installmentPayments.installmentPlanId,
         installmentNumber: installmentPayments.installmentNumber,
-        accountId: installmentPayments.accountId,
+        // Account, amount and date all come from the linked
+        // transaction, never from the installment_payments row's own
+        // copies. That transaction is the single source of truth for
+        // what actually moved, and a custom-amount payment can now be
+        // corrected from History — reading the stored copies here would
+        // let this list disagree with the row the user just edited.
+        accountId: transactions.accountId,
         accountName: accounts.name,
         transactionId: installmentPayments.transactionId,
         amount: transactions.amount,
-        paidDate: installmentPayments.paidDate,
+        paidDate: transactions.date,
+        isCustomAmount: installmentPayments.isCustomAmount,
         createdAt: installmentPayments.createdAt,
       })
       .from(installmentPayments)
-      .innerJoin(accounts, eq(installmentPayments.accountId, accounts.id))
       .innerJoin(
         transactions,
         eq(installmentPayments.transactionId, transactions.id),
       )
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .where(eq(installmentPayments.installmentPlanId, planId))
       .orderBy(installmentPayments.installmentNumber);
   } catch (error) {
@@ -863,6 +870,14 @@ export type PayInstallmentParams = {
   planId: number;
   accountId: number;
   date: string; // 'YYYY-MM-DD'
+  // "Pay custom": an amount the user typed instead of the plan's own
+  // scheduled figure — paying early, rounding up to clear the plan
+  // sooner, or paying part of a month now. It still ticks off the NEXT
+  // slot, so the paid set stays the contiguous prefix everything else
+  // here relies on (see getNextUnpaidInstallmentNumber); what changes is
+  // only how much money moved, and therefore how fast the remaining
+  // balance comes down. Omit it for an ordinary scheduled payment.
+  customAmount?: number;
 };
 
 // NETWORK-READY: If a backend is added later, replace this with fetch(POST
@@ -904,10 +919,22 @@ export async function payInstallment(
     // last one, which absorbs the rounding remainder — see
     // utils/installmentMath.ts's invariant comment for why that split
     // exists at all.
-    const amount =
+    const scheduledAmount =
       nextInstallmentNumber === plan.numberOfMonths
         ? plan.finalInstallmentAmount
         : plan.monthlyAmount;
+    const isCustomAmount = params.customAmount != null;
+    if (isCustomAmount) {
+      if (
+        !Number.isFinite(params.customAmount) ||
+        (params.customAmount as number) <= 0
+      ) {
+        throw new Error('Enter an amount greater than zero.');
+      }
+    }
+    const amount = isCustomAmount
+      ? (params.customAmount as number)
+      : scheduledAmount;
     const description = `${plan.name} — ${nextInstallmentNumber} of ${plan.numberOfMonths}`;
 
     // The money-moving half, unchanged: one real transactions row plus
@@ -937,6 +964,7 @@ export async function payInstallment(
           accountId: params.accountId,
           transactionId: transaction.id,
           paidDate: params.date,
+          isCustomAmount,
           createdAt: Date.now(),
         })
         .returning();
@@ -1159,3 +1187,68 @@ export async function getRemainingInstallmentBalance(
   }
 }
 
+
+// NETWORK-READY: If a backend is added later, replace this with
+// fetch(DELETE /api/transactions/:id/installment-payment). The History
+// entry point to the same undo the plan card's Undo button performs.
+//
+// WHY IT EXISTS AT ALL: an installment payment is a real transactions
+// row, so History offers to delete it like any other. Deleting only that
+// row would leave the installment_payments row behind, pointing at a
+// transaction that no longer exists — the plan would still count the
+// slot as paid, with no money behind it, and the month's reminder would
+// stay closed. Routing History's delete through unpayInstallment instead
+// means both ends of the app mean the same thing by "remove this".
+//
+// Returns false when the transaction is not an installment payment at
+// all, so the caller can fall through to an ordinary delete.
+export async function unpayInstallmentByTransaction(
+  transactionId: number,
+): Promise<boolean> {
+  try {
+    const [payment] = await db
+      .select({ id: installmentPayments.id })
+      .from(installmentPayments)
+      .where(eq(installmentPayments.transactionId, transactionId))
+      .limit(1);
+    if (!payment) {
+      return false;
+    }
+    await unpayInstallment(payment.id);
+    return true;
+  } catch (error) {
+    console.error(
+      `unpayInstallmentByTransaction: failed to undo the installment payment behind transaction id=${transactionId}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+// Which plan-level constraints a would-be edit of an installment payment
+// has to satisfy, answered in one place so History and the plan's own
+// details screen cannot disagree. Only a CUSTOM payment is editable —
+// see installmentPayments.isCustomAmount for why.
+export async function getInstallmentPaymentForTransaction(
+  transactionId: number,
+) {
+  try {
+    const [row] = await db
+      .select({
+        id: installmentPayments.id,
+        installmentPlanId: installmentPayments.installmentPlanId,
+        installmentNumber: installmentPayments.installmentNumber,
+        isCustomAmount: installmentPayments.isCustomAmount,
+      })
+      .from(installmentPayments)
+      .where(eq(installmentPayments.transactionId, transactionId))
+      .limit(1);
+    return row ?? null;
+  } catch (error) {
+    console.error(
+      `getInstallmentPaymentForTransaction: failed to look up the installment payment behind transaction id=${transactionId}`,
+      error,
+    );
+    throw error;
+  }
+}

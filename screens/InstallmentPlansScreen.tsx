@@ -16,17 +16,11 @@ import { scaleFont } from '../theme/typography';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useInstallmentPlansData } from '../hooks/useInstallmentPlansData';
-import type {
-  InstallmentPaymentRow,
-  InstallmentPlanRow,
-} from '../hooks/useInstallmentPlansData';
+import type { InstallmentPlanRow } from '../hooks/useInstallmentPlansData';
 import { useInstallmentForm } from '../hooks/useInstallmentForm';
 import { useInstallmentPay, usePayPlanDeepLink } from '../hooks/useInstallmentPay';
 import type { SettingsStackParamList } from '../navigation/types';
-import {
-  useDeleteInstallmentPlan as useDeleteInstallmentPlanMutation,
-  useUnpayInstallment as useUnpayInstallmentMutation,
-} from '../hooks/queries';
+import { useDeleteInstallmentPlan as useDeleteInstallmentPlanMutation } from '../hooks/queries';
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
@@ -41,7 +35,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
   // hooks/queries/invalidation.ts). The call sites below are
   // unchanged — these hooks take the wrapped function's own arguments.
   const deleteInstallmentPlan = useDeleteInstallmentPlanMutation();
-  const unpayInstallment = useUnpayInstallmentMutation();
   const { colors } = useTheme();
   const confirmDelete = useConfirmDelete();
   const runAction = useAsyncAction();
@@ -55,17 +48,17 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
     currencies,
     activeAccounts,
     paymentsByPlan,
-    expandedOccurrences,
     paidCountFor,
     remainingFor,
     nextAmountDueFor,
-    expandedPlanId,
-    toggleExpanded,
   } = data;
 
   const form = useInstallmentForm({ categories, currencies, tier, openPaywall });
   const pay = useInstallmentPay(activeAccounts);
-  usePayPlanDeepLink(route, navigation, plans, pay.open);
+  // The Dashboard reminder's "Pay" button always means the scheduled
+  // amount — it is answering a specific month's reminder, not opening a
+  // free-form payment.
+  usePayPlanDeepLink(route, navigation, plans, pay.openScheduled);
 
   const handleDelete = (id: number) => {
     confirmDelete(
@@ -79,21 +72,6 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
           // invalidated every query this write affects, and awaiting it
           // waits for those refetches — a second read would be redundant.
         }, 'Cannot delete plan'),
-    );
-  };
-
-  const handleUndo = (payment: InstallmentPaymentRow) => {
-    confirmDelete(
-      'Undo payment',
-      `Undo installment ${payment.installmentNumber}? This deletes its transaction and restores the account balance.`,
-      'Undo',
-      () =>
-        runAction(async () => {
-          await unpayInstallment(payment.id);
-          // No load() here any more: the mutation above already
-          // invalidated every query this write affects, and awaiting it
-          // waits for those refetches — a second read would be redundant.
-        }, 'Cannot undo payment'),
     );
   };
 
@@ -115,15 +93,13 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
             nextAmountDueFor={nextAmountDueFor}
             remainingFor={remainingFor}
             payments={paymentsByPlan[item.id] ?? []}
-            occurrences={
-              expandedPlanId === item.id ? expandedOccurrences : undefined
-            }
-            isExpanded={expandedPlanId === item.id}
-            onToggleExpand={() => toggleExpanded(item.id)}
-            onPay={() => pay.open(item)}
+            onPay={() => pay.openScheduled(item)}
+            onPayCustom={() => pay.openCustom(item)}
             onEdit={() => form.openEdit(item)}
             onDelete={() => handleDelete(item.id)}
-            onUndo={handleUndo}
+            onOpenDetails={() =>
+              navigation.navigate('InstallmentPlanDetails', { planId: item.id })
+            }
           />
         )}
         ListEmptyComponent={<EmptyState message="No installment plans yet." />}

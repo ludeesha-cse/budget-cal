@@ -1,9 +1,11 @@
 import {
   createLoanAccount,
+  deleteLoanPayment,
   reactivateLoanAccount,
   settleLoan,
   topUpLoanAccount,
   updateLoanAccount,
+  updateLoanPayment,
 } from '../../../db/queries';
 import { invalidates, useDbMutation } from '../invalidation';
 
@@ -41,4 +43,18 @@ export function useTopUpLoanAccount() {
 // loanAccountWrite already names.
 export function useUpdateLoanAccount() {
   return useDbMutation(updateLoanAccount, invalidates.loanAccountWrite);
+}
+
+// Correcting or removing a repayment/collection moves exactly the same
+// things a settlement does — both account balances and the loan's own
+// position — plus, when a lowered payment no longer covers the debt, the
+// loan's active flag. That last one is why these use the wider
+// loanAccountWrite set rather than loanSettlement: a reopened loan has to
+// reappear in the account roster too.
+export function useUpdateLoanPayment() {
+  return useDbMutation(updateLoanPayment, invalidates.loanAccountWrite);
+}
+
+export function useDeleteLoanPayment() {
+  return useDbMutation(deleteLoanPayment, invalidates.loanAccountWrite);
 }

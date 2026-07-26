@@ -1,18 +1,21 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { CircleDollarSign, Pencil, Trash2 } from 'lucide-react-native';
+import {
+  ChevronRight,
+  CircleDollarSign,
+  Pencil,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react-native';
 import Card from '../Card';
 import ProgressRing from '../common/ProgressRing';
 import ProgressBar from '../common/ProgressBar';
 import ActionButtons, { type ActionButtonItem } from '../common/ActionButtons';
-import InstallmentHistoryList from './InstallmentHistoryList';
-import InstallmentOccurrenceHistoryList from './InstallmentOccurrenceHistoryList';
 import { useTheme } from '../../contexts/ThemeContext';
 import { scaleFont, typography } from '../../theme/typography';
 import { formatAmount } from '../../utils/formatAmount';
 import { ordinalSuffix } from '../../utils/dateUtils';
 import type {
-  InstallmentOccurrenceRow,
   InstallmentPaymentRow,
   InstallmentPlanRow,
 } from '../../hooks/useInstallmentPlansData';
@@ -23,30 +26,31 @@ type Props = {
   nextAmountDueFor: (plan: InstallmentPlanRow) => number | null;
   remainingFor: (plan: InstallmentPlanRow) => number;
   payments: InstallmentPaymentRow[];
-  // Undefined until this plan's schedule query resolves, and only ever
-  // passed for the plan that is actually expanded.
-  occurrences: InstallmentOccurrenceRow[] | undefined;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
   onPay: () => void;
+  onPayCustom: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onUndo: (payment: InstallmentPaymentRow) => void;
+  onOpenDetails: () => void;
 };
 
+// One plan's summary and its everyday actions.
+//
+// The payment history and the schedule used to unfold inside this card;
+// they now live on the plan's own screen. Twelve payments plus twelve
+// scheduled months is two dozen rows, which pushed every other plan out
+// of view and left each row too cramped to carry the undo control that
+// makes a history useful in the first place.
 function InstallmentPlanCard({
   item,
   paidCountFor,
   nextAmountDueFor,
   remainingFor,
   payments,
-  occurrences,
-  isExpanded,
-  onToggleExpand,
   onPay,
+  onPayCustom,
   onEdit,
   onDelete,
-  onUndo,
+  onOpenDetails,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const paidCount = paidCountFor(item.id);
@@ -66,10 +70,22 @@ function InstallmentPlanCard({
       grow: true,
       onPress: onPay,
     });
+    // Paying early, rounding up to clear the plan sooner, or paying part
+    // of a month now. It still answers the next installment — only the
+    // amount differs — which is why it sits beside Pay Next rather than
+    // pretending to be a different kind of payment.
+    actionItems.push({
+      key: 'payCustom',
+      icon: SlidersHorizontal,
+      label: 'Pay custom',
+      onPress: onPayCustom,
+    });
   }
+  // Icons without labels: both actions are universally understood, and
+  // the words were costing the row the space Pay custom now uses.
   actionItems.push(
-    { key: 'edit', icon: Pencil, label: 'Edit', onPress: onEdit },
-    { key: 'delete', icon: Trash2, label: 'Delete', tone: 'danger', onPress: onDelete },
+    { key: 'edit', icon: Pencil, onPress: onEdit },
+    { key: 'delete', icon: Trash2, tone: 'danger', onPress: onDelete },
   );
 
   return (
@@ -116,25 +132,12 @@ function InstallmentPlanCard({
 
       <ActionButtons style={styles.planActionsRow} items={actionItems} />
 
-      <Pressable onPress={onToggleExpand}>
+      <Pressable style={styles.historyRow} onPress={onOpenDetails}>
         <Text style={[styles.historyLink, { color: colors.primary }]}>
-          {isExpanded ? 'Hide history' : `History (${payments.length})`}
+          History &amp; schedule ({payments.length})
         </Text>
+        <ChevronRight size={15} color={colors.primary} />
       </Pressable>
-
-      {isExpanded && (
-        <>
-          <InstallmentHistoryList
-            payments={payments}
-            currencyCode={item.currencyCode}
-            onUndo={onUndo}
-          />
-          <InstallmentOccurrenceHistoryList
-            occurrences={occurrences}
-            currencyCode={item.currencyCode}
-          />
-        </>
-      )}
     </Card>
   );
 }
@@ -173,6 +176,11 @@ const styles = StyleSheet.create({
   },
   planActionsRow: {
     marginBottom: 10,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   historyLink: {
     fontWeight: '600',
