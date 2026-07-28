@@ -39,6 +39,9 @@ import {
 } from 'lucide-react-native';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDevEntitlementToggle } from '../hooks/useEntitlement';
+import { useSubscription } from '../contexts/SubscriptionContext';
+import { usePaywall } from '../contexts/PaywallContext';
+import { planLabel, formatSubscriptionDate } from '../utils/subscription';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
@@ -83,6 +86,10 @@ type SettingsRow = {
   icon: IconComponent;
   onPress: () => void;
   loading?: boolean;
+  // Short status word shown as a pill on the right of the row, in place
+  // of nothing — used for the current plan on the Account row so the
+  // person can see their tier without opening anything.
+  badge?: { text: string; color: string; background: string };
 };
 
 type SettingsSection = {
@@ -103,6 +110,8 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
   // this row simply doesn't render in anything but a debug build —
   // there is no separate flag to remember to flip before shipping.
   const devEntitlement = useDevEntitlementToggle();
+  const subscription = useSubscription();
+  const { openPaywall } = usePaywall();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -409,8 +418,27 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
         {
           key: 'account',
           label: 'Account',
+          subtitle: subscription.isResolving
+            ? 'Checking your subscription…'
+            : planLabel(subscription.snapshot.tier),
           icon: CircleUser,
           onPress: () => navigation.navigate('Account'),
+          // No badge while the entitlement is still resolving — a "FREE"
+          // pill that flips to "PREMIUM" a moment later is worse than no
+          // pill at all for someone who has paid.
+          badge: subscription.isResolving
+            ? undefined
+            : subscription.isEntitled
+            ? {
+                text: 'PREMIUM',
+                color: colors.success,
+                background: colors.successSoft,
+              }
+            : {
+                text: 'FREE',
+                color: colors.textSecondary,
+                background: colors.neutralSoft,
+              },
         },
         {
           key: 'appSettings',
@@ -439,17 +467,46 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
             styles.devRow,
             { backgroundColor: colors.surface, borderColor: colors.warning },
           ]}
-          onPress={() =>
-            devEntitlement.setDevTier(
-              devEntitlement.tier === 'free' ? 'premium' : 'free',
-            )
-          }
+          onPress={devEntitlement.cycleMode}
         >
           <Text style={[styles.devRowLabel, { color: colors.warning }]}>
-            Dev: entitlement tier — {devEntitlement.tier}
+            Dev: entitlement {devEntitlement.mode}
+            {devEntitlement.mode === 'auto'
+              ? ` (real: ${devEntitlement.tier})`
+              : ''}
           </Text>
           <Text style={[styles.devRowHint, { color: colors.warning }]}>
-            Tap to flip
+            Tap to cycle auto → free → premium
+          </Text>
+        </Pressable>
+      )}
+
+      {/* A lapse is the one entitlement change that happens TO someone
+          rather than because of something they did — the daily
+          reconciliation resets the tier while they are not looking. It
+          gets a banner on the screen they are most likely to open next,
+          and it says plainly that no data was touched, because "my
+          premium is gone" and "my records are gone" feel identical until
+          someone tells you otherwise. */}
+      {subscription.status === 'lapsed' && (
+        <Pressable
+          style={[
+            styles.lapsedBanner,
+            { backgroundColor: colors.dangerSoft, borderColor: colors.danger },
+          ]}
+          onPress={() =>
+            openPaywall({
+              reason: 'Resubscribe to switch your premium features back on.',
+              onPurchaseSuccess: () => {},
+            })
+          }>
+          <Text style={[styles.lapsedTitle, { color: colors.danger }]}>
+            Your premium subscription ended on{' '}
+            {formatSubscriptionDate(subscription.snapshot.expiryDate)}
+          </Text>
+          <Text style={[styles.lapsedBody, { color: colors.danger }]}>
+            Premium features are switched off. Nothing in your budget was
+            deleted. Tap to see plans, or open Account to restore a purchase.
           </Text>
         </Pressable>
       )}
@@ -514,6 +571,14 @@ function SettingsListRow({
           </Text>
         )}
       </View>
+      {row.badge && !disabled && (
+        <View
+          style={[styles.rowBadge, { backgroundColor: row.badge.background }]}>
+          <Text style={[styles.rowBadgeText, { color: row.badge.color }]}>
+            {row.badge.text}
+          </Text>
+        </View>
+      )}
       {disabled ? (
         <ActivityIndicator color={colors.primary} />
       ) : (
@@ -526,6 +591,33 @@ function SettingsListRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  lapsedBanner: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    marginBottom: 4,
+  },
+  lapsedTitle: {
+    fontSize: scaleFont(13.5),
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  lapsedBody: {
+    fontSize: scaleFont(12.5),
+    lineHeight: scaleFont(18),
+    fontWeight: '500',
+  },
+  rowBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 8,
+  },
+  rowBadgeText: {
+    fontSize: scaleFont(9.5),
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   container: {
     padding: 16,

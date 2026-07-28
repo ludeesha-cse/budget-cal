@@ -73,6 +73,7 @@ import { EntitlementProvider } from './hooks/useEntitlement';
 import { PaywallProvider } from './contexts/PaywallContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { generatePendingOccurrences } from './db/queries';
 import type {
   DashboardStackParamList,
@@ -561,15 +562,25 @@ function App(): React.JSX.Element {
   // just also read from the cache.
   return (
     <QueryClientProvider client={queryClient}>
-      <EntitlementProvider>
-        <PaywallProvider>
-          <AuthProvider>
-            <ThemeProvider>
-              <AppShell />
-            </ThemeProvider>
-          </AuthProvider>
-        </PaywallProvider>
-      </EntitlementProvider>
+      {/* Order matters and is not cosmetic. AuthProvider is outermost
+          because SubscriptionProvider reads the signed-in uid;
+          SubscriptionProvider comes next because EntitlementProvider now
+          derives free/premium from it instead of from a constant; and
+          PaywallProvider sits inside all three so the paywall it opens
+          can both read the entitlement and start a purchase. Moving any
+          of these up or down throws "must be used within a ..." at
+          launch. */}
+      <AuthProvider>
+        <SubscriptionProvider>
+          <EntitlementProvider>
+            <PaywallProvider>
+              <ThemeProvider>
+                <AppShell />
+              </ThemeProvider>
+            </PaywallProvider>
+          </EntitlementProvider>
+        </SubscriptionProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

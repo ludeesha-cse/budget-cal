@@ -1,18 +1,33 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { CircleUser } from 'lucide-react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
+import SubscriptionCard from '../components/SubscriptionCard';
 import ActionButtons from '../components/common/ActionButtons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { typography, scaleFont } from '../theme/typography';
 
-// Stage 18 (Android only). Sign-in here is purely account/identity — it
-// never gates any other screen and the local database is completely
-// unaffected by sign-in state (see AuthContext.tsx's signOut comment).
-// This screen exists so the user has *somewhere* to sign in/out from, not
-// because anything else in the app currently depends on it.
+// Two things live here, and the distinction between them matters.
+//
+// Sign-in is identity: which Firebase account this device is using. The
+// local SQLite database is not user-scoped and is completely unaffected
+// by it (see AuthContext.tsx's signOut comment) — signing out never
+// hides, moves or deletes a single transaction.
+//
+// The subscription is what that identity has paid for. It is the one
+// thing sign-in does gate, because an entitlement is recorded against a
+// uid on the server; that is why the subscription card sits below the
+// account card rather than on its own screen.
 function AccountScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const { session, isSignedIn, isInitializing, signInWithGoogleAndroid, signOut } =
@@ -52,7 +67,9 @@ function AccountScreen(): React.JSX.Element {
 
   return (
     <ScreenBackground colors={colors}>
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}>
         <Text style={[typography.eyebrow, styles.sectionLabel, { color: colors.textSecondary }]}>
           Account
         </Text>
@@ -81,7 +98,18 @@ function AccountScreen(): React.JSX.Element {
           accounts, transactions, and balances stay exactly as they are
           either way.
         </Text>
-      </View>
+
+        <Text
+          style={[
+            typography.eyebrow,
+            styles.sectionLabel,
+            styles.secondSectionLabel,
+            { color: colors.textSecondary },
+          ]}>
+          Subscription
+        </Text>
+        <SubscriptionCard />
+      </ScrollView>
     </ScreenBackground>
   );
 }
@@ -160,11 +188,14 @@ function AndroidAccountSection({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     padding: 16,
+    paddingBottom: 32,
   },
   sectionLabel: {
     marginBottom: 10,
+  },
+  secondSectionLabel: {
+    marginTop: 24,
   },
   card: {
     padding: 16,
