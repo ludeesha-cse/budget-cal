@@ -9,9 +9,7 @@ import {
   Animated,
   Dimensions,
   Keyboard,
-  LayoutAnimation,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +23,8 @@ import type { ThemeColors } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 import { MODAL_TRANSITION_MS } from '../theme/motion';
 import { useSlideSheet } from '../hooks/useSlideSheet';
+import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap';
+import KeyboardAwareScrollView from './common/KeyboardAwareScrollView';
 
 type Props = {
   visible: boolean;
@@ -122,8 +122,6 @@ function useSlideAnimation(visible: boolean) {
   return { rendered, translateY, backdropOpacity };
 }
 
-const KEYBOARD_TRANSITION_MS = 450;
-
 // How much of the screen stays clear above a sheet, so the backdrop is
 // always visibly a backdrop and the sheet never reads as a full screen
 // that has lost its header. Expressed as a fixed margin rather than a
@@ -135,13 +133,12 @@ const SHEET_TOP_GUTTER = 64;
 // replacement.
 const PICKER_TOP_GUTTER = 116;
 
-// WHO OWNS THE KEYBOARD INSET, PER PLATFORM — the single thing this file
-// has to get right, and the thing an earlier fix got wrong in both
-// directions.
+// WHO OWNS THE KEYBOARD INSET — nobody but us, on either platform, and
+// that is the correction this file most recently needed.
 //
-// iOS: nobody. A native Modal's window is full-screen and does not
-// resize, so this component has to account for the keyboard itself. It
-// does that as a LAYOUT inset (the sheet's `bottom` and `maxHeight`
+// iOS never helped: a native Modal's window is full-screen and does not
+// resize, so this component has always had to account for the keyboard
+// itself. It does that as a LAYOUT inset (the sheet's container padding
 // below), not as a transform. An earlier version translated the sheet up
 // bodily by the keyboard height while keeping maxHeight at 88% of the
 // FULL screen, so a tall form (Add Lend, eight fields) rose until its
@@ -149,51 +146,24 @@ const PICKER_TOP_GUTTER = 116;
 // screen, unreachable, because as far as layout was concerned the sheet
 // still had all the room it started with.
 //
-// Android: the OS already did it. React Native's Modal is its own dialog
-// window in ADJUST_RESIZE, so that window has ALREADY given up the
-// keyboard's height before this component lays anything out. Subtracting
-// it a second time here shifted the sheet up TWICE and pushed its title
-// and first fields off the top of the screen — which is exactly what
-// hid the Name and Type fields on the Add Account form. So on Android
-// the inset stays 0 and the sheet keeps a percentage maxHeight, which
-// resolves against that already-shrunk window.
+// Android USED to help, and the version before this one took that as a
+// standing fact: it reported an inset of 0 there on the grounds that
+// React Native's Modal is its own dialog window in ADJUST_RESIZE and had
+// already given up the keyboard's height before this component laid
+// anything out. That is no longer true, for two independent reasons —
+// this app targets SDK 36, and from Android 15 on an app is edge-to-edge
+// whether it asks or not, which makes windowSoftInputMode a no-op; and
+// `statusBarTranslucent` on the Modal puts FLAG_LAYOUT_NO_LIMITS on the
+// dialog window, which stops it being resized for the IME regardless.
+// The keyboard is simply drawn on top, and the sheet's lower half — the
+// fields being typed into — sat behind it.
 //
-// The keyboard events are still subscribed to on both platforms: Android
-// needs them to drive the LayoutAnimation that makes the OS's own resize
-// look deliberate rather than instant.
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0);
-
-  useEffect(() => {
-    const isIOS = Platform.OS === 'ios';
-    const showEvent = isIOS ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = isIOS ? 'keyboardWillHide' : 'keyboardDidHide';
-    const animateNext = (duration: number) =>
-      LayoutAnimation.configureNext(
-        LayoutAnimation.create(
-          duration > 0 ? duration : KEYBOARD_TRANSITION_MS,
-          LayoutAnimation.Types.easeInEaseOut,
-          LayoutAnimation.Properties.opacity,
-        ),
-      );
-    const showSub = Keyboard.addListener(showEvent, event => {
-      animateNext(event.duration);
-      // Android's dialog window has already shrunk by this much — see
-      // the note above. Reporting it here would double-count it.
-      setInset(isIOS ? event.endCoordinates.height : 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, event => {
-      animateNext(event.duration);
-      setInset(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  return inset;
-}
+// So the inset is now MEASURED rather than assumed, by useKeyboardOverlap
+// (hooks/useKeyboardOverlap.ts): how far does the modal root's bottom
+// edge extend past the top of the keyboard? That answer is right in both
+// worlds — it is the full keyboard height when nothing resized, and ~0
+// if a future OS starts resizing the window again — so neither the old
+// double-count nor the old under-count can come back.
 
 // The keyboard's claim on the sheet's CONTAINER, not on the sheet.
 //
@@ -224,7 +194,8 @@ function useKeyboardInset(): number {
 // a stale frame can now do is make the sheet momentarily a little short.
 //
 // So the only number left is how much room the keyboard takes away from
-// the CONTAINER, and only iOS owes it (see useKeyboardInset).
+// the CONTAINER, and on current OS versions both platforms owe all of it
+// (see the note above and useKeyboardOverlap).
 function sheetContainerInset(keyboardInset: number): ViewStyle {
   return { paddingBottom: keyboardInset };
 }
@@ -363,7 +334,7 @@ function BottomSheetModal({
     backdropOpacity,
     handleNativeDismiss,
   } = useSlideSheet(visible, onFullyClosed);
-  const keyboardInset = useKeyboardInset();
+  const { hostRef, overlap: keyboardInset } = useKeyboardOverlap();
   const [activePicker, setActivePicker] = useState<PickerConfig | null>(null);
   const pickerHost = useMemo<PickerHost>(
     () => ({ openPicker: config => setActivePicker(config) }),
@@ -392,7 +363,13 @@ function BottomSheetModal({
       onRequestClose={onClose}
       onDismiss={handleNativeDismiss}
     >
-      <View style={styles.fill}>
+      {/* The view useKeyboardOverlap measures: it fills the modal's
+          window and, crucially, its own height is NOT affected by the
+          inset we derive from it (that goes on the sheet host below), so
+          measuring it can't feed back into itself. collapsable={false}
+          keeps Android from flattening it away, which would leave
+          nothing to measure. */}
+      <View style={styles.fill} ref={hostRef} collapsable={false}>
         <Animated.View
           style={[styles.backdrop, { opacity: backdropOpacity }]}
           pointerEvents="box-none"
@@ -447,14 +424,20 @@ function BottomSheetModal({
                   {title}
                 </Text>
               )}
-              <ScrollView
+              {/* keyboardInsetHandledByParent: the sheet host above has
+                  already shrunk this sheet clear of the keyboard, so this
+                  view must not pad for it a second time. What it DOES
+                  bring is scrolling the focused field into view and the
+                  headroom that lets the bottom-most field be scrolled up
+                  to the top of the sheet. */}
+              <KeyboardAwareScrollView
                 style={styles.scroll}
                 contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                keyboardInsetHandledByParent
               >
                 {children}
-              </ScrollView>
+              </KeyboardAwareScrollView>
               <View style={[styles.footer, { borderTopColor: colors.border }]}>
                 <Pressable
                   style={[

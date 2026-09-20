@@ -34,6 +34,7 @@ myscript.sh
 .cxx/
 *.keystore
 !debug.keystore
+keystore.properties
 .kotlin/
 
 # node.js

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { StyleSheet, Text, TextInput } from 'react-native';
 import { formatDateString } from '../utils/date';
 import { useReferenceData } from '../hooks/useReferenceData';
 import { useAccountCurrency } from '../hooks/useAccountCurrency';
@@ -13,6 +13,7 @@ import ExcludeFromBudgetCheckbox from './common/ExcludeFromBudgetCheckbox';
 import FormSubmitButton from './common/FormSubmitButton';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography } from '../theme/typography';
+import KeyboardAwareScrollView from './common/KeyboardAwareScrollView';
 
 export type IncomeFormSubmitValues = {
   date: string; // 'YYYY-MM-DD'
@@ -109,7 +110,7 @@ function IncomeForm({
   const canSave = missingFields.length === 0;
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
@@ -169,7 +170,7 @@ function IncomeForm({
         label={submitLabel}
         onPress={handleSubmit}
       />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

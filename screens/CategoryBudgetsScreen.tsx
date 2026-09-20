@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Check } from 'lucide-react-native';
 import Card from '../components/Card';
 import MonthYearPicker from '../components/MonthYearPicker';
@@ -10,6 +10,7 @@ import {
   useCategoryBudgetsForMonth,
   useSpendingByCategory,
 } from '../hooks/queries';
+import KeyboardAwareScrollView from '../components/common/KeyboardAwareScrollView';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
@@ -194,7 +195,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     // content rather than a separate fixed element for it to reliably
     // stay reachable and end up at the bottom, matching
     // BudgetSettingsScreen's own fix for the identical shape of bug.
-    <ScrollView
+    <KeyboardAwareScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
@@ -330,7 +331,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
       )}
 
       <NumericInputAccessory />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

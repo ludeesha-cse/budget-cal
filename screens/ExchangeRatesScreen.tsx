@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -24,6 +24,15 @@ import {
   useSetExchangeRate as useSetExchangeRateMutation,
 } from '../hooks/queries';
 import type { ExchangeRateListRow } from '../hooks/queries';
+import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap';
+
+// Roughly one expanded, in-edit row: how much of the list has to stay
+// scrollable past the end so any row can reach the top of the visible
+// area while the keyboard is up.
+const EDIT_ROW_HEADROOM = 180;
+// Long enough for the keyboard animation and the footer spacer's layout
+// to have settled, so the scroll lands where it is asked to.
+const EDIT_SCROLL_MS = 320;
 
 // The rates cross-currency transfers convert with.
 //
@@ -67,6 +76,46 @@ function ExchangeRatesScreen(): React.JSX.Element {
   // hooks/useFieldErrors), inlined here because this is a single field
   // rather than a form worth a hook.
   const [rateErrorShown, setRateErrorShown] = useState(false);
+
+  // The rows are edited IN PLACE rather than in a sheet, so this screen
+  // needs the same keyboard treatment BottomSheetModal gets, just built
+  // out of a FlatList's own parts: a footer spacer instead of extra
+  // content padding, and scrollToIndex instead of scrollTo. See
+  // hooks/useKeyboardOverlap for why nothing moves on its own any more.
+  const { hostRef, overlap, keyboardVisible } = useKeyboardOverlap();
+  const listRef = useRef<FlatList<ExchangeRateListRow>>(null);
+  const [listHeight, setListHeight] = useState(0);
+  const visibleListHeight = listHeight - overlap;
+  // Clears the keyboard, and then leaves enough room below the last row
+  // for ANY row — including that last one — to be scrolled up to the top
+  // of what's still visible.
+  const footerHeight = keyboardVisible
+    ? overlap + Math.max(0, visibleListHeight - EDIT_ROW_HEADROOM)
+    : 0;
+
+  // Opening a row for editing autofocuses its field, which raises the
+  // keyboard over the bottom of the list — so put that row at the top of
+  // what's left. Waits for the keyboard's animation, since the scroll
+  // offset it needs depends on the footer above having been laid out.
+  useEffect(() => {
+    if (!keyboardVisible || editingCurrencyId == null) {
+      return;
+    }
+    const index = (rates ?? []).findIndex(
+      row => row.currencyId === editingCurrencyId,
+    );
+    if (index < 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      listRef.current?.scrollToIndex({
+        index,
+        viewPosition: 0,
+        animated: true,
+      });
+    }, EDIT_SCROLL_MS);
+    return () => clearTimeout(timer);
+  }, [keyboardVisible, overlap, editingCurrencyId, rates]);
 
   const startEdit = (row: ExchangeRateListRow) => {
     setEditingCurrencyId(row.currencyId);
@@ -230,7 +279,10 @@ function ExchangeRatesScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      ref={hostRef}
+      collapsable={false}
+      style={[styles.container, { backgroundColor: colors.background }]}>
       <InfoBanner>
         {anchorCode
           ? `Rates are measured against ${anchorCode}, your default currency. They only pre-fill the converted amount when you transfer between two currencies — you can always change that amount before saving, and editing a rate never changes a transfer you've already made.`
@@ -241,9 +293,23 @@ function ExchangeRatesScreen(): React.JSX.Element {
         <EmptyState message="Loading..." />
       ) : (
         <FlatList
+          ref={listRef}
           data={rates ?? []}
           keyExtractor={item => String(item.currencyId)}
           renderItem={({ item }) => renderRow(item)}
+          keyboardShouldPersistTaps="handled"
+          onLayout={event => setListHeight(event.nativeEvent.layout.height)}
+          // A row far enough down the list may not be mounted yet when we
+          // ask to scroll to it; this is the documented fallback.
+          onScrollToIndexFailed={info =>
+            listRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: true,
+            })
+          }
+          ListFooterComponent={
+            footerHeight > 0 ? <View style={{ height: footerHeight }} /> : null
+          }
           ListEmptyComponent={
             <EmptyState message="No active currencies to set rates for." />
           }

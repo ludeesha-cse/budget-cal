@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { StyleSheet, Text, TextInput } from 'react-native';
 import { formatDateString } from '../utils/date';
 import { labelForId } from '../utils/pickerLabels';
 import { useReferenceData } from '../hooks/useReferenceData';
@@ -18,6 +18,7 @@ import ExcludeFromBudgetCheckbox from './common/ExcludeFromBudgetCheckbox';
 import FormSubmitButton from './common/FormSubmitButton';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography } from '../theme/typography';
+import KeyboardAwareScrollView from './common/KeyboardAwareScrollView';
 
 const ENTRY_TYPE_OPTIONS: SegmentedToggleOption<'Expense' | 'Income'>[] = [
   { key: 'Expense', label: 'Expense' },
@@ -183,7 +184,7 @@ function TransactionForm({
   const canSave = missingFields.length === 0;
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
@@ -275,7 +276,7 @@ function TransactionForm({
         label={submitLabel}
         onPress={handleSubmit}
       />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

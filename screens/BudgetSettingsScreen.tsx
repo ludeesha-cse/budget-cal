@@ -3,7 +3,6 @@ import {
   Alert,
   Keyboard,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +30,7 @@ import {
   useSettleCreditCardAccount as useSettleCreditCardAccountMutation,
   useUpsertBudget as useUpsertBudgetMutation,
 } from '../hooks/queries';
+import KeyboardAwareScrollView from '../components/common/KeyboardAwareScrollView';
 
 function BudgetSettingsScreen(): React.JSX.Element {
   // Write paths go through the caching layer's mutation hooks: each
@@ -148,7 +148,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
     // keyboardShouldPersistTaps="handled" so Save/Delete are tappable in
     // one tap while the amount field's keyboard is still up, instead of
     // needing a first tap to dismiss it.
-    <ScrollView
+    <KeyboardAwareScrollView
       style={[styles.scroll, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
@@ -285,7 +285,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
       )}
 
       <NumericInputAccessory />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

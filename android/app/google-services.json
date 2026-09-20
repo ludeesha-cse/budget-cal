@@ -14,11 +14,27 @@
       },
       "oauth_client": [
         {
+          "client_id": "610731283609-90u1teskrvo3615m0mfosneh3qe6275t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.penny_worth.app",
+            "certificate_hash": "50dd58f1d0e38e9534a4c6cee166a0112efbdebc"
+          }
+        },
+        {
           "client_id": "610731283609-k4l5p8rd87t9d4f4a6iuutf2jktij2n0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.penny_worth.app",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "610731283609-p2jvvd392uo4ogr7vdjtk26t6v39mn07.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.penny_worth.app",
+            "certificate_hash": "18790fb4556586468747da65e99835603bfe83a8"
           }
         },
         {
