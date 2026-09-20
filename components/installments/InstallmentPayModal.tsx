@@ -8,6 +8,7 @@ import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getCurrentDateString } from '../../utils/date';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
 import { fieldErrorStyle } from '../../utils/formFieldStyle';
@@ -125,7 +126,14 @@ function InstallmentPayModal({
           )}
 
           <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-          <DateField value={values.date} onChange={setDate} />
+          {/* Capped at today: this records money that has already left
+              the account, so a future date would post a transaction the
+              balance and budget figures cannot honestly reflect yet. */}
+          <DateField
+            value={values.date}
+            onChange={setDate}
+            maxDate={getCurrentDateString()}
+          />
 
           <NumericInputAccessory />
         </>

@@ -30,6 +30,17 @@ export function daysUntil(dueDate: string, today: string): number {
   return Math.round((due - now) / msPerDay);
 }
 
+// `date` shifted by whole days, as a 'YYYY-MM-DD' string. Parsed at UTC
+// midnight and shifted in UTC — the same trick daysUntil above uses — so
+// a day added across a daylight-saving boundary is still exactly one
+// calendar day rather than 23 or 25 hours that can land back on the same
+// date.
+export function addDays(date: string, days: number): string {
+  const shifted = new Date(`${date}T00:00:00Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
 // A recurring rule set for day 31 must still fire in a month that only
 // has 28, 29, or 30 days — this decides which real calendar date that
 // becomes (Stage 13b). `month` is 1-based (2 = February), matching every

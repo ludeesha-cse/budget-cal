@@ -20,7 +20,7 @@ import {
   useCategoryBudgetsForMonth,
   useDefaultCurrency,
   useGeneratePendingOccurrences,
-  useInstallmentReminders,
+  useUpcomingInstallmentOccurrences,
   useLoanTotalOwedByAccountId,
   useMonthlyIncome,
   usePendingScheduledPayments,
@@ -142,7 +142,8 @@ export function useDashboardData(): DashboardData {
   const { data: allBalances } = useAllAccountBalances();
   const { data: liabilities } = useActiveLoanAccounts('Liability');
   const { data: receivables } = useActiveLoanAccounts('Receivable');
-  const { data: installmentReminders } = useInstallmentReminders();
+  const { data: upcomingInstallmentOccurrences } =
+    useUpcomingInstallmentOccurrences();
 
   // Income and the "By Category" preview are both scoped to the app's
   // default currency — see buildCategoryBreakdown's own comment for why
@@ -247,10 +248,16 @@ export function useDashboardData(): DashboardData {
         today,
         liabilities ?? [],
         receivables ?? [],
-        installmentReminders ?? [],
+        upcomingInstallmentOccurrences ?? [],
         totalOwedByAccountId,
       ),
-    [today, liabilities, receivables, installmentReminders, totalOwedByAccountId],
+    [
+      today,
+      liabilities,
+      receivables,
+      upcomingInstallmentOccurrences,
+      totalOwedByAccountId,
+    ],
   );
 
   // Matches the original's all-or-nothing feel: the screen shows its

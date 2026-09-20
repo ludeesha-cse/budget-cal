@@ -417,9 +417,11 @@ export const installmentPlans = sqliteTable('installment_plans', {
     .notNull()
     .references(() => currencies.id),
   startDate: text('start_date').notNull(), // 'YYYY-MM-DD'
-  // Nullable — a plan created before this column existed, or one the user
-  // never bothered setting a due date for, simply never surfaces as a
-  // Dashboard reminder (see getInstallmentReminders). 1-31, same
+  // Nullable, and no longer the thing that decides whether a plan is
+  // reminded about — every plan now schedules occurrences (see
+  // installmentOccurrences below), and one without this column set is
+  // anchored on the day its startDate lands on instead. What it still
+  // does is let the user move that anchor off the start date. 1-31, same
   // clamp-to-shorter-month convention as recurring_rules.dayOfMonth: a
   // plan due on the 31st still fires on the last real day of a 30-day
   // month rather than being skipped.

@@ -98,7 +98,9 @@ function DashboardStackNavigator(): React.JSX.Element {
       <DashboardStack.Screen
         name="ReviewOccurrences"
         component={ReviewOccurrencesScreen}
-        options={{ title: 'Review Recurring' }}
+        // Not "Review Recurring" any more — this screen lists recurring
+        // occurrences AND installment occurrences in one queue.
+        options={{ title: 'Review Scheduled' }}
       />
     </DashboardStack.Navigator>
   );

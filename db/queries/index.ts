@@ -71,7 +71,6 @@ export type {
 } from './settings';
 export type {
   NewInstallmentPlanParams,
-  InstallmentReminderRow,
   PayInstallmentParams,
   PendingInstallmentOccurrenceRow,
 } from './installments';
@@ -203,13 +202,14 @@ export const {
   // --- installments ---
   createInstallmentPlan,
   getInstallmentPlans,
-  getInstallmentReminders,
   updateInstallmentPlan,
   deleteInstallmentPlan,
   getInstallmentPayments,
   getNextUnpaidInstallmentNumber,
   createFirstInstallmentOccurrence,
   getPendingInstallmentOccurrences,
+  getUpcomingInstallmentOccurrences,
+  INSTALLMENT_LOOKAHEAD_DAYS,
   resolveInstallmentOccurrence,
   skipInstallmentOccurrence,
   advanceInstallmentSchedule,

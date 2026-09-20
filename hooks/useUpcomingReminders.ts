@@ -1,17 +1,9 @@
 import { totalsByCurrency } from '../utils/currencyTotals';
 import { daysUntil } from '../utils/date';
 import type { ActiveLoanRow } from './queries';
-import type { getInstallmentReminders } from '../db/queries';
+import type { PendingInstallmentOccurrenceRow } from '../db/queries';
 
 const DUE_SOON_WINDOW_DAYS = 7;
-// Narrower than loans' own DUE_SOON_WINDOW_DAYS — installment reminders
-// are meant to catch "this is about to come out of your account", not a
-// week-out heads-up, per the explicit "within 3 or 4 days" ask.
-const INSTALLMENT_REMINDER_WINDOW_DAYS = 4;
-
-type InstallmentReminderRow = Awaited<
-  ReturnType<typeof getInstallmentReminders>
->[number];
 
 export type UpcomingLoanRow = {
   accountId: number;
@@ -24,13 +16,15 @@ export type UpcomingLoanRow = {
 };
 
 export type UpcomingInstallmentRow = {
-  id: number;
+  id: number; // the PLAN id — what the Pay shortcut deep-links to
   name: string;
   currencyCode: string;
   nextInstallmentNumber: number;
   numberOfMonths: number;
   nextAmountDue: number;
-  daysUntilDue: number; // negative once overdue, same convention as UpcomingLoanRow
+  // Always > 0 here: anything already due has moved to the review
+  // banner, so this card only ever says "due in Nd", never "overdue".
+  daysUntilDue: number;
 };
 
 export type UpcomingRemindersData = {
@@ -55,7 +49,7 @@ export function buildUpcomingReminders(
   today: string,
   liabilities: ActiveLoanRow[],
   receivables: ActiveLoanRow[],
-  installmentReminders: InstallmentReminderRow[],
+  upcomingInstallmentOccurrences: PendingInstallmentOccurrenceRow[],
   totalOwedByAccountId: Record<number, number>,
 ): UpcomingRemindersData {
   const withTotalOwed = (
@@ -92,18 +86,28 @@ export function buildUpcomingReminders(
     .filter(loan => loan.daysUntilDue <= DUE_SOON_WINDOW_DAYS)
     .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
 
-  // Same overdue-through-window shape as upcoming loans just above,
-  // narrower window (see INSTALLMENT_REMINDER_WINDOW_DAYS' own comment)
-  // — installmentReminders itself already excludes fully-paid plans and
-  // plans with no due date set.
-  const upcomingInstallments = installmentReminders
-    .map(reminder => ({
-      ...reminder,
-      daysUntilDue: daysUntil(reminder.nextDueDate, today),
+  // Unlike the loans above, no window filtering happens here any more:
+  // getUpcomingInstallmentOccurrences already returns exactly the rows in
+  // its window, and it does so by reading the SAME occurrence table the
+  // review banner reads. That is the point — this card used to derive its
+  // own due date from the plan's dueDayOfMonth, which is how it ended up
+  // announcing next month's installment the moment this month's was paid.
+  //
+  // Everything here is strictly NOT yet due (the banner owns everything
+  // that is), so daysUntilDue is always positive and the two never show
+  // the same plan at the same time.
+  const upcomingInstallments = upcomingInstallmentOccurrences
+    .map(occurrence => ({
+      // The PLAN id, not the occurrence id: tapping Pay deep-links to
+      // that plan on the Installment Plans screen.
+      id: occurrence.installmentPlanId,
+      name: occurrence.planName,
+      currencyCode: occurrence.currencyCode,
+      nextInstallmentNumber: occurrence.payableInstallmentNumber,
+      numberOfMonths: occurrence.numberOfMonths,
+      nextAmountDue: occurrence.amount,
+      daysUntilDue: daysUntil(occurrence.dueDate, today),
     }))
-    .filter(
-      reminder => reminder.daysUntilDue <= INSTALLMENT_REMINDER_WINDOW_DAYS,
-    )
     .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
 
   return {

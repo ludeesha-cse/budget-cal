@@ -7,6 +7,7 @@ import type {
   PendingInstallmentOccurrenceRow,
 } from '../../db/queries';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getCurrentDateString } from '../../utils/date';
 import { formatAmount } from '../../utils/formatAmount';
 import { labelForId } from '../../utils/pickerLabels';
 
@@ -82,7 +83,13 @@ function PendingInstallmentCard({
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-      <DateField value={date} onChange={onDateChange} />
+      {/* Capped at today — same reason as the pay sheet: this is the date
+          the money actually moved, not the date it was scheduled for. */}
+      <DateField
+        value={date}
+        onChange={onDateChange}
+        maxDate={getCurrentDateString()}
+      />
 
       <View style={styles.rowActions}>
         <Button title="Skip" color={colors.danger} onPress={onSkip} />

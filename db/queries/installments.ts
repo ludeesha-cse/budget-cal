@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
 import { db } from '../index';
 import {
   accounts,
@@ -10,9 +10,9 @@ import {
   transactions,
 } from '../schema';
 import {
+  addDays,
   clampDayToMonth,
   getCurrentDateString,
-  getNextOccurrenceDate,
 } from '../../utils/date';
 import { calculateFromMonthly, calculateFromPrincipal } from '../../utils/installmentMath';
 
@@ -28,9 +28,11 @@ export type NewInstallmentPlanParams = {
   categoryId: number;
   currencyId: number;
   startDate: string; // 'YYYY-MM-DD'
-  // 1-31, optional — no due day set means this plan never surfaces as a
-  // Dashboard reminder (see getInstallmentReminders). Same
-  // clamp-to-shorter-month convention as recurring_rules.dayOfMonth.
+  // 1-31, optional. It is the day of the month this plan's occurrences
+  // are anchored to (see occurrenceAnchorDay); a plan with none falls
+  // back to the day its startDate lands on, so every plan schedules
+  // itself either way. Same clamp-to-shorter-month convention as
+  // recurring_rules.dayOfMonth.
   dueDayOfMonth?: number | null;
 } & (
   | { mode: 'principal'; principalAmount: number; interestRate: number }
@@ -166,96 +168,6 @@ export async function getInstallmentPlans() {
   } catch (error) {
     console.error(
       'getInstallmentPlans: failed to load installment plans',
-      error,
-    );
-    throw error;
-  }
-}
-
-export type InstallmentReminderRow = {
-  id: number;
-  name: string;
-  currencyCode: string;
-  nextInstallmentNumber: number;
-  numberOfMonths: number;
-  nextAmountDue: number;
-  nextDueDate: string; // 'YYYY-MM-DD'
-};
-
-// NETWORK-READY: If a backend is added later, replace this with a fetch()
-// call to GET /api/installment-plans/reminders, keeping the same return
-// shape. Dashboard-facing — only plans with a dueDayOfMonth set AND not
-// yet fully paid ever show up here; the "within N days" cutoff itself is
-// left to the caller (DashboardScreen), same as upcomingLoans' own
-// daysUntil filtering, so both reminder types share one filtering
-// convention instead of each baking its own window into the query layer.
-//
-// Fetches every installment_payments row in one query and counts paid
-// installments per plan in JS rather than a SQL GROUP BY — same
-// "plan/payment counts are small in a personal tracker" reasoning
-// InstallmentPlansScreen's own load() already leans on.
-export async function getInstallmentReminders(): Promise<
-  InstallmentReminderRow[]
-> {
-  try {
-    const plans = await db
-      .select({
-        id: installmentPlans.id,
-        name: installmentPlans.name,
-        numberOfMonths: installmentPlans.numberOfMonths,
-        monthlyAmount: installmentPlans.monthlyAmount,
-        finalInstallmentAmount: installmentPlans.finalInstallmentAmount,
-        dueDayOfMonth: installmentPlans.dueDayOfMonth,
-        currencyCode: currencies.code,
-      })
-      .from(installmentPlans)
-      .innerJoin(currencies, eq(installmentPlans.currencyId, currencies.id));
-
-    const plansWithDueDate = plans.filter(
-      (plan): plan is typeof plan & { dueDayOfMonth: number } =>
-        plan.dueDayOfMonth != null,
-    );
-    if (plansWithDueDate.length === 0) {
-      return [];
-    }
-
-    const allPayments = await db
-      .select({ installmentPlanId: installmentPayments.installmentPlanId })
-      .from(installmentPayments);
-    const paidCountByPlan = new Map<number, number>();
-    for (const payment of allPayments) {
-      paidCountByPlan.set(
-        payment.installmentPlanId,
-        (paidCountByPlan.get(payment.installmentPlanId) ?? 0) + 1,
-      );
-    }
-
-    const today = getCurrentDateString();
-    const reminders: InstallmentReminderRow[] = [];
-    for (const plan of plansWithDueDate) {
-      const paidCount = paidCountByPlan.get(plan.id) ?? 0;
-      if (paidCount >= plan.numberOfMonths) {
-        continue;
-      }
-      const nextInstallmentNumber = paidCount + 1;
-      const nextAmountDue =
-        nextInstallmentNumber === plan.numberOfMonths
-          ? plan.finalInstallmentAmount
-          : plan.monthlyAmount;
-      reminders.push({
-        id: plan.id,
-        name: plan.name,
-        currencyCode: plan.currencyCode,
-        nextInstallmentNumber,
-        numberOfMonths: plan.numberOfMonths,
-        nextAmountDue,
-        nextDueDate: getNextOccurrenceDate(plan.dueDayOfMonth, today),
-      });
-    }
-    return reminders;
-  } catch (error) {
-    console.error(
-      'getInstallmentReminders: failed to load installment reminders',
       error,
     );
     throw error;
@@ -521,6 +433,23 @@ export type PendingInstallmentOccurrenceRow = {
 // getPendingScheduledPayments merges both into the one list the
 // Dashboard banner counts.
 //
+// PENDING IS NOT THE SAME AS DUE, and the difference is the whole reason
+// this query has a date bound. An installment occurrence is written
+// EAGERLY: resolving this month's row immediately creates next month's,
+// dated a month out (see advanceInstallmentSchedule). Without the
+// `dueDate <= today` filter below, that row would be listed the instant
+// it was created — so paying an installment would clear the reminder and
+// replace it with next month's in the same breath, and the banner would
+// never once read zero.
+//
+// The recurring half has the same rule enforced a different way:
+// generatePendingOccurrences never generates PAST today, so a recurring
+// occurrence cannot exist before it is due. Installment occurrences must
+// exist early (that is what makes the schedule lazy and self-advancing),
+// so the bound belongs here, on the read. A future-dated row stays in
+// the table, visible in the plan's Schedule history as Pending — it is
+// simply not something to act on yet.
+//
 // WHY TWO INSTALLMENT NUMBERS: a plan's occurrence SLOTS are unique per
 // installment number (plan_occurrence_unique), so a skipped slot can
 // never be reused — skipping slot 3 and advancing gives slot 4. But a
@@ -539,87 +468,146 @@ export type PendingInstallmentOccurrenceRow = {
 //
 // Counts payments per plan in JS from one query rather than a SQL GROUP
 // BY, the same "plan and payment counts are small in a personal tracker"
-// reasoning getInstallmentReminders already leans on.
+// reasoning InstallmentPlansScreen's own figures already lean on.
+//
+// Both windowed readers below share this one body; only the date bounds
+// differ. `earliestExclusive` is exclusive and `latestInclusive`
+// inclusive so the two windows tile exactly — an occurrence due today
+// belongs to "due now" and never also to "coming up".
+async function loadInstallmentOccurrences(
+  earliestExclusive: string | null,
+  latestInclusive: string,
+): Promise<PendingInstallmentOccurrenceRow[]> {
+  const rows = await db
+    .select({
+      id: installmentOccurrences.id,
+      installmentPlanId: installmentOccurrences.installmentPlanId,
+      installmentNumber: installmentOccurrences.installmentNumber,
+      dueDate: installmentOccurrences.dueDate,
+      planName: installmentPlans.name,
+      numberOfMonths: installmentPlans.numberOfMonths,
+      monthlyAmount: installmentPlans.monthlyAmount,
+      finalInstallmentAmount: installmentPlans.finalInstallmentAmount,
+      categoryId: installmentPlans.categoryId,
+      categoryName: categories.name,
+      currencyId: installmentPlans.currencyId,
+      currencyCode: currencies.code,
+    })
+    .from(installmentOccurrences)
+    .innerJoin(
+      installmentPlans,
+      eq(installmentOccurrences.installmentPlanId, installmentPlans.id),
+    )
+    .innerJoin(categories, eq(installmentPlans.categoryId, categories.id))
+    .innerJoin(currencies, eq(installmentPlans.currencyId, currencies.id))
+    .where(
+      and(
+        eq(installmentOccurrences.status, 'pending'),
+        lte(installmentOccurrences.dueDate, latestInclusive),
+        ...(earliestExclusive == null
+          ? []
+          : [gt(installmentOccurrences.dueDate, earliestExclusive)]),
+      ),
+    )
+    .orderBy(installmentOccurrences.dueDate);
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const allPayments = await db
+    .select({ installmentPlanId: installmentPayments.installmentPlanId })
+    .from(installmentPayments);
+  const paidCountByPlan = new Map<number, number>();
+  for (const payment of allPayments) {
+    paidCountByPlan.set(
+      payment.installmentPlanId,
+      (paidCountByPlan.get(payment.installmentPlanId) ?? 0) + 1,
+    );
+  }
+
+  return rows
+    .map(row => {
+      // paidCount + 1 is always the next unpaid installment: the paid
+      // set is always the contiguous prefix {1..paidCount}, since
+      // payInstallment only ever pays the next unpaid number and
+      // unpayInstallment only ever removes the latest.
+      const payableInstallmentNumber =
+        (paidCountByPlan.get(row.installmentPlanId) ?? 0) + 1;
+      return {
+        id: row.id,
+        installmentPlanId: row.installmentPlanId,
+        installmentNumber: row.installmentNumber,
+        payableInstallmentNumber,
+        numberOfMonths: row.numberOfMonths,
+        dueDate: row.dueDate,
+        planName: row.planName,
+        amount:
+          payableInstallmentNumber === row.numberOfMonths
+            ? row.finalInstallmentAmount
+            : row.monthlyAmount,
+        categoryId: row.categoryId,
+        categoryName: row.categoryName,
+        currencyId: row.currencyId,
+        currencyCode: row.currencyCode,
+      };
+    })
+    // A fully-paid plan has nothing left to prompt for. Normally it
+    // has no pending occurrence either (advanceInstallmentSchedule
+    // stops scheduling once getNextUnpaidInstallmentNumber returns
+    // null), but a plan paid from the Installment Plans screen while a
+    // reminder was already open can get here — and offering "pay" on a
+    // finished plan would only produce an error on tap.
+    .filter(row => row.payableInstallmentNumber <= row.numberOfMonths);
+}
+
 export async function getPendingInstallmentOccurrences(): Promise<
   PendingInstallmentOccurrenceRow[]
 > {
   try {
-    const rows = await db
-      .select({
-        id: installmentOccurrences.id,
-        installmentPlanId: installmentOccurrences.installmentPlanId,
-        installmentNumber: installmentOccurrences.installmentNumber,
-        dueDate: installmentOccurrences.dueDate,
-        planName: installmentPlans.name,
-        numberOfMonths: installmentPlans.numberOfMonths,
-        monthlyAmount: installmentPlans.monthlyAmount,
-        finalInstallmentAmount: installmentPlans.finalInstallmentAmount,
-        categoryId: installmentPlans.categoryId,
-        categoryName: categories.name,
-        currencyId: installmentPlans.currencyId,
-        currencyCode: currencies.code,
-      })
-      .from(installmentOccurrences)
-      .innerJoin(
-        installmentPlans,
-        eq(installmentOccurrences.installmentPlanId, installmentPlans.id),
-      )
-      .innerJoin(categories, eq(installmentPlans.categoryId, categories.id))
-      .innerJoin(currencies, eq(installmentPlans.currencyId, currencies.id))
-      .where(eq(installmentOccurrences.status, 'pending'))
-      .orderBy(installmentOccurrences.dueDate);
-
-    if (rows.length === 0) {
-      return [];
-    }
-
-    const allPayments = await db
-      .select({ installmentPlanId: installmentPayments.installmentPlanId })
-      .from(installmentPayments);
-    const paidCountByPlan = new Map<number, number>();
-    for (const payment of allPayments) {
-      paidCountByPlan.set(
-        payment.installmentPlanId,
-        (paidCountByPlan.get(payment.installmentPlanId) ?? 0) + 1,
-      );
-    }
-
-    return rows
-      .map(row => {
-        // paidCount + 1 is always the next unpaid installment: the paid
-        // set is always the contiguous prefix {1..paidCount}, since
-        // payInstallment only ever pays the next unpaid number and
-        // unpayInstallment only ever removes the latest.
-        const payableInstallmentNumber =
-          (paidCountByPlan.get(row.installmentPlanId) ?? 0) + 1;
-        return {
-          id: row.id,
-          installmentPlanId: row.installmentPlanId,
-          installmentNumber: row.installmentNumber,
-          payableInstallmentNumber,
-          numberOfMonths: row.numberOfMonths,
-          dueDate: row.dueDate,
-          planName: row.planName,
-          amount:
-            payableInstallmentNumber === row.numberOfMonths
-              ? row.finalInstallmentAmount
-              : row.monthlyAmount,
-          categoryId: row.categoryId,
-          categoryName: row.categoryName,
-          currencyId: row.currencyId,
-          currencyCode: row.currencyCode,
-        };
-      })
-      // A fully-paid plan has nothing left to prompt for. Normally it
-      // has no pending occurrence either (advanceInstallmentSchedule
-      // stops scheduling once getNextUnpaidInstallmentNumber returns
-      // null), but a plan paid from the Installment Plans screen while a
-      // reminder was already open can get here — and offering "pay" on a
-      // finished plan would only produce an error on tap.
-      .filter(row => row.payableInstallmentNumber <= row.numberOfMonths);
+    return await loadInstallmentOccurrences(null, getCurrentDateString());
   } catch (error) {
     console.error(
       'getPendingInstallmentOccurrences: failed to load pending installment occurrences',
+      error,
+    );
+    throw error;
+  }
+}
+
+// How far ahead the Dashboard's heads-up card looks. Narrower than
+// loans' own week-out window on purpose: an installment reminder is
+// meant to catch "this is about to come out of your account", per the
+// original "within 3 or 4 days" ask.
+export const INSTALLMENT_LOOKAHEAD_DAYS = 4;
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/installment-occurrences?status=pending&within=<days>,
+// keeping the same return shape.
+//
+// The NOT-yet-due companion to getPendingInstallmentOccurrences: rows
+// whose due date is still ahead but close. This is what the Dashboard's
+// "Installment Reminders" card shows, and the two windows are disjoint
+// by construction — a plan appears as a heads-up until its due date
+// arrives, then in the review banner, never in both at once.
+//
+// It reads the SAME occurrence rows as the banner rather than
+// recomputing a due date from the plan's dueDayOfMonth, which is what
+// the old getInstallmentReminders did and why the card could disagree
+// with the banner (and keep showing a reminder for an installment that
+// had just been paid).
+export async function getUpcomingInstallmentOccurrences(): Promise<
+  PendingInstallmentOccurrenceRow[]
+> {
+  try {
+    const today = getCurrentDateString();
+    return await loadInstallmentOccurrences(
+      today,
+      addDays(today, INSTALLMENT_LOOKAHEAD_DAYS),
+    );
+  } catch (error) {
+    console.error(
+      'getUpcomingInstallmentOccurrences: failed to load upcoming installment occurrences',
       error,
     );
     throw error;

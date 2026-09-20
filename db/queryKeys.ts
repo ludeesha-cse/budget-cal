@@ -179,7 +179,10 @@ export const queryKeys = {
       plans: [TRANSACTIONAL, 'installments', 'plans'] as const,
       payments: (planId: number) =>
         [TRANSACTIONAL, 'installments', 'payments', planId] as const,
-      reminders: [TRANSACTIONAL, 'installments', 'reminders'] as const,
+      // The Dashboard's not-yet-due heads-up list. Reads the same
+      // occurrence rows as `pendingOccurrences` below, just the other
+      // side of today's date.
+      upcomingOccurrences: [TRANSACTIONAL, 'installments', 'upcomingOccurrences'] as const,
       nextUnpaidNumber: (planId: number) =>
         [TRANSACTIONAL, 'installments', 'nextUnpaidNumber', planId] as const,
       remainingBalance: (currencyId: number) =>

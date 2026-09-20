@@ -11,6 +11,13 @@ type Props = {
   value: string | null; // 'YYYY-MM-DD'
   onChange: (date: string) => void;
   placeholder?: string;
+  // Latest selectable date, 'YYYY-MM-DD'. Opt-in rather than always
+  // "today", because plenty of dates in this app are legitimately in the
+  // future — a loan's due date, a savings goal's target, an installment
+  // plan's start date. It is the dates that record something that ALREADY
+  // HAPPENED — paying an installment, confirming a recurring entry — that
+  // must not be settable ahead of today, and those pass maxDate={today}.
+  maxDate?: string;
   renderTrigger?: (label: string, onPress: () => void) => React.ReactNode;
 };
 
@@ -18,15 +25,29 @@ function DateField({
   value,
   onChange,
   placeholder = 'Select date',
+  maxDate,
   renderTrigger,
 }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const [showPicker, setShowPicker] = useState(false);
-  const pickerValue = value ? new Date(value) : new Date();
+  const maximumDate = maxDate ? new Date(`${maxDate}T00:00:00`) : undefined;
+  // A value already past the cap would otherwise open the picker on a
+  // date the picker itself refuses to show, which reads as the spinner
+  // silently jumping. Opening on the cap is the honest starting point.
+  const pickerValue =
+    maxDate && value && value > maxDate
+      ? (maximumDate as Date)
+      : value
+        ? new Date(value)
+        : new Date();
 
   const handleChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
     if (selectedDate) {
-      onChange(formatDateString(selectedDate));
+      const picked = formatDateString(selectedDate);
+      // iOS's spinner is bounded by maximumDate, but the belt-and-braces
+      // clamp here also covers Android builds where the bound is only
+      // advisory on some OEM pickers.
+      onChange(maxDate && picked > maxDate ? maxDate : picked);
     }
     // Android's native dialog dismisses itself on pick/cancel; the iOS
     // popup modal (below) is closed explicitly via its Done button instead.
@@ -53,6 +74,7 @@ function DateField({
             value={pickerValue}
             mode="date"
             display="default"
+            maximumDate={maximumDate}
             onChange={handleChange}
           />
         )
@@ -70,6 +92,7 @@ function DateField({
                 value={pickerValue}
                 mode="date"
                 display="spinner"
+                maximumDate={maximumDate}
                 onChange={handleChange}
               />
               <Button title="Done" color={colors.primary} onPress={() => setShowPicker(false)} />

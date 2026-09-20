@@ -5,6 +5,7 @@ import DateField from '../common/DateField';
 import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import { getAccounts, getPendingOccurrences } from '../../db/queries';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getCurrentDateString } from '../../utils/date';
 import { labelForId } from '../../utils/pickerLabels';
 
 type PendingOccurrenceRow = Awaited<
@@ -85,7 +86,14 @@ function PendingOccurrenceCard({
       />
 
       <Text style={[styles.label, { color: colors.text }]}>Date</Text>
-      <DateField value={date} onChange={onDateChange} />
+      {/* Capped at today: confirming posts a real transaction, and one
+          dated ahead of today would sit in a month the budget figures
+          have not reached. */}
+      <DateField
+        value={date}
+        onChange={onDateChange}
+        maxDate={getCurrentDateString()}
+      />
 
       <View style={styles.rowActions}>
         <Button title="Skip" color={colors.danger} onPress={onSkip} />

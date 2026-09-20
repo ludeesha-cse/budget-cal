@@ -4,8 +4,8 @@ import {
   getInstallmentOccurrenceHistory,
   getInstallmentPayments,
   getInstallmentPlans,
-  getInstallmentReminders,
   getNextUnpaidInstallmentNumber,
+  getUpcomingInstallmentOccurrences,
   getRemainingInstallmentBalance,
 } from '../../db/queries';
 import { queryKeys } from '../../db/queryKeys';
@@ -72,13 +72,18 @@ export function useInstallmentPaymentsByPlan(
   }, [planIds, values]);
 }
 
-// Transactional stale time: "due within 4 days" is a window measured
-// from today, so this list changes as the date moves even with no write
-// at all — the same clock-drift argument as accrued loan interest.
-export function useInstallmentReminders(enabled = true) {
+// Transactional stale time: "due within the next few days" is a window
+// measured from today, so this list changes as the date moves even with
+// no write at all — the same clock-drift argument as accrued loan
+// interest.
+//
+// Deliberately the same occurrence rows the review banner reads, only
+// the not-yet-due side of them, so the Dashboard's heads-up card and the
+// banner can never contradict each other.
+export function useUpcomingInstallmentOccurrences(enabled = true) {
   return useQuery({
-    queryKey: queryKeys.transactional.installments.reminders,
-    queryFn: getInstallmentReminders,
+    queryKey: queryKeys.transactional.installments.upcomingOccurrences,
+    queryFn: getUpcomingInstallmentOccurrences,
     enabled,
   });
 }
