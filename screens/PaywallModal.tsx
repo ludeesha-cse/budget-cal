@@ -11,6 +11,10 @@ import {
   View,
 } from 'react-native';
 import { AlertTriangle, Check, Crown, X } from 'lucide-react-native';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import {
@@ -20,6 +24,8 @@ import {
 import { PLANS, type PlanDefinition, type PlanId } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
+import { MAX_SHEET_WIDTH } from '../theme/layout';
+import SafeAreaBottomSpacer from '../components/common/SafeAreaBottomSpacer';
 import type { ThemeColors } from '../theme/palettes';
 
 const PREMIUM_FEATURES = [
@@ -109,6 +115,10 @@ function PaywallModal(): React.JSX.Element {
 
   const busy = purchaseActivity != null || isRestoring;
   const isAndroid = Platform.OS === 'android';
+  // statusBarTranslucent puts the top of this Modal under the status bar,
+  // and the card shrinks to fit rather than having a fixed height — so on
+  // a short screen it needs a floor to stop at below the status bar.
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal
@@ -117,174 +127,180 @@ function PaywallModal(): React.JSX.Element {
       animationType="slide"
       statusBarTranslucent
       onRequestClose={handleClose}>
-      <View style={styles.backdrop}>
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}>
-          <Pressable
-            hitSlop={12}
+      {/* Own provider: SafeAreaBottomSpacer measures this Modal's window. */}
+      <SafeAreaProvider>
+        <View style={[styles.backdrop, { paddingTop: insets.top + 24 }]}>
+          <View
             style={[
-              styles.closeIconButton,
-              { backgroundColor: colors.neutralSoft },
-            ]}
-            onPress={handleClose}>
-            <X size={18} color={colors.text} />
-          </Pressable>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}>
-            <View
+              styles.card,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}>
+            <Pressable
+              hitSlop={12}
               style={[
-                styles.crownBadge,
-                { backgroundColor: colors.primarySoft },
-              ]}>
-              <Crown size={24} color={colors.primary} strokeWidth={2.2} />
-            </View>
+                styles.closeIconButton,
+                { backgroundColor: colors.neutralSoft },
+              ]}
+              onPress={handleClose}>
+              <X size={18} color={colors.text} />
+            </Pressable>
 
-            <Text
-              style={[
-                typography.screenTitle,
-                styles.title,
-                { color: colors.text },
-              ]}>
-              Go Premium
-            </Text>
-
-            {request?.reason && (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}>
               <View
                 style={[
-                  styles.reasonBanner,
+                  styles.crownBadge,
                   { backgroundColor: colors.primarySoft },
                 ]}>
-                <Text style={[styles.reasonText, { color: colors.primary }]}>
-                  {request.reason}
-                </Text>
+                <Crown size={24} color={colors.primary} strokeWidth={2.2} />
               </View>
-            )}
 
-            <View style={styles.features}>
-              {PREMIUM_FEATURES.map(feature => (
-                <View key={feature} style={styles.featureRow}>
-                  <View
-                    style={[
-                      styles.featureCheck,
-                      { backgroundColor: colors.successSoft },
-                    ]}>
-                    <Check size={12} color={colors.success} strokeWidth={3} />
-                  </View>
-                  <Text style={[styles.featureText, { color: colors.text }]}>
-                    {feature}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Sign-in comes before any plan card rather than after a tap.
-                A purchase is recorded against a Firebase uid — without
-                one, verifyGooglePurchase throws unauthenticated and the
-                user has paid for an entitlement with nowhere to live.
-                Better to ask for the account first than to take money and
-                then explain. */}
-            {isAndroid && !isSignedIn && (
-              <SignInPrompt
-                colors={colors}
-                busy={signingIn}
-                onPress={handleSignIn}
-              />
-            )}
-
-            {!isAndroid ? (
-              <Text style={[styles.notice, { color: colors.textSecondary }]}>
-                Purchases aren't available on iOS yet.
-              </Text>
-            ) : isLoadingProducts ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={[styles.notice, { color: colors.textSecondary }]}>
-                  Loading plans…
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.plans}>
-                {PLANS.map(plan => (
-                  <PlanCard
-                    key={plan.id}
-                    plan={plan}
-                    colors={colors}
-                    priceText={
-                      productForPlan(plan.id)?.priceText ??
-                      plan.fallbackPriceText
-                    }
-                    hasPrice={productForPlan(plan.id) != null}
-                    featured={plan.id === FEATURED_PLAN}
-                    disabled={!canPurchase || !isSignedIn || busy}
-                    phase={
-                      purchaseActivity?.planId === plan.id
-                        ? purchaseActivity.phase
-                        : 'idle'
-                    }
-                    onPress={() => purchase(plan.id)}
-                  />
-                ))}
-              </View>
-            )}
-
-            {isAndroid && !canPurchase && (
-              <Text style={[styles.notice, { color: colors.textSecondary }]}>
-                Purchases aren't available in this build yet.
-              </Text>
-            )}
-
-            {isAndroid && canPurchase && products.length === 0 && !isLoadingProducts && (
-              <Text style={[styles.notice, { color: colors.textSecondary }]}>
-                Plan prices couldn't be loaded from Google Play. Check your
-                connection and reopen this screen.
-              </Text>
-            )}
-
-            {lastError && (
-              <View
-                style={[
-                  styles.errorBanner,
-                  { backgroundColor: colors.dangerSoft },
-                ]}>
-                <AlertTriangle size={14} color={colors.danger} />
-                <Text style={[styles.errorText, { color: colors.danger }]}>
-                  {lastError}
-                </Text>
-              </View>
-            )}
-
-            {isAndroid && (
-              <Pressable
-                style={styles.secondaryAction}
-                disabled={busy}
-                onPress={() => restorePurchases()}>
-                <Text
-                  style={[
-                    styles.secondaryActionText,
-                    { color: busy ? colors.textSecondary : colors.primary },
-                  ]}>
-                  {isRestoring ? 'Restoring…' : 'Restore purchases'}
-                </Text>
-              </Pressable>
-            )}
-
-            <Pressable style={styles.maybeLater} onPress={handleClose}>
               <Text
                 style={[
-                  styles.maybeLaterText,
-                  { color: colors.textSecondary },
+                  typography.screenTitle,
+                  styles.title,
+                  { color: colors.text },
                 ]}>
-                Maybe later
+                Go Premium
               </Text>
-            </Pressable>
-          </ScrollView>
+
+              {request?.reason && (
+                <View
+                  style={[
+                    styles.reasonBanner,
+                    { backgroundColor: colors.primarySoft },
+                  ]}>
+                  <Text style={[styles.reasonText, { color: colors.primary }]}>
+                    {request.reason}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.features}>
+                {PREMIUM_FEATURES.map(feature => (
+                  <View key={feature} style={styles.featureRow}>
+                    <View
+                      style={[
+                        styles.featureCheck,
+                        { backgroundColor: colors.successSoft },
+                      ]}>
+                      <Check size={12} color={colors.success} strokeWidth={3} />
+                    </View>
+                    <Text style={[styles.featureText, { color: colors.text }]}>
+                      {feature}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Sign-in comes before any plan card rather than after a tap.
+                  A purchase is recorded against a Firebase uid — without
+                  one, verifyGooglePurchase throws unauthenticated and the
+                  user has paid for an entitlement with nowhere to live.
+                  Better to ask for the account first than to take money and
+                  then explain. */}
+              {isAndroid && !isSignedIn && (
+                <SignInPrompt
+                  colors={colors}
+                  busy={signingIn}
+                  onPress={handleSignIn}
+                />
+              )}
+
+              {!isAndroid ? (
+                <Text style={[styles.notice, { color: colors.textSecondary }]}>
+                  Purchases aren't available on iOS yet.
+                </Text>
+              ) : isLoadingProducts ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color={colors.primary} />
+                  <Text style={[styles.notice, { color: colors.textSecondary }]}>
+                    Loading plans…
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.plans}>
+                  {PLANS.map(plan => (
+                    <PlanCard
+                      key={plan.id}
+                      plan={plan}
+                      colors={colors}
+                      priceText={
+                        productForPlan(plan.id)?.priceText ??
+                        plan.fallbackPriceText
+                      }
+                      hasPrice={productForPlan(plan.id) != null}
+                      featured={plan.id === FEATURED_PLAN}
+                      disabled={!canPurchase || !isSignedIn || busy}
+                      phase={
+                        purchaseActivity?.planId === plan.id
+                          ? purchaseActivity.phase
+                          : 'idle'
+                      }
+                      onPress={() => purchase(plan.id)}
+                    />
+                  ))}
+                </View>
+              )}
+
+              {isAndroid && !canPurchase && (
+                <Text style={[styles.notice, { color: colors.textSecondary }]}>
+                  Purchases aren't available in this build yet.
+                </Text>
+              )}
+
+              {isAndroid && canPurchase && products.length === 0 && !isLoadingProducts && (
+                <Text style={[styles.notice, { color: colors.textSecondary }]}>
+                  Plan prices couldn't be loaded from Google Play. Check your
+                  connection and reopen this screen.
+                </Text>
+              )}
+
+              {lastError && (
+                <View
+                  style={[
+                    styles.errorBanner,
+                    { backgroundColor: colors.dangerSoft },
+                  ]}>
+                  <AlertTriangle size={14} color={colors.danger} />
+                  <Text style={[styles.errorText, { color: colors.danger }]}>
+                    {lastError}
+                  </Text>
+                </View>
+              )}
+
+              {isAndroid && (
+                <Pressable
+                  style={styles.secondaryAction}
+                  disabled={busy}
+                  onPress={() => restorePurchases()}>
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: busy ? colors.textSecondary : colors.primary },
+                    ]}>
+                    {isRestoring ? 'Restoring…' : 'Restore purchases'}
+                  </Text>
+                </Pressable>
+              )}
+
+              <Pressable style={styles.maybeLater} onPress={handleClose}>
+                <Text
+                  style={[
+                    styles.maybeLaterText,
+                    { color: colors.textSecondary },
+                  ]}>
+                  Maybe later
+                </Text>
+              </Pressable>
+            </ScrollView>
+            {/* Keeps the card's last action clear of the nav bar / home
+                indicator while its background still runs to the edge. */}
+            <SafeAreaBottomSpacer />
+          </View>
         </View>
-      </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -442,6 +458,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
     paddingTop: 20,
+    // Full width on a phone, a centered card on a tablet / in landscape.
+    width: '100%',
+    maxWidth: MAX_SHEET_WIDTH,
+    alignSelf: 'center',
     // flexShrink rather than a measured maxHeight — the sheet takes the
     // space its content needs and no more, and shrinks instead of
     // overflowing when the content is taller than the screen.

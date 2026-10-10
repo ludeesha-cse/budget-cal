@@ -21,6 +21,7 @@ import { useInstallmentForm } from '../hooks/useInstallmentForm';
 import { useInstallmentPay, usePayPlanDeepLink } from '../hooks/useInstallmentPay';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useDeleteInstallmentPlan as useDeleteInstallmentPlanMutation } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'InstallmentPlans'>;
 
@@ -86,6 +87,7 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
         data={plans}
         keyExtractor={item => String(item.id)}
         style={styles.list}
+        contentContainerStyle={styles.listContent}
         renderItem={({ item }: { item: InstallmentPlanRow }) => (
           <InstallmentPlanCard
             item={item}
@@ -136,6 +138,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 4,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
   addButton: {
     flexDirection: 'row',

@@ -25,6 +25,7 @@ import { useEditGate } from '../hooks/useEditGate';
 import {
   useUpsertCategoryBudget as useUpsertCategoryBudgetMutation,
 } from '../hooks/queries';
+import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
 
 function CategoryBudgetsScreen(): React.JSX.Element {
   // Write paths go through the caching layer's mutation hooks: each
@@ -343,7 +344,7 @@ const styles = StyleSheet.create({
     padding: 16,
     // Clears the floating tab bar pill + FAB (see App.tsx), same as every
     // other scrollable top-level screen.
-    paddingBottom: 120,
+    paddingBottom: SCREEN_BOTTOM_CLEARANCE,
   },
   title: {
     marginBottom: 12,

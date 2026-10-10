@@ -12,6 +12,7 @@ import { getCurrentMonthString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 function ExpensesByTypeScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -81,6 +82,7 @@ function ExpensesByTypeScreen(): React.JSX.Element {
       ) : (
         <FlatList
           style={styles.list}
+          contentContainerStyle={styles.listContent}
           data={sorted}
           keyExtractor={item => item.type}
           renderItem={({ item, index }) => {
@@ -128,6 +130,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 4,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
   row: {
     padding: 14,

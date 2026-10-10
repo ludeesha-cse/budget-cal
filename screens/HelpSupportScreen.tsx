@@ -14,6 +14,7 @@ import ScreenBackground from '../components/ScreenBackground';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
 import { HELP_TOPICS } from '../config/helpTopics';
+import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
 
 const SUPPORT_WHATSAPP_NUMBER = '94701838014';
 
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     padding: 16,
     // Clears the floating tab bar pill + FAB (see App.tsx) — same
     // reasoning as SettingsHomeScreen's own container.
-    paddingBottom: 120,
+    paddingBottom: SCREEN_BOTTOM_CLEARANCE,
   },
   intro: {
     fontSize: scaleFont(14),

@@ -23,6 +23,7 @@ import type { LoanAccountType } from '../db/queries';
 import { useLoanAccountsData } from '../hooks/useLoanAccountsData';
 import { useLoanForm } from '../hooks/useLoanForm';
 import { useSettleLoan } from '../hooks/useSettleLoan';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 const COUNTERPART_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
@@ -237,6 +238,7 @@ const styles = StyleSheet.create({
   },
   containerContent: {
     padding: 16,
+    paddingBottom: FAB_CLEARANCE,
   },
   summaryCard: {
     flexDirection: 'row',

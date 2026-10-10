@@ -5,6 +5,9 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../contexts/ThemeContext';
 import { formatDateString } from '../../utils/date';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { MAX_SHEET_WIDTH } from '../../theme/layout';
+import SafeAreaBottomSpacer from './SafeAreaBottomSpacer';
 
 type Props = {
 
@@ -84,20 +87,23 @@ function DateField({
           transparent
           animationType="slide"
           onRequestClose={() => setShowPicker(false)}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowPicker(false)}>
-            <Pressable
-              style={[styles.modalCard, { backgroundColor: colors.surface }]}
-              onPress={() => {}}>
-              <DateTimePicker
-                value={pickerValue}
-                mode="date"
-                display="spinner"
-                maximumDate={maximumDate}
-                onChange={handleChange}
-              />
-              <Button title="Done" color={colors.primary} onPress={() => setShowPicker(false)} />
+          <SafeAreaProvider>
+            <Pressable style={styles.modalBackdrop} onPress={() => setShowPicker(false)}>
+              <Pressable
+                style={[styles.modalCard, { backgroundColor: colors.surface }]}
+                onPress={() => {}}>
+                <DateTimePicker
+                  value={pickerValue}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={maximumDate}
+                  onChange={handleChange}
+                />
+                <Button title="Done" color={colors.primary} onPress={() => setShowPicker(false)} />
+                <SafeAreaBottomSpacer />
+              </Pressable>
             </Pressable>
-          </Pressable>
+          </SafeAreaProvider>
         </Modal>
       )}
     </>
@@ -111,10 +117,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalCard: {
+    width: '100%',
+    maxWidth: MAX_SHEET_WIDTH,
+    alignSelf: 'center',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 16,
   },
 });
 

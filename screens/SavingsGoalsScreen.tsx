@@ -22,6 +22,7 @@ import {
 import { useSavingsGoalForm } from '../hooks/useSavingsGoalForm';
 import { useSavingsTransferForm } from '../hooks/useSavingsTransferForm';
 import { getCurrentDateString } from '../utils/date';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 const FILTER_OPTIONS: SegmentedToggleOption<SavingsGoalFilter>[] = [
   { key: 'active', label: 'Active' },
@@ -94,6 +95,7 @@ function SavingsGoalsScreen({ navigation }: Props): React.JSX.Element {
           data={visibleGoals}
           keyExtractor={item => String(item.id)}
           style={styles.list}
+          contentContainerStyle={styles.listContent}
           renderItem={({ item: goal }) => (
             <GoalCard
               goal={goal}
@@ -171,6 +173,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 12,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
 });
 

@@ -25,6 +25,7 @@ import {
   useDeleteCategory as useDeleteCategoryMutation,
   useUpdateCategory as useUpdateCategoryMutation,
 } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 type CategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
 
@@ -142,6 +143,7 @@ function CategoriesScreen(): React.JSX.Element {
 
       <FlatList
         style={styles.list}
+        contentContainerStyle={styles.listContent}
         data={categories ?? []}
         keyExtractor={item => String(item.id)}
         renderItem={({ item, index }) => {
@@ -248,6 +250,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 16,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
   row: {
     flexDirection: 'row',

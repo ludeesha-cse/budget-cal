@@ -30,6 +30,7 @@ import {
   useCloseAccount as useCloseAccountMutation,
   useDeleteAccount as useDeleteAccountMutation,
 } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 // Excluded Liability/Receivable from account screen to avoid confusion
 const ACCOUNT_SECTIONS: { label: string; types: string[] }[] = [
@@ -228,6 +229,7 @@ const styles = StyleSheet.create({
   },
   containerContent: {
     padding: 16,
+    paddingBottom: FAB_CLEARANCE,
   },
   topActionsRow: {
     flexDirection: 'row',

@@ -25,6 +25,7 @@ import {
 } from '../hooks/queries';
 import type { ExchangeRateListRow } from '../hooks/queries';
 import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 // Roughly one expanded, in-edit row: how much of the list has to stay
 // scrollable past the end so any row can reach the top of the visible
@@ -89,9 +90,11 @@ function ExchangeRatesScreen(): React.JSX.Element {
   // Clears the keyboard, and then leaves enough room below the last row
   // for ANY row — including that last one — to be scrolled up to the top
   // of what's still visible.
+  // With the keyboard down it only has to let the last row scroll out
+  // from under the FAB (which is hidden while the keyboard is up).
   const footerHeight = keyboardVisible
     ? overlap + Math.max(0, visibleListHeight - EDIT_ROW_HEADROOM)
-    : 0;
+    : FAB_CLEARANCE;
 
   // Opening a row for editing autofocuses its field, which raises the
   // keyboard over the bottom of the list — so put that row at the top of

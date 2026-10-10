@@ -4,6 +4,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { BottomSheetPickerContext } from './BottomSheetModal';
 import { typography, scaleFont } from '../theme/typography';
 import { fieldErrorStyle } from '../utils/formFieldStyle';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { MAX_SHEET_WIDTH } from '../theme/layout';
+import SafeAreaBottomSpacer from './common/SafeAreaBottomSpacer';
 
 export type CollapsiblePickerOption = {
   label: string;
@@ -78,45 +81,48 @@ function CollapsiblePicker({
           visible={expanded}
           animationType="slide"
           onRequestClose={() => setExpanded(false)}>
-          <View style={styles.modalFill}>
-            <Pressable
-              style={styles.modalBackdrop}
-              onPress={() => setExpanded(false)}
-            />
-            <View
-              style={[
-                styles.modalSheet,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}>
-              {label && (
-                <Text
-                  style={[typography.cardTitle, styles.modalTitle, { color: colors.text }]}>
-                  {label}
-                </Text>
-              )}
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {items.map((item, index) => (
-                  <Pressable
-                    key={item.value}
-                    style={[
-                      styles.option,
-                      { borderBottomColor: colors.border },
-                      index === items.length - 1 && styles.optionLast,
-                    ]}
-                    onPress={() => handleSelect(item.value)}>
-                    <Text
+          <SafeAreaProvider>
+            <View style={styles.modalFill}>
+              <Pressable
+                style={styles.modalBackdrop}
+                onPress={() => setExpanded(false)}
+              />
+              <View
+                style={[
+                  styles.modalSheet,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
+                {label && (
+                  <Text
+                    style={[typography.cardTitle, styles.modalTitle, { color: colors.text }]}>
+                    {label}
+                  </Text>
+                )}
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {items.map((item, index) => (
+                    <Pressable
+                      key={item.value}
                       style={[
-                        styles.optionText,
-                        { color: colors.text },
-                        item.value === selectedValue && styles.optionTextSelected,
-                      ]}>
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
+                        styles.option,
+                        { borderBottomColor: colors.border },
+                        index === items.length - 1 && styles.optionLast,
+                      ]}
+                      onPress={() => handleSelect(item.value)}>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          { color: colors.text },
+                          item.value === selectedValue && styles.optionTextSelected,
+                        ]}>
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <SafeAreaBottomSpacer />
+              </View>
             </View>
-          </View>
+          </SafeAreaProvider>
         </Modal>
       )}
     </View>
@@ -146,6 +152,9 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     maxHeight: '70%',
+    width: '100%',
+    maxWidth: MAX_SHEET_WIDTH,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,

@@ -14,6 +14,7 @@ import {
   useSetCurrencyActive as useSetCurrencyActiveMutation,
   useSetDefaultCurrency as useSetDefaultCurrencyMutation,
 } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 function CurrenciesScreen(): React.JSX.Element {
   // Write paths go through the caching layer's mutation hooks: each
@@ -86,6 +87,7 @@ function CurrenciesScreen(): React.JSX.Element {
 
       <FlatList
         style={styles.list}
+        contentContainerStyle={styles.listContent}
         data={activeCurrencies}
         keyExtractor={item => String(item.id)}
         renderItem={({ item }) => (
@@ -164,6 +166,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 16,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
   row: {
     flexDirection: 'row',

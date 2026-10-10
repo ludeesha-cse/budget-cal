@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   LayoutChangeEvent,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { ImageOff } from 'lucide-react-native';
@@ -22,6 +23,31 @@ type Props = {
   onDone: () => void;
 };
 
+// The slide illustrations are all 2000x1500.
+const IMAGE_ASPECT = 4 / 3;
+// Beyond this (tablets, landscape) the text column and image stop growing
+// and stay centered — a 1000dp-wide line of body copy is unreadable.
+const SLIDE_MAX_CONTENT_WIDTH = 560;
+// Never let the illustration take more than this share of the screen's
+// height, so heading and body text still fit below it on short phones.
+const IMAGE_MAX_HEIGHT_RATIO = 0.34;
+
+type ImageSize = { width: number; height: number };
+
+// Fits the 4:3 illustration into whatever room this device has: as wide
+// as the slide's text column allows, unless that would make it too tall
+// for the screen, in which case height wins and width follows. This
+// replaces a fixed 360x270 that ran off the right edge of any phone
+// narrower than ~416dp (most Androids, e.g. a 360-393dp Redmi Note).
+function fitImage(columnWidth: number, windowHeight: number): ImageSize {
+  const maxHeight = windowHeight * IMAGE_MAX_HEIGHT_RATIO;
+  const width = Math.min(columnWidth, maxHeight * IMAGE_ASPECT);
+  return {
+    width: Math.max(0, Math.floor(width)),
+    height: Math.max(0, Math.floor(width / IMAGE_ASPECT)),
+  };
+}
+
 function OnboardingScreen({ onDone }: Props): React.JSX.Element {
   // Write paths go through the caching layer's mutation hooks: each
   // one runs the same db/queries function as before and then
@@ -34,6 +60,14 @@ function OnboardingScreen({ onDone }: Props): React.JSX.Element {
   const [index, setIndex] = useState(0);
   const [pageWidth, setPageWidth] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
+  // A touch less side padding on the narrowest phones (320dp class).
+  const slidePadding = pageWidth > 0 && pageWidth < 360 ? 20 : 28;
+  const columnWidth = Math.min(
+    SLIDE_MAX_CONTENT_WIDTH,
+    Math.max(0, pageWidth - slidePadding * 2),
+  );
+  const imageSize = fitImage(columnWidth, windowHeight);
 
   const isFirst = index === 0;
   const isLast = index === HELP_TOPICS.length - 1;
@@ -41,6 +75,20 @@ function OnboardingScreen({ onDone }: Props): React.JSX.Element {
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     setPageWidth(event.nativeEvent.layout.width);
   }, []);
+
+  // Pages are pageWidth wide, so when that changes (rotation, split
+  // screen, foldable unfolding) the old scroll offset would land between
+  // two slides — jump back to the current one at the new width.
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  useEffect(() => {
+    if (pageWidth > 0) {
+      scrollRef.current?.scrollTo({
+        x: indexRef.current * pageWidth,
+        animated: false,
+      });
+    }
+  }, [pageWidth]);
 
   
   const goTo = useCallback(
@@ -99,6 +147,9 @@ function OnboardingScreen({ onDone }: Props): React.JSX.Element {
               topic={topic}
               colors={colors}
               width={pageWidth}
+              padding={slidePadding}
+              columnWidth={columnWidth}
+              imageSize={imageSize}
             />
           ))}
         </ScrollView>
@@ -111,8 +162,10 @@ function OnboardingScreen({ onDone }: Props): React.JSX.Element {
                 styles.dot,
                 dotIndex === index ? styles.dotActive : styles.dotInactive,
                 {
+                  // chevron rather than neutralSoft: the latter is nearly the
+                  // background color, which left the inactive dots invisible.
                   backgroundColor:
-                    dotIndex === index ? colors.primary : colors.neutralSoft,
+                    dotIndex === index ? colors.primary : colors.chevron,
                 },
               ]}
             />
@@ -167,29 +220,44 @@ function Slide({
   topic,
   colors,
   width,
+  padding,
+  columnWidth,
+  imageSize,
 }: {
   topic: HelpTopic;
   colors: ThemeColors;
   width: number;
+  padding: number;
+  columnWidth: number;
+  imageSize: ImageSize;
 }): React.JSX.Element {
+  // Each slide scrolls vertically on its own when the image plus text
+  // don't fit (short phones, landscape, a large system font) — otherwise
+  // the end of the body copy was simply cut off. When it does fit,
+  // flexGrow + justifyContent keep it vertically centered as before.
   return (
-    <View style={[styles.slide, { width }]}>
-      <SlideImage topic={topic} colors={colors} />
-      <Text
-        style={[
-          typography.eyebrow,
-          styles.slideEyebrow,
-          { color: colors.textSecondary },
-        ]}>
-        Getting Started
-      </Text>
-      <Text style={[typography.screenTitle, { color: colors.text }]}>
-        {topic.heading}
-      </Text>
-      <Text style={[styles.slideBody, { color: colors.textSecondary }]}>
-        {topic.summary}
-      </Text>
-    </View>
+    <ScrollView
+      style={{ width }}
+      contentContainerStyle={[styles.slideContent, { paddingHorizontal: padding }]}
+      showsVerticalScrollIndicator={false}>
+      <View style={[styles.slideColumn, { width: columnWidth }]}>
+        <SlideImage topic={topic} colors={colors} size={imageSize} />
+        <Text
+          style={[
+            typography.eyebrow,
+            styles.slideEyebrow,
+            { color: colors.textSecondary },
+          ]}>
+          Getting Started
+        </Text>
+        <Text style={[typography.screenTitle, { color: colors.text }]}>
+          {topic.heading}
+        </Text>
+        <Text style={[styles.slideBody, { color: colors.textSecondary }]}>
+          {topic.summary}
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -197,15 +265,17 @@ function Slide({
 function SlideImage({
   topic,
   colors,
+  size,
 }: {
   topic: HelpTopic;
   colors: ThemeColors;
+  size: ImageSize;
 }): React.JSX.Element {
   if (topic.image) {
     return (
       <Image
         source={topic.image}
-        style={styles.slideImage}
+        style={[styles.slideImage, size]}
         resizeMode="contain"
       />
     );
@@ -214,6 +284,7 @@ function SlideImage({
     <View
       style={[
         styles.slideImage,
+        size,
         styles.slideImagePlaceholder,
         { borderColor: colors.border, backgroundColor: colors.neutralSoft },
       ]}>
@@ -229,16 +300,20 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
   },
-  slide: {
-    flex: 1,
-    paddingHorizontal: 28,
+  slideContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
   },
+  slideColumn: {
+    maxWidth: SLIDE_MAX_CONTENT_WIDTH,
+  },
+  // Size comes from fitImage(); centered within the text column.
   slideImage: {
-    width: 360,
-    height: 270,
+    alignSelf: 'center',
     borderRadius: 20,
-    marginBottom: 32,
+    marginBottom: 28,
   },
   slideImagePlaceholder: {
     alignItems: 'center',
@@ -264,7 +339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   dot: {
     height: 8,

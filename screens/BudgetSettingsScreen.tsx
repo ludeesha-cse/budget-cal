@@ -31,6 +31,7 @@ import {
   useUpsertBudget as useUpsertBudgetMutation,
 } from '../hooks/queries';
 import KeyboardAwareScrollView from '../components/common/KeyboardAwareScrollView';
+import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
 
 function BudgetSettingsScreen(): React.JSX.Element {
   // Write paths go through the caching layer's mutation hooks: each
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
     // every other scrollable top-level screen in this app already does
     // (ReportsScreen, TransactionForm, ...) — this screen just didn't
     // need it before since it had no ScrollView of its own yet.
-    paddingBottom: 120,
+    paddingBottom: SCREEN_BOTTOM_CLEARANCE,
   },
   title: {
     marginBottom: 12,

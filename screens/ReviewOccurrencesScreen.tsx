@@ -24,6 +24,7 @@ import {
   useSkipInstallmentOccurrence as useSkipInstallmentOccurrenceMutation,
   useSkipOccurrence as useSkipOccurrenceMutation,
 } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 // See utils/accountTypes.ts.
 
@@ -225,6 +226,7 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
             // merged list keys on the kind-qualified key the query built.
             keyExtractor={item => item.key}
             style={styles.list}
+            contentContainerStyle={styles.listContent}
             renderItem={({ item }) =>
               item.kind === 'recurring' ? (
                 <PendingOccurrenceCard
@@ -287,6 +289,10 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
 });
 

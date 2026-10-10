@@ -7,7 +7,6 @@ import React, {
 } from 'react';
 import {
   Animated,
-  Dimensions,
   Keyboard,
   Modal,
   Pressable,
@@ -18,11 +17,14 @@ import {
 } from 'react-native';
 import type { ViewStyle } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ThemeColors } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 import { MODAL_TRANSITION_MS } from '../theme/motion';
-import { useSlideSheet } from '../hooks/useSlideSheet';
+import { offscreenSheetOffset, useSlideSheet } from '../hooks/useSlideSheet';
+import { MAX_SHEET_WIDTH } from '../theme/layout';
+import SafeAreaBottomSpacer from './common/SafeAreaBottomSpacer';
 import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap';
 import KeyboardAwareScrollView from './common/KeyboardAwareScrollView';
 
@@ -56,8 +58,6 @@ type PickerHost = {
 };
 export const BottomSheetPickerContext = createContext<PickerHost | null>(null);
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 // PickerOverlay (below) is a second, layered sheet with the exact same
 // "slide up from the bottom" shape as useSlideSheet (hooks/useSlideSheet.ts)
 // but nested inside this same native Modal rather than a Modal of its
@@ -68,13 +68,13 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 // frames before there's anything on screen to show them.
 function useSlideAnimation(visible: boolean) {
   const [rendered, setRendered] = useState(visible);
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const translateY = useRef(new Animated.Value(offscreenSheetOffset())).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setRendered(true);
-      translateY.setValue(SCREEN_HEIGHT);
+      translateY.setValue(offscreenSheetOffset());
       backdropOpacity.setValue(0);
       let raf2 = 0;
       const raf1 = requestAnimationFrame(() => {
@@ -101,7 +101,7 @@ function useSlideAnimation(visible: boolean) {
     if (rendered) {
       Animated.parallel([
         Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
+          toValue: offscreenSheetOffset(),
           duration: MODAL_TRANSITION_MS,
           useNativeDriver: true,
         }),
@@ -308,6 +308,7 @@ function PickerOverlay({
               </Pressable>
             ))}
           </ScrollView>
+          <SafeAreaBottomSpacer consumed={keyboardInset} />
         </Animated.View>
       </View>
     </View>
@@ -363,146 +364,155 @@ function BottomSheetModal({
       onRequestClose={onClose}
       onDismiss={handleNativeDismiss}
     >
-      {/* The view useKeyboardOverlap measures: it fills the modal's
-          window and, crucially, its own height is NOT affected by the
-          inset we derive from it (that goes on the sheet host below), so
-          measuring it can't feed back into itself. collapsable={false}
-          keeps Android from flattening it away, which would leave
-          nothing to measure. */}
-      <View style={styles.fill} ref={hostRef} collapsable={false}>
-        <Animated.View
-          style={[styles.backdrop, { opacity: backdropOpacity }]}
-          pointerEvents="box-none"
-          renderToHardwareTextureAndroid
-        >
-          {/* Dismisses the keyboard, same as every screen's old
-                modalBackdrop press handler — deliberately does NOT close
-                the sheet itself, so a stray tap while typing never
-                discards an in-progress form. */}
-          <Pressable
-            style={styles.backdropPress}
-            onPress={() => Keyboard.dismiss()}
-          />
-        </Animated.View>
-        {/* Everything the keyboard displaces lives inside this host, so
-            the backdrop above stays full-bleed — Yoga lays an absolutely
-            filled child out against the parent's padding box, so putting
-            the inset on the root would leave the keyboard strip
-            unpainted while the keyboard animates in. */}
-        <View
-          style={[styles.sheetHost, sheetContainerInset(keyboardInset)]}
-          pointerEvents="box-none">
+      {/* Its own provider, so SafeAreaBottomSpacer below measures this
+          Modal's window rather than the app root's — see that component
+          for why the two differ. */}
+      <SafeAreaProvider>
+        {/* The view useKeyboardOverlap measures: it fills the modal's
+            window and, crucially, its own height is NOT affected by the
+            inset we derive from it (that goes on the sheet host below), so
+            measuring it can't feed back into itself. collapsable={false}
+            keeps Android from flattening it away, which would leave
+            nothing to measure. */}
+        <View style={styles.fill} ref={hostRef} collapsable={false}>
           <Animated.View
+            style={[styles.backdrop, { opacity: backdropOpacity }]}
+            pointerEvents="box-none"
             renderToHardwareTextureAndroid
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                // Also fades in with the backdrop (not just sliding), so a
-                // freshly-mounted native view has an opacity gate as well as
-                // a position one — see the Android note on backdropOpacity's
-                // declaration in useSlideSheet.ts for why the position alone
-                // isn't a safe enough guard against a flash on first paint.
-                opacity: backdropOpacity,
-                // translateY is purely the open/close slide. The keyboard
-                // is handled by the host's padding, never by this
-                // transform — see sheetContainerInset.
-                transform: [{ translateY }],
-              },
-            ]}
           >
-            <BottomSheetPickerContext.Provider value={pickerHost}>
-              {title && (
-                <Text
-                  style={[
-                    typography.cardTitle,
-                    styles.title,
-                    { color: colors.text },
-                  ]}
-                >
-                  {title}
-                </Text>
-              )}
-              {/* keyboardInsetHandledByParent: the sheet host above has
-                  already shrunk this sheet clear of the keyboard, so this
-                  view must not pad for it a second time. What it DOES
-                  bring is scrolling the focused field into view and the
-                  headroom that lets the bottom-most field be scrolled up
-                  to the top of the sheet. */}
-              <KeyboardAwareScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardInsetHandledByParent
-              >
-                {children}
-              </KeyboardAwareScrollView>
-              <View style={[styles.footer, { borderTopColor: colors.border }]}>
-                <Pressable
-                  style={[
-                    styles.footerButton,
-                    styles.cancelButton,
-                    { borderColor: colors.border },
-                  ]}
-                  onPress={onClose}
-                >
-                  <Text style={[styles.footerButtonText, { color: colors.text }]}>
-                    {cancelLabel}
+            {/* Dismisses the keyboard, same as every screen's old
+                  modalBackdrop press handler — deliberately does NOT close
+                  the sheet itself, so a stray tap while typing never
+                  discards an in-progress form. */}
+            <Pressable
+              style={styles.backdropPress}
+              onPress={() => Keyboard.dismiss()}
+            />
+          </Animated.View>
+          {/* Everything the keyboard displaces lives inside this host, so
+              the backdrop above stays full-bleed — Yoga lays an absolutely
+              filled child out against the parent's padding box, so putting
+              the inset on the root would leave the keyboard strip
+              unpainted while the keyboard animates in. */}
+          <View
+            style={[styles.sheetHost, sheetContainerInset(keyboardInset)]}
+            pointerEvents="box-none">
+            <Animated.View
+              renderToHardwareTextureAndroid
+              style={[
+                styles.sheet,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  // Also fades in with the backdrop (not just sliding), so a
+                  // freshly-mounted native view has an opacity gate as well as
+                  // a position one — see the Android note on backdropOpacity's
+                  // declaration in useSlideSheet.ts for why the position alone
+                  // isn't a safe enough guard against a flash on first paint.
+                  opacity: backdropOpacity,
+                  // translateY is purely the open/close slide. The keyboard
+                  // is handled by the host's padding, never by this
+                  // transform — see sheetContainerInset.
+                  transform: [{ translateY }],
+                },
+              ]}
+            >
+              <BottomSheetPickerContext.Provider value={pickerHost}>
+                {title && (
+                  <Text
+                    style={[
+                      typography.cardTitle,
+                      styles.title,
+                      { color: colors.text },
+                    ]}
+                  >
+                    {title}
                   </Text>
-                </Pressable>
-                {onSave && (
-                  // NOT `disabled` when canSave is false, deliberately.
-                  // The button still LOOKS unavailable (muted fill, muted
-                  // text), which is the "not yet" signal — but pressing it
-                  // runs the form's submit anyway, and that is what asks
-                  // the form to point at whatever is still missing. A truly
-                  // disabled button swallows the tap and leaves the user
-                  // with no way to find out why nothing happened. See
-                  // hooks/useFieldErrors for the other half.
+                )}
+                {/* keyboardInsetHandledByParent: the sheet host above has
+                    already shrunk this sheet clear of the keyboard, so this
+                    view must not pad for it a second time. What it DOES
+                    bring is scrolling the focused field into view and the
+                    headroom that lets the bottom-most field be scrolled up
+                    to the top of the sheet. */}
+                <KeyboardAwareScrollView
+                  style={styles.scroll}
+                  contentContainerStyle={styles.scrollContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardInsetHandledByParent
+                >
+                  {children}
+                </KeyboardAwareScrollView>
+                <View style={[styles.footer, { borderTopColor: colors.border }]}>
                   <Pressable
                     style={[
                       styles.footerButton,
-                      {
-                        backgroundColor: !canSave
-                          ? colors.neutralSoft
-                          : saveDestructive
-                          ? colors.danger
-                          : colors.primary,
-                      },
+                      styles.cancelButton,
+                      { borderColor: colors.border },
                     ]}
-                    onPress={onSave}
+                    onPress={onClose}
                   >
-                    <Text
-                      style={[
-                        styles.footerButtonText,
-                        {
-                          color: !canSave
-                            ? colors.textSecondary
-                            : saveDestructive
-                            ? '#FFFFFF'
-                            : colors.primaryText,
-                        },
-                      ]}
-                    >
-                      {saveLabel}
+                    <Text style={[styles.footerButtonText, { color: colors.text }]}>
+                      {cancelLabel}
                     </Text>
                   </Pressable>
-                )}
-              </View>
-            </BottomSheetPickerContext.Provider>
-          </Animated.View>
+                  {onSave && (
+                    // NOT `disabled` when canSave is false, deliberately.
+                    // The button still LOOKS unavailable (muted fill, muted
+                    // text), which is the "not yet" signal — but pressing it
+                    // runs the form's submit anyway, and that is what asks
+                    // the form to point at whatever is still missing. A truly
+                    // disabled button swallows the tap and leaves the user
+                    // with no way to find out why nothing happened. See
+                    // hooks/useFieldErrors for the other half.
+                    <Pressable
+                      style={[
+                        styles.footerButton,
+                        {
+                          backgroundColor: !canSave
+                            ? colors.neutralSoft
+                            : saveDestructive
+                            ? colors.danger
+                            : colors.primary,
+                        },
+                      ]}
+                      onPress={onSave}
+                    >
+                      <Text
+                        style={[
+                          styles.footerButtonText,
+                          {
+                            color: !canSave
+                              ? colors.textSecondary
+                              : saveDestructive
+                              ? '#FFFFFF'
+                              : colors.primaryText,
+                          },
+                        ]}
+                      >
+                        {saveLabel}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+                {/* Keeps Cancel/Save above the nav bar / home indicator.
+                    While the keyboard is up its inset already covers that
+                    strip, so only the remainder (normally 0) is added. */}
+                <SafeAreaBottomSpacer consumed={keyboardInset} />
+              </BottomSheetPickerContext.Provider>
+            </Animated.View>
+          </View>
+          {/* Lives inside this same Modal, after (i.e. painted on top of)
+                the form sheet above — see PickerOverlay's own comment for
+                why it isn't a second native <Modal>. */}
+          <PickerOverlay
+            config={activePicker}
+            onRequestClose={() => setActivePicker(null)}
+            colors={colors}
+            keyboardInset={keyboardInset}
+          />
         </View>
-        {/* Lives inside this same Modal, after (i.e. painted on top of)
-              the form sheet above — see PickerOverlay's own comment for
-              why it isn't a second native <Modal>. */}
-        <PickerOverlay
-          config={activePicker}
-          onRequestClose={() => setActivePicker(null)}
-          colors={colors}
-          keyboardInset={keyboardInset}
-        />
-      </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -537,8 +547,13 @@ const styles = StyleSheet.create({
   // a strip of backdrop showing above a tall sheet — a fixed margin does
   // that job without a percentage, and a percentage is what needed a
   // parent height that could still be a frame out of date.
+  // width + maxWidth + alignSelf: full width on a phone, a centered card
+  // on a tablet or in landscape instead of a sheet stretched edge-to-edge.
   sheet: {
     flexShrink: 1,
+    width: '100%',
+    maxWidth: MAX_SHEET_WIDTH,
+    alignSelf: 'center',
     marginTop: SHEET_TOP_GUTTER,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -552,6 +567,9 @@ const styles = StyleSheet.create({
   // this is a second sheet layered in front, not a replacement.
   pickerSheet: {
     flexShrink: 1,
+    width: '100%',
+    maxWidth: MAX_SHEET_WIDTH,
+    alignSelf: 'center',
     marginTop: PICKER_TOP_GUTTER,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

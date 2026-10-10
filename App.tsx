@@ -14,6 +14,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {
@@ -70,11 +71,19 @@ import DefaultCurrencyScreen from './screens/DefaultCurrencyScreen';
 import PaywallModal from './screens/PaywallModal';
 import AddEntrySheet, { AddEntryKind } from './components/AddEntrySheet';
 import { EntitlementProvider } from './hooks/useEntitlement';
+import { useContentWidth } from './hooks/useContentWidth';
 import { PaywallProvider } from './contexts/PaywallContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { generatePendingOccurrences } from './db/queries';
+import {
+  FAB_OVERLAP_INTO_BAR,
+  FAB_SIZE,
+  TAB_BAR_BOTTOM_GAP,
+  TAB_BAR_HEIGHT,
+  tabBarSideMargin,
+} from './theme/layout';
 import type {
   DashboardStackParamList,
   HistoryStackParamList,
@@ -241,6 +250,37 @@ const HistoryTabIcon = makeTabIcon(TrendingUp);
 const ReportsTabIcon = makeTabIcon(ChartColumn);
 const SettingsTabIcon = makeTabIcon(MoreHorizontal);
 
+// Replaces the library's default label so it can't outgrow the pill. The
+// pill is a fixed TAB_BAR_HEIGHT, so an uncapped label at a large system
+// font size (common on Android phones that ship with a bigger default)
+// pushes itself out through the bottom of the bar. Capped at 1.3x, and
+// shrinks to fit rather than truncating where four tabs plus the FAB
+// share a narrow (320-360dp) screen.
+function TabLabel({
+  color,
+  position,
+  children,
+}: {
+  color: string;
+  position: 'beside-icon' | 'below-icon';
+  children: string;
+}): React.JSX.Element {
+  return (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.8}
+      maxFontSizeMultiplier={1.3}
+      style={[
+        styles.tabBarLabel,
+        position === 'beside-icon' && styles.tabBarLabelBeside,
+        { color },
+      ]}>
+      {children}
+    </Text>
+  );
+}
+
 function AppShell(): React.JSX.Element {
   const { scheme } = useTheme();
 
@@ -317,25 +357,20 @@ function RootFlow(): React.JSX.Element {
 
 // The floating tab bar and FAB are two separately-drawn elements that
 // have to line up as one visual unit, so their positions are derived from
-// these shared constants rather than each carrying its own independently-
-// tuned "bottom" number — the two can't drift apart from each other.
-// TAB_BAR_BOTTOM_GAP sits ON TOP OF insets.bottom (the device's own
-// safe-area/home-indicator height), not instead of it — iOS's insets.bottom
-// is already a real, sizeable gap (~34pt on a Face ID device) on its own,
-// so the same extra gap that looks right stacked on Android's near-zero
-// inset reads as way too much stacked on top of iOS's.
-const TAB_BAR_HEIGHT = 64;
-const TAB_BAR_BOTTOM_GAP = Platform.OS === 'ios' ? 6 : 16;
-const FAB_SIZE = 56;
-// How far the FAB's bottom edge sits below the tab bar's own top edge —
-// keeps it poking up out of the bar by a fixed, deliberate amount.
-const FAB_OVERLAP_INTO_BAR = 22;
-
+// the shared constants in theme/layout.ts rather than each carrying its
+// own independently-tuned "bottom" number — the two can't drift apart.
 function AppNavigator(): React.JSX.Element {
   const { scheme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const tabBarBottomOffset = insets.bottom + TAB_BAR_BOTTOM_GAP;
   const fabBottom = tabBarBottomOffset + TAB_BAR_HEIGHT - FAB_OVERLAP_INTO_BAR;
+  const tabBarMarginHorizontal = tabBarSideMargin(windowWidth, insets);
+  // Every screen's column: full width on a phone in portrait, capped and
+  // centered on tablets / in landscape, and always clear of a landscape
+  // notch or cut-out on either side (see hooks/useContentWidth.ts).
+  const { marginLeft, marginRight } = useContentWidth();
+  const sceneStyle = { marginLeft, marginRight };
   const [sheetOpen, setSheetOpen] = useState(false);
   const [navigationRef, setNavigationRef] = useState<
     | import('@react-navigation/native').NavigationContainerRef<RootTabParamList>
@@ -429,6 +464,9 @@ function AppNavigator(): React.JSX.Element {
             tabBarActiveTintColor: colors.primary,
             tabBarInactiveTintColor: colors.chevron,
             tabBarHideOnKeyboard: true,
+            tabBarLabel: TabLabel,
+            tabBarItemStyle: styles.tabItem,
+            sceneStyle,
             tabBarStyle: {
               backgroundColor: colors.card,
               borderTopWidth: 0,
@@ -436,7 +474,16 @@ function AppNavigator(): React.JSX.Element {
               borderColor: colors.border,
               borderRadius: 28,
               height: TAB_BAR_HEIGHT,
-              marginHorizontal: 16,
+              // The library pads the bar's INSIDE by the safe-area insets
+              // by default. With a fixed height that padding comes out of
+              // the icon/label area — on edge-to-edge Android with
+              // 3-button navigation (insets.bottom ~48dp) it left ~16dp
+              // and clipped every label. The insets are carried OUTSIDE
+              // the pill instead, by the margins below.
+              paddingTop: 0,
+              paddingBottom: 0,
+              paddingHorizontal: 0,
+              marginHorizontal: tabBarMarginHorizontal,
               marginBottom: tabBarBottomOffset,
               shadowColor: '#000',
               shadowOpacity: 0.15,
@@ -444,7 +491,6 @@ function AppNavigator(): React.JSX.Element {
               shadowOffset: { width: 0, height: 6 },
               elevation: 8,
             },
-            tabBarLabelStyle: styles.tabBarLabel,
           }}
         >
           <Tab.Screen
@@ -462,7 +508,7 @@ function AppNavigator(): React.JSX.Element {
               // the boundary between these two middle tabs — nudge their
               // content away from that boundary (History left, Reports
               // right) so neither sits directly under it.
-              tabBarItemStyle: styles.middleTabLeft,
+              tabBarItemStyle: [styles.tabItem, styles.middleTabLeft],
             }}
           />
           <Tab.Screen
@@ -471,7 +517,7 @@ function AppNavigator(): React.JSX.Element {
             options={{
               headerShown: false,
               tabBarIcon: ReportsTabIcon,
-              tabBarItemStyle: styles.middleTabRight,
+              tabBarItemStyle: [styles.tabItem, styles.middleTabRight],
             }}
           />
           <Tab.Screen
@@ -488,7 +534,9 @@ function AppNavigator(): React.JSX.Element {
             component={SettingsStackNavigator}
             options={{
               headerShown: false,
-              tabBarLabel: 'More',
+              // `title` rather than a string tabBarLabel: the label is a
+              // render function (TabLabel), which reads its text from here.
+              title: 'More',
               tabBarIcon: SettingsTabIcon,
             }}
           />
@@ -603,6 +651,17 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontSize: 12,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  tabBarLabelBeside: {
+    marginStart: 12,
+  },
+  // Centers icon + label vertically in the fixed-height pill (the
+  // library's default is top-aligned, which only looked centered while
+  // its inset padding was squeezing the item from below). Repeated in
+  // the middle tabs' own tabBarItemStyle, which replaces this one.
+  tabItem: {
+    justifyContent: 'center',
   },
   hiddenTabItem: {
     flex: 0,

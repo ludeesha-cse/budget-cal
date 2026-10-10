@@ -27,8 +27,15 @@ const MAX_SCALE = 1.15;
 let cachedScale: number | null = null;
 function screenScale(): number {
   if (cachedScale == null) {
-    const { width } = Dimensions.get('window');
-    cachedScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, width / BASE_WIDTH));
+    // The SHORTER side, not `width`: this is read once and cached, and
+    // width is the long side when the app happens to launch in landscape
+    // — which would pin every font at MAX_SCALE until the next cold start.
+    const { width, height } = Dimensions.get('window');
+    const shortSide = Math.min(width, height);
+    cachedScale = Math.min(
+      MAX_SCALE,
+      Math.max(MIN_SCALE, shortSide / BASE_WIDTH),
+    );
   }
   return cachedScale;
 }

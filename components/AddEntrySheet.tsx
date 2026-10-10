@@ -1,5 +1,14 @@
 import React from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -11,6 +20,10 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
 import { useSlideSheet } from '../hooks/useSlideSheet';
+import { tabBarTopOffset } from '../theme/layout';
+
+// Space between the card's bottom edge and the top of the tab bar pill.
+const GAP_ABOVE_TAB_BAR = 24;
 
 export type AddEntryKind =
   | 'Expense'
@@ -75,6 +88,12 @@ function AddEntrySheet({
   onSelect,
 }: Props): React.JSX.Element | null {
   const { colors } = useTheme();
+  // The app root's insets on purpose (this is read outside the Modal): the
+  // card has to land above the tab bar, and the tab bar is positioned from
+  // these same insets in App.tsx. A fixed paddingBottom used to put it
+  // straight over the pill wherever the nav bar inset was large
+  // (3-button navigation on edge-to-edge Android).
+  const insets = useSafeAreaInsets();
   const { rendered, modalVisible, translateY, backdropOpacity, handleNativeDismiss } =
     useSlideSheet(visible);
 
@@ -103,7 +122,15 @@ function AddEntrySheet({
           renderToHardwareTextureAndroid>
           <Pressable style={styles.backdropPress} onPress={onClose} />
         </Animated.View>
-        <View style={styles.sheetWrap} pointerEvents="box-none">
+        <View
+          style={[
+            styles.sheetWrap,
+            {
+              paddingTop: insets.top + GAP_ABOVE_TAB_BAR,
+              paddingBottom: tabBarTopOffset(insets) + GAP_ABOVE_TAB_BAR,
+            },
+          ]}
+          pointerEvents="box-none">
           <Animated.View
             renderToHardwareTextureAndroid
             style={[
@@ -126,86 +153,92 @@ function AddEntrySheet({
               >
                 Add Entry
               </Text>
-              {OPTIONS.map(option => (
-                <Pressable
-                  key={option.kind}
-                  style={({ pressed }) => [
-                    styles.row,
-                    pressed && { opacity: 0.6 },
-                  ]}
-                  onPress={() => handleSelect(option.kind)}
-                >
-                  <View
-                    style={[
-                      styles.iconCircle,
-                      option.kind === 'Expense' && {
-                        backgroundColor: colors.dangerSoft,
-                      },
-                      option.kind === 'Income' && {
-                        backgroundColor: colors.successSoft,
-                      },
-                      option.kind === 'LiabilityRepayment' && {
-                        backgroundColor: colors.primary,
-                      },
-                      option.kind === 'ReceivableIncome' && [
-                        styles.iconCircleOutline,
-                        { borderColor: colors.border },
-                      ],
-                      option.kind === 'Withdraw' && {
-                        backgroundColor: colors.primarySoft,
-                      },
-                      option.kind === 'Transfer' && [
-                        styles.iconCircleOutline,
-                        { borderColor: colors.border },
-                      ],
+              {/* Scrolls only when it has to — a short screen, landscape,
+                  or a large system font — instead of running off the top. */}
+              <ScrollView
+                style={styles.rows}
+                showsVerticalScrollIndicator={false}>
+                {OPTIONS.map(option => (
+                  <Pressable
+                    key={option.kind}
+                    style={({ pressed }) => [
+                      styles.row,
+                      pressed && { opacity: 0.6 },
                     ]}
+                    onPress={() => handleSelect(option.kind)}
                   >
-                    {option.kind === 'Expense' && (
-                      <Minus size={18} color={colors.danger} strokeWidth={2.5} />
-                    )}
-                    {option.kind === 'Income' && (
-                      <Plus size={18} color={colors.success} strokeWidth={2.5} />
-                    )}
-                    {option.kind === 'LiabilityRepayment' && (
-                      <ArrowUpRight
-                        size={18}
-                        color={colors.primaryText}
-                        strokeWidth={2.5}
-                      />
-                    )}
-                    {option.kind === 'ReceivableIncome' && (
-                      <ArrowDownLeft
-                        size={18}
-                        color={colors.text}
-                        strokeWidth={2.5}
-                      />
-                    )}
-                    {option.kind === 'Withdraw' && (
-                      <Banknote
-                        size={18}
-                        color={colors.primary}
-                        strokeWidth={2.5}
-                      />
-                    )}
-                    {option.kind === 'Transfer' && (
-                      <Repeat size={18} color={colors.text} strokeWidth={2.5} />
-                    )}
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text style={[styles.rowTitle, { color: colors.text }]}>
-                      {option.title}
-                    </Text>
-                    <Text
+                    <View
                       style={[
-                        styles.rowSubtitle,
-                        { color: colors.textSecondary },
+                        styles.iconCircle,
+                        option.kind === 'Expense' && {
+                          backgroundColor: colors.dangerSoft,
+                        },
+                        option.kind === 'Income' && {
+                          backgroundColor: colors.successSoft,
+                        },
+                        option.kind === 'LiabilityRepayment' && {
+                          backgroundColor: colors.primary,
+                        },
+                        option.kind === 'ReceivableIncome' && [
+                          styles.iconCircleOutline,
+                          { borderColor: colors.border },
+                        ],
+                        option.kind === 'Withdraw' && {
+                          backgroundColor: colors.primarySoft,
+                        },
+                        option.kind === 'Transfer' && [
+                          styles.iconCircleOutline,
+                          { borderColor: colors.border },
+                        ],
                       ]}
                     >
-                      {option.subtitle}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
+                      {option.kind === 'Expense' && (
+                        <Minus size={18} color={colors.danger} strokeWidth={2.5} />
+                      )}
+                      {option.kind === 'Income' && (
+                        <Plus size={18} color={colors.success} strokeWidth={2.5} />
+                      )}
+                      {option.kind === 'LiabilityRepayment' && (
+                        <ArrowUpRight
+                          size={18}
+                          color={colors.primaryText}
+                          strokeWidth={2.5}
+                        />
+                      )}
+                      {option.kind === 'ReceivableIncome' && (
+                        <ArrowDownLeft
+                          size={18}
+                          color={colors.text}
+                          strokeWidth={2.5}
+                        />
+                      )}
+                      {option.kind === 'Withdraw' && (
+                        <Banknote
+                          size={18}
+                          color={colors.primary}
+                          strokeWidth={2.5}
+                        />
+                      )}
+                      {option.kind === 'Transfer' && (
+                        <Repeat size={18} color={colors.text} strokeWidth={2.5} />
+                      )}
+                    </View>
+                    <View style={styles.rowText}>
+                      <Text style={[styles.rowTitle, { color: colors.text }]}>
+                        {option.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.rowSubtitle,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {option.subtitle}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </Pressable>
           </Animated.View>
         </View>
@@ -229,7 +262,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingBottom: 110,
     paddingHorizontal: 24,
   },
   // Without an explicit width, this Animated.View (a plain flex item
@@ -237,16 +269,25 @@ const styles = StyleSheet.create({
   // content instead of stretching — and its child (`sheet`, width:'100%')
   // then has nothing but 0/auto to resolve that percentage against,
   // collapsing the whole card into a sliver everything wraps inside of.
+  // flexShrink (with sheet and rows below) lets the card give up height
+  // when the space between the status bar and the tab bar is too small
+  // for it, and the rows then scroll.
   sheetSlide: {
     width: '100%',
+    maxWidth: 420,
+    flexShrink: 1,
   },
   sheet: {
     width: '100%',
-    maxWidth: 420,
+    flexShrink: 1,
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     paddingVertical: 12,
     paddingHorizontal: 16,
+  },
+  rows: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
   eyebrow: {
     marginTop: 6,

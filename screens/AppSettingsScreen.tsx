@@ -1,11 +1,12 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useTheme } from '../contexts/ThemeContext';
 import type { ColorScheme } from '../contexts/ThemeContext';
 import type { ThemeMode } from '../db/queries';
 import type { Palette } from '../theme/palettes';
 import { scaleFont } from '../theme/typography';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
   { key: 'light', label: 'Light' },
@@ -69,7 +70,11 @@ function AppSettingsScreen(): React.JSX.Element {
   } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    // Scrolls so the palette cards stay reachable on short screens and with
+    // a large system font size, where they used to run off the bottom.
+    <ScrollView
+      style={[styles.screen, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.container}>
       <Text style={[styles.label, { color: colors.text }]}>Theme</Text>
       <View style={styles.optionRow}>
         {THEME_OPTIONS.map(option => {
@@ -132,14 +137,17 @@ function AppSettingsScreen(): React.JSX.Element {
           );
         })}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
+  },
+  container: {
     padding: 16,
+    paddingBottom: FAB_CLEARANCE,
   },
   label: {
     fontSize: scaleFont(14),
@@ -173,6 +181,7 @@ const styles = StyleSheet.create({
   },
   paletteOptionText: {
     marginTop: 8,
+    textAlign: 'center',
   },
   paletteOptionHint: {
     fontSize: scaleFont(11),

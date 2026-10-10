@@ -19,6 +19,7 @@ import { formatEyebrowDate } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
+import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>;
 
@@ -222,7 +223,7 @@ const styles = StyleSheet.create({
     // its marginBottom of insets.bottom+16, see App.tsx) plus the FAB
     // poking up over it — otherwise the last card or two ends up
     // scrollable-but-hidden behind the pill instead of clearing it.
-    paddingBottom: 120,
+    paddingBottom: SCREEN_BOTTOM_CLEARANCE,
   },
   header: {
     marginBottom: 16,

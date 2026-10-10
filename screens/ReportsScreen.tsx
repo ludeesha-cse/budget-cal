@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
 import EmptyState from '../components/common/EmptyState';
@@ -17,6 +17,8 @@ import { formatAmount, formatPercent } from '../utils/formatAmount';
 import { labelForId } from '../utils/pickerLabels';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
+import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
+import { useContentWidth } from '../hooks/useContentWidth';
 
 const PRESET_OPTIONS: { key: ReportRangePreset; label: string }[] = [
   { key: 'currentMonth', label: 'Month' },
@@ -43,8 +45,11 @@ function ReportsScreen(): React.JSX.Element {
   } = useReportData(preset, includeExcluded);
 
   const selectedCurrencyCode = labelForId(currencies, currencyId, 'code', 'Select currency');
-  const windowWidth = useWindowDimensions().width;
-  const chartWidth = Math.max(240, windowWidth - 32);
+  // The screen's column width, not the window's — on a tablet or in
+  // landscape the column is capped (see hooks/useContentWidth.ts) and a
+  // window-wide chart would run past its card.
+  const contentWidth = useContentWidth().width;
+  const chartWidth = Math.max(240, contentWidth - 32);
 
   return (
     <ScreenBackground colors={colors} edges={['top']}>
@@ -157,7 +162,7 @@ const styles = StyleSheet.create({
     padding: 16,
     // Clears the floating tab bar pill + FAB (see App.tsx) — same value
     // as DashboardScreen's own container for the same reason.
-    paddingBottom: 120,
+    paddingBottom: SCREEN_BOTTOM_CLEARANCE,
   },
   header: {
     marginBottom: 16,

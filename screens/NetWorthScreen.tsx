@@ -6,6 +6,7 @@ import { useNetWorthData } from '../hooks/useNetWorthData';
 import { formatAmount } from '../utils/formatAmount';
 import { useTheme } from '../contexts/ThemeContext';
 import { typography, scaleFont } from '../theme/typography';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 function NetWorthScreen(): React.JSX.Element {
   const { colors } = useTheme();
@@ -85,7 +86,7 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: FAB_CLEARANCE,
   },
   eyebrow: {
     marginBottom: 4,

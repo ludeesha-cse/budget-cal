@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Platform } from 'react-native';
 import { MODAL_TRANSITION_MS } from '../theme/motion';
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+// How far down a sheet sits while closed. The screen's LONGER side, read
+// when it's needed rather than once at import: a height captured at
+// startup goes stale after a rotation (start in landscape, turn to
+// portrait) and stops being far enough to hide the sheet.
+export function offscreenSheetOffset(): number {
+  const { width, height } = Dimensions.get('screen');
+  return Math.max(width, height);
+}
 
 export type SlideSheetState = {
   rendered: boolean;
@@ -18,14 +25,14 @@ export function useSlideSheet(
 ): SlideSheetState {
   const [rendered, setRendered] = useState(visible);
   const [modalVisible, setModalVisible] = useState(visible);
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const translateY = useRef(new Animated.Value(offscreenSheetOffset())).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setRendered(true);
       setModalVisible(true);
-      translateY.setValue(SCREEN_HEIGHT);
+      translateY.setValue(offscreenSheetOffset());
       backdropOpacity.setValue(0);
 
       const raf1 = requestAnimationFrame(() => {
@@ -50,7 +57,7 @@ export function useSlideSheet(
     if (rendered) {
       Animated.parallel([
         Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
+          toValue: offscreenSheetOffset(),
           duration: MODAL_TRANSITION_MS,
           useNativeDriver: true,
         }),

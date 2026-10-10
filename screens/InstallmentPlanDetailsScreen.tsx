@@ -16,6 +16,7 @@ import { useInstallmentPlansData } from '../hooks/useInstallmentPlansData';
 import type { InstallmentPaymentRow } from '../hooks/useInstallmentPlansData';
 import type { SettingsStackParamList } from '../navigation/types';
 import { useUnpayInstallment as useUnpayInstallmentMutation } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 type Props = NativeStackScreenProps<
   SettingsStackParamList,
@@ -157,6 +158,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: FAB_CLEARANCE,
   },
   summaryCard: {
     padding: 14,

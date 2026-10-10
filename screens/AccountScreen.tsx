@@ -19,6 +19,7 @@ import {
   GOOGLE_SIGN_IN_CANCELLED_MESSAGE,
 } from '../contexts/AuthContext';
 import { typography, scaleFont } from '../theme/typography';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 // Two things live here, and the distinction between them matters.
 //
@@ -195,7 +196,7 @@ function AndroidAccountSection({
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: FAB_CLEARANCE,
   },
   sectionLabel: {
     marginBottom: 10,

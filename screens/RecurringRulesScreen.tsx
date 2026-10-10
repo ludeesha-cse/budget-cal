@@ -28,6 +28,7 @@ import {
   useDeleteRecurringRule as useDeleteRecurringRuleMutation,
   useSetRecurringRuleActive as useSetRecurringRuleActiveMutation,
 } from '../hooks/queries';
+import { FAB_CLEARANCE } from '../theme/layout';
 
 const LIST_TYPE_OPTIONS: SegmentedToggleOption<RecurringRuleListType>[] = [
   { key: 'Income', label: 'Income rules' },
@@ -120,6 +121,7 @@ function RecurringRulesScreen(): React.JSX.Element {
           data={visibleRules}
           keyExtractor={item => String(item.id)}
           style={styles.list}
+          contentContainerStyle={styles.listContent}
           renderItem={({ item, index }) => (
             <RuleCard
               rule={item}
@@ -185,6 +187,10 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 12,
+  },
+  // Lets the last row scroll out from under the FAB.
+  listContent: {
+    paddingBottom: FAB_CLEARANCE,
   },
   addButton: {
     flexDirection: 'row',
