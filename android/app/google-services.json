@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "610731283609-3a8ochbir5rqirsdhg4k1nchts5lr125.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.penny_worth.app",
+            "certificate_hash": "37140158159f2b88ff2f1b4ce2471ba1841aa04c"
+          }
+        },
+        {
           "client_id": "610731283609-90u1teskrvo3615m0mfosneh3qe6275t.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -22,19 +30,19 @@
           }
         },
         {
+          "client_id": "610731283609-b7vrhk647n9k3hlmensu65ummm2ce3h4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.penny_worth.app",
+            "certificate_hash": "18790fb4556586468747da65e99835603bfe83a8"
+          }
+        },
+        {
           "client_id": "610731283609-k4l5p8rd87t9d4f4a6iuutf2jktij2n0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.penny_worth.app",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
-        {
-          "client_id": "610731283609-p2jvvd392uo4ogr7vdjtk26t6v39mn07.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.penny_worth.app",
-            "certificate_hash": "18790fb4556586468747da65e99835603bfe83a8"
           }
         },
         {

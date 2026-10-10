@@ -14,7 +14,10 @@ import Card from '../components/Card';
 import SubscriptionCard from '../components/SubscriptionCard';
 import ActionButtons from '../components/common/ActionButtons';
 import { useTheme } from '../contexts/ThemeContext';
-import { useAuth } from '../contexts/AuthContext';
+import {
+  useAuth,
+  GOOGLE_SIGN_IN_CANCELLED_MESSAGE,
+} from '../contexts/AuthContext';
 import { typography, scaleFont } from '../theme/typography';
 
 // Two things live here, and the distinction between them matters.
@@ -38,7 +41,10 @@ function AccountScreen(): React.JSX.Element {
     if (busy) return;
     setBusy(true);
     try {
-      await signInWithGoogleAndroid();
+      const outcome = await signInWithGoogleAndroid();
+      if (outcome === 'cancelled') {
+        Alert.alert('Sign-in not completed', GOOGLE_SIGN_IN_CANCELLED_MESSAGE);
+      }
     } catch (error) {
       console.error('Sign-in failed', error);
       Alert.alert(

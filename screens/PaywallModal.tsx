@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Platform,
   Pressable,
@@ -12,7 +13,10 @@ import {
 import { AlertTriangle, Check, Crown, X } from 'lucide-react-native';
 import { usePaywall } from '../contexts/PaywallContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
-import { useAuth } from '../contexts/AuthContext';
+import {
+  useAuth,
+  GOOGLE_SIGN_IN_CANCELLED_MESSAGE,
+} from '../contexts/AuthContext';
 import { PLANS, type PlanDefinition, type PlanId } from '../config/entitlements';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
@@ -85,9 +89,19 @@ function PaywallModal(): React.JSX.Element {
     }
     setSigningIn(true);
     try {
-      await signInWithGoogleAndroid();
+      const outcome = await signInWithGoogleAndroid();
+      if (outcome === 'cancelled') {
+        // Alert rather than a silent return: this sheet gates purchasing,
+        // so a sign-in button that appears to do nothing reads as a broken
+        // paywall.
+        Alert.alert('Sign-in not completed', GOOGLE_SIGN_IN_CANCELLED_MESSAGE);
+      }
     } catch (error) {
       console.error('[PaywallModal] sign-in failed:', error);
+      Alert.alert(
+        'Sign-in failed',
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
       setSigningIn(false);
     }

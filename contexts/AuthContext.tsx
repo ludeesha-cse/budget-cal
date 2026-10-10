@@ -57,6 +57,24 @@ function firebaseUserToSession(user: FirebaseUser): AuthSession {
   return { uid: user.uid, email: user.email, displayName: user.displayName };
 }
 
+// Android's Credential Manager reports the same "cancelled" result for a
+// genuine user back-out AND for a request it refused (most commonly: the
+// signing certificate of this build isn't registered as an Android OAuth
+// client for this Firebase project — the Play App Signing SHA-1 is the one
+// usually missing, since Play re-signs uploads with a different key). The
+// two are indistinguishable from JS, so the outcome is handed back to the
+// caller rather than swallowed: a silent return leaves the sign-in button
+// looking dead, which is exactly how a misconfigured release build
+// presents itself.
+export type GoogleSignInOutcome = 'signed-in' | 'cancelled';
+
+// Shown when the cascade above ends in 'cancelled'. Worded to be true in
+// both cases it covers: it does not accuse the user of cancelling, and it
+// gives a user who didn't cancel something concrete to report, instead of
+// a button that appears to do nothing at all.
+export const GOOGLE_SIGN_IN_CANCELLED_MESSAGE =
+  "Google didn't return an account, so you're still signed out. If you didn't dismiss the Google prompt yourself, this build may not be authorised for Google Sign-In — please report it.";
+
 type AuthContextValue = {
   session: AuthSession | null;
   isSignedIn: boolean;
@@ -65,7 +83,7 @@ type AuthContextValue = {
   // caller avoid flashing a "signed out" state before the real answer is
   // known.
   isInitializing: boolean;
-  signInWithGoogleAndroid: () => Promise<void>;
+  signInWithGoogleAndroid: () => Promise<GoogleSignInOutcome>;
   signOut: () => Promise<void>;
 };
 
@@ -123,12 +141,13 @@ export function AuthProvider({
     };
   }, []);
 
-  const signInWithGoogleAndroid = useCallback(async () => {
+  const signInWithGoogleAndroid =
+    useCallback(async (): Promise<GoogleSignInOutcome> => {
     if (Platform.OS !== 'android') {
       console.error(
         '[AuthContext] signInWithGoogleAndroid called on a non-Android platform — iOS Google Sign-In is not implemented in this stage.',
       );
-      return;
+      return 'cancelled';
     }
     try {
       ensureGoogleSignInConfigured();
@@ -160,7 +179,7 @@ export function AuthProvider({
         console.warn(
           '[AuthContext] Google Sign-In returned "cancelled" — if this happens even when you pick an account, this usually means the OAuth client (SHA-1 fingerprint / webClientId) is misconfigured for this Firebase project, not an actual user cancel.',
         );
-        return;
+        return 'cancelled';
       }
       if (!isSuccessResponse(response) || !response.data?.idToken) {
         console.error('[AuthContext] Sign-in did not return a usable ID token. Full response:', JSON.stringify(response));
@@ -175,6 +194,7 @@ export function AuthProvider({
       // subscription above is the single source of truth for Android's
       // signed-in state, so there is only ever one place that can get it
       // out of sync with what Firebase actually thinks.
+      return 'signed-in';
     } catch (error) {
       console.error('[AuthContext] signInWithGoogleAndroid failed:', error);
       throw error;
