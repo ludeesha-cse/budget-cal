@@ -263,12 +263,16 @@ export const queryKeys = {
         includeExcluded: boolean,
       ) =>
         [TRANSACTIONAL, 'reports', 'spendingByAccountType', startDate, endDate, currencyId, includeExcluded] as const,
+      // startDate/endDate: the optional day-level clamp (custom ranges);
+      // null when the trend covers its months whole.
       monthlyTrend: (
         months: string[],
         currencyId: number,
         includeExcluded: boolean,
+        startDate: string | null = null,
+        endDate: string | null = null,
       ) =>
-        [TRANSACTIONAL, 'reports', 'monthlyTrend', months, currencyId, includeExcluded] as const,
+        [TRANSACTIONAL, 'reports', 'monthlyTrend', months, currencyId, includeExcluded, startDate, endDate] as const,
     },
   },
 } as const;

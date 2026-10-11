@@ -117,3 +117,63 @@ export function buildTrendChartData(
     expenses: row.totalExpenses,
   }));
 }
+
+// Gap between a month's income bar and its expense bar.
+export const TREND_INNER_GAP = 2;
+// Narrowest a month's slot (both bars + the gap after them) can get and
+// still fit its 3-letter label ("Sep") at the smallest font allowed,
+// scaleFont(10). Below this the chart scrolls sideways instead of
+// squeezing the labels.
+export const TREND_MIN_SLOT_WIDTH = 26;
+const TREND_MAX_BAR_WIDTH = 18;
+const TREND_MIN_BAR_WIDTH = 4;
+
+export type TrendBarLayout = {
+  barWidth: number;
+  // Gap after each month's pair of bars (gifted-charts `spacing` on the
+  // expense bar).
+  groupSpacing: number;
+  // Both bars plus the gap between them.
+  groupWidth: number;
+  // groupWidth + groupSpacing: the horizontal space one month takes.
+  slotWidth: number;
+  // True when `monthCount` slots don't fit in `plotWidth` at the minimum
+  // slot width, so the chart has to scroll.
+  scrollable: boolean;
+};
+
+// Sizes the month groups to fill `plotWidth` (the chart's drawable width
+// after its initial spacing): bars get ~60% of a slot, the gap between
+// months the rest. This is what fixes the "…" labels — the old fixed
+// 10px bars left a month's label a 10px box to fit in.
+export function computeTrendBarLayout(
+  plotWidth: number,
+  monthCount: number,
+): TrendBarLayout {
+  const count = Math.max(1, monthCount);
+  const fitted = plotWidth / count;
+  const scrollable = fitted < TREND_MIN_SLOT_WIDTH;
+  const slot = scrollable ? TREND_MIN_SLOT_WIDTH : fitted;
+  const barWidth = Math.max(
+    TREND_MIN_BAR_WIDTH,
+    Math.min(TREND_MAX_BAR_WIDTH, Math.floor((slot * 0.6 - TREND_INNER_GAP) / 2)),
+  );
+  const groupWidth = barWidth * 2 + TREND_INNER_GAP;
+  const groupSpacing = Math.max(4, Math.floor(slot - groupWidth));
+  return {
+    barWidth,
+    groupSpacing,
+    groupWidth,
+    slotWidth: groupWidth + groupSpacing,
+    scrollable,
+  };
+}
+
+// The tallest bar in the trend (income or expenses, any month) — the
+// value the chart's top line stands for. 0 when there is no activity.
+export function trendMaxValue(points: ChartTrendPoint[]): number {
+  return points.reduce(
+    (max, point) => Math.max(max, point.income, point.expenses),
+    0,
+  );
+}

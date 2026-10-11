@@ -208,6 +208,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         year={year}
         onMonthChange={setMonth}
         onYearChange={setYear}
+        style={styles.monthPicker}
       />
 
       {(currencyOptions ?? []).length > 1 && (
@@ -348,6 +349,11 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: 12,
+  },
+  // The chip no longer carries its own margin (see MonthYearPicker), so
+  // the gap below it that it used to provide lives here.
+  monthPicker: {
+    marginBottom: 8,
   },
   currencyTabs: {
     marginTop: 12,

@@ -41,6 +41,8 @@ target 'BudgetTrackerMobile' do
       FirebaseCore
       FirebaseCoreExtension
       FirebaseCoreInternal
+      FirebaseFirestoreInternal
+      FirebaseMessagingInterop
       GTMAppAuth
       GTMSessionFetcher
       GoogleSignIn
@@ -65,6 +67,20 @@ target 'BudgetTrackerMobile' do
       # :ccache_enabled => true
     )
 
+    # Several third-party pods (GoogleSignIn, GTMAppAuth, PromisesObjC, RNSVG
+    # filters, their *_Privacy resource bundles, ...) declare deployment
+    # targets as low as 9.0. Xcode 27 rejects anything below 15.0 as a hard
+    # error, so raise every pod target to match the app's minimum.
+    pods_min_ios = '15.1'
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current.nil? || Gem::Version.new(current) < Gem::Version.new(pods_min_ios)
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = pods_min_ios
+        end
+      end
+    end
+
     # Fix React-jsitooling and React-RuntimeCore both declaring 'module react_runtime'
     # with umbrella headers in the same directory, which causes build errors under
     # use_modular_headers!. Replace the umbrella approach with explicit header paths.
@@ -79,17 +95,17 @@ target 'BudgetTrackerMobile' do
       MODULEMAP
     end
 
-    # RNFBApp and RNFBAuth import Firebase.h, which pulls in FirebaseAuth's
-    # generated FirebaseAuth-Swift.h. That header only exists inside
-    # FirebaseAuth's own build products directory ("Swift Compatibility
-    # Header/"), which isn't on any consuming target's header search path
-    # (only Pods/Headers/Public/<Pod> is) -- referencing it purely via
-    # FirebaseAuth's modulemap doesn't resolve the angle-bracket import
-    # either, under Explicit or implicit Clang modules. Copy the generated
-    # header into the public headers dir once FirebaseAuth finishes
-    # building, and force real build-order (RNFBApp/RNFBAuth only depend on
-    # the 'Firebase' umbrella pod, never 'FirebaseAuth' itself) so that copy
-    # always happens before it's needed.
+    # RNFBApp, RNFBAuth, RNFBFirestore and RNFBFunctions import Firebase.h,
+    # which pulls in FirebaseAuth's generated FirebaseAuth-Swift.h. That
+    # header only exists inside FirebaseAuth's own build products directory
+    # ("Swift Compatibility Header/"), which isn't on any consuming target's
+    # header search path (only Pods/Headers/Public/<Pod> is) -- referencing
+    # it purely via FirebaseAuth's modulemap doesn't resolve the
+    # angle-bracket import either, under Explicit or implicit Clang modules.
+    # Copy the generated header into the public headers dir once FirebaseAuth
+    # finishes building, and force real build-order (these targets only
+    # depend on the 'Firebase' umbrella pod, never 'FirebaseAuth' itself) so
+    # that copy always happens before it's needed.
     firebase_auth_target = installer.pods_project.targets.find { |t| t.name == 'FirebaseAuth' }
     if firebase_auth_target
       copy_phase = firebase_auth_target.new_shell_script_build_phase('Copy FirebaseAuth-Swift.h to Public Headers')
@@ -104,7 +120,7 @@ target 'BudgetTrackerMobile' do
       SCRIPT
 
       installer.pods_project.targets.each do |target|
-        next unless %w[RNFBApp RNFBAuth].include?(target.name)
+        next unless %w[RNFBApp RNFBAuth RNFBFirestore RNFBFunctions].include?(target.name)
         target.add_dependency(firebase_auth_target)
         # Explicit Modules scans header dependencies statically, before any
         # target's build phases run, so it never sees the header the copy

@@ -18,8 +18,8 @@ import {
   useSpendingByCategory,
 } from './queries';
 import { useStableList } from './useStableList';
-import { getReportRange } from '../utils/dateUtils';
-import type { ReportRangePreset } from '../utils/dateUtils';
+import { isWholeMonthRange, resolveReportPeriod } from '../utils/dateUtils';
+import type { ReportPeriod, ResolvedReportPeriod } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 
 export type ReportCurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
@@ -29,7 +29,12 @@ export type ReportAccountTypeRow = Awaited<
   ReturnType<typeof getSpendingByAccountType>
 >[number];
 export type ReportTrendRow = Awaited<ReturnType<typeof getMonthlyTrend>>[number];
-export type ReportRange = ReturnType<typeof getReportRange>;
+export type ReportRange = ResolvedReportPeriod;
+
+// A second date range whose activity also makes a currency selectable —
+// the Compare tab's previous period, so a currency that only had activity
+// THEN can still be picked and compared.
+export type ReportProbeRange = { startDate: string; endDate: string };
 
 export interface UseReportDataResult {
   currencyId: number | null;
@@ -42,9 +47,11 @@ export interface UseReportDataResult {
   trend: ReportTrendRow[];
   loading: boolean;
   range: ReportRange;
+  // The date the range was resolved against ('YYYY-MM-DD').
+  today: string;
 }
 
-// preset/includeExcluded stay owned by the screen orchestrator (they're
+// period/includeExcluded stay owned by the screen orchestrator (they're
 // plain UI toggles, not fetched data) and are passed in here since both
 // drive what gets queried.
 //
@@ -54,15 +61,21 @@ export interface UseReportDataResult {
 // session re-reads nothing. Any transaction write invalidates the whole
 // reports prefix, so the aggregates cannot silently lag the ledger.
 export function useReportData(
-  preset: ReportRangePreset,
+  period: ReportPeriod,
   includeExcluded: boolean,
+  extraProbeRange: ReportProbeRange | null = null,
 ): UseReportDataResult {
   const [currencyId, setCurrencyId] = useState<number | null>(null);
 
   // Computed once per mount — a report screen isn't expected to stay open
   // across a real midnight rollover in a way that matters here.
   const today = useMemo(() => getCurrentDateString(), []);
-  const range = useMemo(() => getReportRange(preset, today), [preset, today]);
+  const range = useMemo(() => resolveReportPeriod(period, today), [period, today]);
+  // Only a range that cuts months short (a custom range) needs the trend
+  // clamped to its exact days; whole months keep the original query.
+  const trendClamp = isWholeMonthRange(range.startDate, range.endDate)
+    ? null
+    : range;
 
   // Starts from getActiveCurrencies() rather than every currency in the
   // app — a currency the user has disabled on the Currencies screen
@@ -99,7 +112,35 @@ export function useReportData(
   // One fixed-size dependency instead of spreading a list whose length
   // tracks how many currencies are active — see hooks/useStableList.ts.
   const probeData = useStableList(probeResults.map(result => result.data));
-  const probesPending = probeResults.some(result => result.isPending);
+
+  // Same probe over the extra range, when there is one. These are the
+  // exact cache entries the Compare tab's previous-period summary reads.
+  const extraProbeResults = useQueries({
+    queries: extraProbeRange
+      ? (allCurrencies ?? []).map(currency => ({
+          queryKey: queryKeys.transactional.reports.summary(
+            extraProbeRange.startDate,
+            extraProbeRange.endDate,
+            currency.id,
+            includeExcluded,
+          ),
+          queryFn: () =>
+            getReportSummary(
+              extraProbeRange.startDate,
+              extraProbeRange.endDate,
+              currency.id,
+              includeExcluded,
+            ),
+          // No staleTime: the transactional prefix default applies.
+        }))
+      : [],
+  });
+  const extraProbeData = useStableList(
+    extraProbeResults.map(result => result.data),
+  );
+  const probesPending =
+    probeResults.some(result => result.isPending) ||
+    extraProbeResults.some(result => result.isPending);
 
   // Only currencies with at least one matching transaction in the
   // current range + includeExcluded state — recomputed whenever those
@@ -108,14 +149,14 @@ export function useReportData(
   // excluded transactions only shows up once the toggle is on).
   const availableCurrencies = useMemo(
     () =>
-      (allCurrencies ?? []).filter((_, index) => {
-        const summary = probeData[index];
-        return (
-          summary != null &&
-          (summary.totalExpenses > 0 || summary.totalIncome > 0)
-        );
-      }),
-    [allCurrencies, probeData],
+      (allCurrencies ?? []).filter((_, index) =>
+        [probeData[index], extraProbeData[index]].some(
+          summary =>
+            summary != null &&
+            (summary.totalExpenses > 0 || summary.totalIncome > 0),
+        ),
+      ),
+    [allCurrencies, probeData, extraProbeData],
   );
 
   // The current selection if it's still valid, else the app's default
@@ -164,6 +205,8 @@ export function useReportData(
     range.months,
     resolvedCurrencyId,
     includeExcluded,
+    trendClamp?.startDate,
+    trendClamp?.endDate,
   );
 
   const loading =
@@ -188,5 +231,6 @@ export function useReportData(
     trend: resolvedCurrencyId == null ? [] : (trend.data ?? []),
     loading,
     range,
+    today,
   };
 }

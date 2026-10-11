@@ -85,20 +85,32 @@ export function useSpendingByAccountType(
 }
 
 // Transactional stale time: the month-by-month trend line, aggregated
-// from the ledger and invalidated by the same writes.
+// from the ledger and invalidated by the same writes. startDate/endDate
+// clamp the first/last month to exact days (custom ranges); omit them to
+// cover the months whole.
 export function useMonthlyTrend(
   months: string[],
   currencyId: number | null,
   includeExcluded: boolean,
+  startDate?: string,
+  endDate?: string,
 ) {
   return useQuery({
     queryKey: queryKeys.transactional.reports.monthlyTrend(
       months,
       currencyId ?? -1,
       includeExcluded,
+      startDate ?? null,
+      endDate ?? null,
     ),
     queryFn: () =>
-      getMonthlyTrend(months, currencyId as number, includeExcluded),
+      getMonthlyTrend(
+        months,
+        currencyId as number,
+        includeExcluded,
+        startDate,
+        endDate,
+      ),
     enabled: currencyId != null,
   });
 }

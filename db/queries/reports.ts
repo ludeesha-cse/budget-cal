@@ -286,11 +286,18 @@ export type MonthlyTrendRow = {
   totalIncome: number;
 };
 
+// startDate/endDate optionally clamp the range to exact days ('YYYY-MM-DD',
+// inclusive). Without them it covers `months` whole, as it always has. A
+// custom report range such as 15 Jul – 2 Sep passes them so the first and
+// last months only count the days inside the range, rather than the whole
+// of July and September.
 // NETWORK-READY: If a backend is added later, replace this with a fetch()
 export async function getMonthlyTrend(
   months: string[],
   currencyId: number,
   includeExcluded: boolean = false,
+  startDate?: string,
+  endDate?: string,
 ): Promise<MonthlyTrendRow[]> {
   try {
     if (months.length === 0) {
@@ -300,8 +307,8 @@ export async function getMonthlyTrend(
     const firstMonth = sortedMonths[0];
     const lastMonth = sortedMonths[sortedMonths.length - 1];
     const conditions = [
-      gte(transactions.date, `${firstMonth}-01`),
-      lte(transactions.date, `${lastMonth}-31`),
+      gte(transactions.date, startDate ?? `${firstMonth}-01`),
+      lte(transactions.date, endDate ?? `${lastMonth}-31`),
       eq(transactions.currencyId, currencyId),
     ];
     if (!includeExcluded) {
