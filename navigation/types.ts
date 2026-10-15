@@ -13,7 +13,15 @@ export type DashboardStackParamList = {
 export type SettingsStackParamList = {
   SettingsHome: undefined;
   BudgetSettings: undefined;
-  Accounts: { openTransfer?: boolean; withdrawMode?: boolean } | undefined;
+  Accounts:
+    | {
+        openTransfer?: boolean;
+        withdrawMode?: boolean;
+        // Opens the "add a currency" form under this account — from the
+        // Dashboard's "Cash in wallet has no currency yet" banner.
+        setupAccountId?: number;
+      }
+    | undefined;
   LiabilitiesReceivables: { type?: 'Liability' | 'Receivable' } | undefined;
   Categories: undefined;
   CategoryBudgets: undefined;

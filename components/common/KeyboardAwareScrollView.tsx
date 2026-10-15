@@ -30,6 +30,10 @@ type Props = ScrollViewProps & {
   // stuck at the bottom edge with its error text or the next field
   // hidden under the keyboard — see the padding note below.
   focusHeadroom?: number;
+  // Receives the inner ScrollView, for a screen that needs to scroll a
+  // particular field into view itself (e.g. the first-run screen
+  // bringing a missing field on screen when Confirm is pressed).
+  scrollViewRef?: React.MutableRefObject<ScrollView | null>;
 };
 
 // Breathing room kept above/below a field when scrolling it into view,
@@ -78,6 +82,7 @@ function KeyboardAwareScrollView({
   contentContainerStyle,
   keyboardInsetHandledByParent = false,
   focusHeadroom = DEFAULT_FOCUS_HEADROOM,
+  scrollViewRef,
   onLayout,
   onScroll,
   keyboardShouldPersistTaps = 'handled',
@@ -243,7 +248,12 @@ function KeyboardAwareScrollView({
   const scrollView = (
     <ScrollView
       {...rest}
-      ref={scrollRef}
+      ref={node => {
+        scrollRef.current = node;
+        if (scrollViewRef) {
+          scrollViewRef.current = node;
+        }
+      }}
       style={keyboardInsetHandledByParent ? style : styles.fill}
       contentContainerStyle={content}
       keyboardShouldPersistTaps={keyboardShouldPersistTaps}

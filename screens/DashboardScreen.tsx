@@ -5,6 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import ScreenBackground from '../components/ScreenBackground';
 import PendingReviewBanner from '../components/dashboard/PendingReviewBanner';
+import WalletSetupBanner from '../components/dashboard/WalletSetupBanner';
 import BudgetSummaryCard from '../components/dashboard/BudgetSummaryCard';
 import CategoryBreakdownList from '../components/dashboard/CategoryBreakdownList';
 import AccountShortcuts from '../components/dashboard/AccountShortcuts';
@@ -14,6 +15,7 @@ import LiabilitiesReceivablesSummary from '../components/dashboard/LiabilitiesRe
 import type { DashboardStackParamList, RootTabParamList } from '../navigation/types';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useDismissibleBanner } from '../hooks/useDismissibleBanner';
+import { useDefaultWalletStatus } from '../hooks/queries';
 import { getCurrentDateString, getCurrentMonthString } from '../utils/date';
 import { formatEyebrowDate } from '../utils/dateUtils';
 import { budgetStatusFor } from '../utils/statusColor';
@@ -29,6 +31,8 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
     useNavigation<BottomTabNavigationProp<RootTabParamList, 'Dashboard'>>();
   const data = useDashboardData();
   const banner = useDismissibleBanner();
+  const walletBanner = useDismissibleBanner();
+  const { data: walletStatus } = useDefaultWalletStatus();
   const [balancesHidden, setBalancesHidden] = useState(false);
 
   const month = getCurrentMonthString();
@@ -64,6 +68,20 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             onDismiss={banner.dismiss}
           />
         )}
+
+        {walletStatus?.needsSetup &&
+          walletStatus.accountId != null &&
+          !walletBanner.dismissed && (
+            <WalletSetupBanner
+              onPress={() =>
+                tabNavigation.navigate('Settings', {
+                  screen: 'Accounts',
+                  params: { setupAccountId: walletStatus.accountId as number },
+                })
+              }
+              onDismiss={walletBanner.dismiss}
+            />
+          )}
 
         {data.loading ? (
           <ActivityIndicator size="large" style={styles.loadingSpinner} />

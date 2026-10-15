@@ -27,6 +27,7 @@ import * as tagsModule from './tags';
 import * as reportsModule from './reports';
 import * as dataExportModule from './dataExport';
 import * as exchangeRatesModule from './exchangeRates';
+import * as firstRunModule from './firstRun';
 
 export { getDbHitReport, resetDbHitReport, logDbHitReport } from './instrumentation';
 export type { DbHitReport } from './instrumentation';
@@ -65,6 +66,7 @@ export type {
   TransferListRow,
 } from './transfers';
 export type { ExchangeRateRow } from './exchangeRates';
+export type { FirstRunSetupParams } from './firstRun';
 export type {
   ThemeMode,
   AppMeta,
@@ -131,6 +133,9 @@ export const {
   getBudgetCurrencyOptions,
   // --- accounts ---
   ensureDefaultAccount,
+  DEFAULT_CASH_ACCOUNT_NAME,
+  findDefaultWallet,
+  getDefaultWalletStatus,
   getAccounts,
   addAccountWithBalance,
   addCurrencyToAccount,
@@ -190,6 +195,7 @@ export const {
   getDefaultCurrency,
   setDefaultCurrency,
   confirmDefaultCurrency,
+  confirmDefaultCurrencyWithin,
   deleteCurrency,
   // --- settings ---
   getThemeMode,
@@ -265,6 +271,9 @@ export const {
   getAllDataForExport,
   wipeAllData,
   importData,
+  // --- first-run setup ---
+  completeFirstRunSetup,
+  FIRST_RUN_NOT_SAVED_MESSAGE,
 } = instrument({
   ...transactionsModule,
   ...budgetsModule,
@@ -283,4 +292,5 @@ export const {
   ...reportsModule,
   ...dataExportModule,
   ...exchangeRatesModule,
+  ...firstRunModule,
 });

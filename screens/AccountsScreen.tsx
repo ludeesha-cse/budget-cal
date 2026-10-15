@@ -67,6 +67,32 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       navigation.setParams({ withdrawMode: undefined, openTransfer: undefined }),
   });
 
+  // Deep link from the Dashboard's "Cash in wallet has no currency yet"
+  // banner: opens the existing "add a currency" form under that account,
+  // then clears the param so coming back here later does not reopen it.
+  const setupAccountIdParam = route.params?.setupAccountId;
+  const setupAccount =
+    setupAccountIdParam != null
+      ? activeAccounts.find(a => a.id === setupAccountIdParam)
+      : undefined;
+  const { addCurrencyAccountId, toggleAddCurrency } = addCurrency;
+  React.useEffect(() => {
+    if (!setupAccount) {
+      return;
+    }
+    if (addCurrencyAccountId !== setupAccount.id) {
+      const held = new Set(setupAccount.balances.map(b => b.currencyId));
+      toggleAddCurrency(
+        setupAccount.id,
+        currencies.filter(c => !held.has(c.id)),
+      );
+    }
+    navigation.setParams({ setupAccountId: undefined });
+    // Keyed on the account arriving (the roster loads after first
+    // render); the other values are read for their current state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupAccount?.id]);
+
   const handleDelete = (id: number) => {
     confirmDelete(
       'Delete account',

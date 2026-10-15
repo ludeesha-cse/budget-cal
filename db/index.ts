@@ -14,6 +14,12 @@ import {
   tags,
 } from './schema';
 import { DEFAULT_PALETTE_ID } from '../theme/palettes';
+import { installAsyncTransactions } from './asyncTransaction';
+
+// Must run before anything calls db.transaction — see
+// db/asyncTransaction.ts for why drizzle's own op-sqlite transaction is
+// not atomic.
+installAsyncTransactions();
 
 const opsqliteDb = open({ name: 'budget-tracker.db' });
 

@@ -4,6 +4,7 @@ import {
   getAccountBalances,
   getAccountTotalBalance,
   getAllAccountBalances,
+  getDefaultWalletStatus,
   getNetSpentForAccount,
 } from '../../db/queries';
 import { queryKeys } from '../../db/queryKeys';
@@ -85,5 +86,17 @@ export function useAccountIsZeroEverywhere(accountId: number | null) {
     queryKey: queryKeys.transactional.balances.isZeroEverywhere(accountId ?? -1),
     queryFn: () => getAccountTotalBalance(accountId as number),
     enabled: accountId != null,
+  });
+}
+
+// Transactional stale time: drives the Dashboard's "Your Cash in wallet
+// has no currency yet" banner. It flips the moment a balance row is
+// written for the wallet, and every write that can do that (adding a
+// currency to an account, first-run setup) invalidates the balances
+// prefix this key sits under.
+export function useDefaultWalletStatus() {
+  return useQuery({
+    queryKey: queryKeys.transactional.balances.defaultWalletStatus,
+    queryFn: getDefaultWalletStatus,
   });
 }

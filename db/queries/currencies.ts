@@ -145,35 +145,11 @@ export async function setDefaultCurrency(currencyId: number): Promise<void> {
 // installs): a currency someone already put real money in never gets
 // silently hidden out from under them, while a truly fresh install (no
 // account balances exist yet) collapses cleanly to just the chosen one.
-export async function confirmDefaultCurrency(currencyId: number): Promise<void> {
+export async function confirmDefaultCurrency(
+  currencyId: number,
+): Promise<void> {
   try {
-    await db.transaction(async tx => {
-      await tx
-        .update(currencies)
-        .set({ isDefault: false })
-        .where(eq(currencies.isDefault, true));
-      await tx
-        .update(currencies)
-        .set({ isDefault: true, active: true })
-        .where(eq(currencies.id, currencyId));
-
-      const inUseRows = await tx
-        .selectDistinct({ id: accountBalances.currencyId })
-        .from(accountBalances);
-      const keepActiveIds = [currencyId, ...inUseRows.map(row => row.id)];
-
-      await tx
-        .update(currencies)
-        .set({ active: false })
-        .where(notInArray(currencies.id, keepActiveIds));
-
-      // Same reason as setDefaultCurrency above — this is the other path
-      // that moves the default flag, so it has to re-anchor the rates
-      // too. On a genuinely fresh install there are no rates yet and
-      // this is a no-op; seedExchangeRates then seeds them against the
-      // currency chosen here.
-      await rescaleRatesToDefaultWithin(tx, currencyId);
-    });
+    await db.transaction(tx => confirmDefaultCurrencyWithin(tx, currencyId));
   } catch (error) {
     console.error(
       `confirmDefaultCurrency: failed to confirm currency id=${currencyId} as the default currency`,
@@ -181,6 +157,45 @@ export async function confirmDefaultCurrency(currencyId: number): Promise<void> 
     );
     throw error;
   }
+}
+
+// confirmDefaultCurrency's body, inside a caller's transaction — so the
+// first-run setup (see completeFirstRunSetup) can confirm the default
+// currency, give the wallet its opening balance and mark setup finished
+// as ONE write that either all lands or all rolls back.
+//
+// Any currency with a balance row is kept active, which is why a caller
+// writing a balance row in another currency (the wallet's) must write it
+// BEFORE calling this, in the same transaction.
+export async function confirmDefaultCurrencyWithin(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  currencyId: number,
+): Promise<void> {
+  await tx
+    .update(currencies)
+    .set({ isDefault: false })
+    .where(eq(currencies.isDefault, true));
+  await tx
+    .update(currencies)
+    .set({ isDefault: true, active: true })
+    .where(eq(currencies.id, currencyId));
+
+  const inUseRows = await tx
+    .selectDistinct({ id: accountBalances.currencyId })
+    .from(accountBalances);
+  const keepActiveIds = [currencyId, ...inUseRows.map(row => row.id)];
+
+  await tx
+    .update(currencies)
+    .set({ active: false })
+    .where(notInArray(currencies.id, keepActiveIds));
+
+  // Same reason as setDefaultCurrency above — this is the other path
+  // that moves the default flag, so it has to re-anchor the rates too.
+  // On a genuinely fresh install there are no rates yet and this is a
+  // no-op; seedExchangeRates then seeds them against the currency
+  // chosen here.
+  await rescaleRatesToDefaultWithin(tx, currencyId);
 }
 
 // NETWORK-READY: If a backend is added later, replace this with fetch(DELETE

@@ -309,6 +309,24 @@ export const invalidates = {
   // Onboarding / default-currency-confirmed flags.
   settingsWrite: [...SETTINGS] as QueryKey[],
 
+  // First-run setup: confirms the default currency (and so everything a
+  // currency write reaches), may create or reopen the wallet account and
+  // writes its balance row (the account roster and balances), and sets
+  // the app-meta flags.
+  firstRunSetup: [
+    ...CURRENCY_ROSTER,
+    ...LEDGER,
+    ...ACCOUNT_MONEY,
+    ...BUDGET_FIGURES,
+    ...INSTALLMENT_POSITIONS,
+    ...LOAN_POSITIONS,
+    ...SAVINGS_POSITIONS,
+    ...EXCHANGE_RATES,
+    ...ACCOUNT_ROSTER,
+    ...TRANSFER_LEDGER,
+    ...SETTINGS,
+  ] as QueryKey[],
+
   // A wipe or an import can change literally anything, so both clear the
   // entire cache rather than trying to enumerate a blast radius.
   everything: [k.transactional.all, k.reference.all] as QueryKey[],

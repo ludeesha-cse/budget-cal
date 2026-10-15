@@ -28,7 +28,7 @@ export type NewAccount = {
 // If a backend is added later, replace this with a fetch() call
 // to GET/POST /api/accounts/default, keeping the same
 // return shape.
-const DEFAULT_CASH_ACCOUNT_NAME = 'Cash in wallet';
+export const DEFAULT_CASH_ACCOUNT_NAME = 'Cash in wallet';
 
 // The literal this account used to be seeded with, before the rename —
 // kept only so an existing install's untouched default account can be
@@ -45,6 +45,57 @@ const LEGACY_DEFAULT_CASH_ACCOUNT_NAME = 'Cash';
 // "do I now have half an account?".
 const ACCOUNT_NOT_CREATED_MESSAGE =
   'The account could not be created. Nothing was saved — please check your device storage and try again.';
+
+// The default wallet, located by what it IS (a Cash account carrying the
+// seeded name) rather than by "the first account", which is what
+// ensureDefaultAccount returns on an existing install and need not be
+// the wallet at all. Prefers an open one. Null when none exists — the
+// user renamed it, deleted it, or it was never seeded.
+export async function findDefaultWallet(
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<Account | null> {
+  const rows = await executor
+    .select()
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.name, DEFAULT_CASH_ACCOUNT_NAME),
+        eq(accounts.type, 'Cash'),
+      ),
+    );
+  return rows.find(row => row.active) ?? rows[0] ?? null;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with a fetch()
+// call to GET /api/accounts/default/status, keeping the same return
+// shape. Backs the Dashboard's "Your Cash in wallet has no currency yet"
+// banner: an install that passed first-run setup before the wallet step
+// existed has a wallet with no balance row, which means no currency and
+// nothing any picker can pay from. `needsSetup` is false when there is
+// no open wallet at all — there is nothing for that banner to fix.
+export async function getDefaultWalletStatus(): Promise<{
+  accountId: number | null;
+  needsSetup: boolean;
+}> {
+  try {
+    const wallet = await findDefaultWallet();
+    if (!wallet || !wallet.active) {
+      return { accountId: null, needsSetup: false };
+    }
+    const [holding] = await db
+      .select({ id: accountBalances.id })
+      .from(accountBalances)
+      .where(eq(accountBalances.accountId, wallet.id))
+      .limit(1);
+    return { accountId: wallet.id, needsSetup: !holding };
+  } catch (error) {
+    console.error(
+      'getDefaultWalletStatus: failed to read the default wallet',
+      error,
+    );
+    throw error;
+  }
+}
 
 export async function ensureDefaultAccount() {
   const existing = await db.select().from(accounts).limit(1);

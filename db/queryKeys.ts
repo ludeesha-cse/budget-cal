@@ -122,6 +122,11 @@ export const queryKeys = {
         [TRANSACTIONAL, 'balances', 'netSpent', accountId, currencyId] as const,
       isZeroEverywhere: (accountId: number) =>
         [TRANSACTIONAL, 'balances', 'isZeroEverywhere', accountId] as const,
+      // Whether the default "Cash in wallet" holds any currency at all —
+      // under balances because what flips it is a balance row being
+      // written, and every write that adds one already invalidates this
+      // prefix.
+      defaultWalletStatus: [TRANSACTIONAL, 'balances', 'defaultWalletStatus'] as const,
     },
 
     budgets: {

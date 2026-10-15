@@ -1,4 +1,5 @@
 import {
+  completeFirstRunSetup,
   addCategory,
   addCurrency,
   addTag,
@@ -77,6 +78,13 @@ export function useConfirmDefaultCurrency() {
     ...invalidates.currencyWrite,
     ...invalidates.settingsWrite,
   ]);
+}
+
+// The whole first-run screen in one write — default currency, the
+// wallet's currency and opening balance, and the "setup done" flag. See
+// completeFirstRunSetup for why it is one transaction.
+export function useCompleteFirstRunSetup() {
+  return useDbMutation(completeFirstRunSetup, invalidates.firstRunSetup);
 }
 
 export function useDeleteCurrency() {
