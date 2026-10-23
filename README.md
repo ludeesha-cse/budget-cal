@@ -136,28 +136,4 @@ where you left off.
 - **Entitlement**: encrypted backend-issued token in Keychain/Keystore, valid until subscription end date — self-expiring, so no separate offline grace logic. Free users store no token; absence of a token *is* the free state.
 ---
  
-## Suggested order for what's left
- 
-Stages 10–17 don't have hard dependencies on each other the way 7→8→9 did
-(each of those built directly on the last). From here, a reasonable
-sequence is:
- 
-1. **Stage 10 (Credit Cards)** next — it reuses Stage 9's settlement-style
-   payoff pattern most directly, so doing it while that's fresh is the
-   path of least friction.
-2. **Stage 11 (Transfers)** — small, self-contained, good palate cleanser
-   after two heavy stages.
-3. **Stage 12 (Installments)** and **Stage 13 (Recurring)** — related
-   concepts (both are "future obligations"), worth doing back to back.
-4. **Stage 14 (Savings Goals)** — smallest remaining stage, low risk.
-5. **Stage 15 (Search + Tags)** — quick, no schema dependencies on anything else.
-6. **Stage 16 (Statistics)** and **Stage 17 (Excel Import/Export)** last of
-   the offline work, deliberately — both benefit from every other feature
-   already existing, since they're the ones that have to represent
-   *everything* the app can do.
-7. **Stages 18–20 (auth + subscriptions) genuinely last.** Not just
-   sequencing preference: you can't decide what to put behind a paywall
-   until the features exist, and both app stores review a real,
-   working app with real products configured. Building this early means
-   maintaining auth plumbing through fifteen stages of churn for no
    benefit.
