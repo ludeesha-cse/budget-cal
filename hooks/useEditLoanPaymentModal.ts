@@ -54,6 +54,8 @@ export function useEditLoanPaymentModal(
   );
 
   const modal = useTargetedModal<LoanPaymentRow, EditLoanPaymentValues>({
+    operation: 'Edit loan payment',
+    inlineErrorFields: ['account'],
     initialValues: payment => ({
       amount: String(payment.amount),
       counterpartAccountId: String(payment.counterpartAccountId),
@@ -61,20 +63,23 @@ export function useEditLoanPaymentModal(
     }),
     validate: values => {
       const parsed = Number(values.amount);
-      if (!values.amount || Number.isNaN(parsed) || parsed <= 0) {
-        return 'Enter a payment amount greater than zero.';
+      if (!values.amount.trim()) {
+        return 'Enter an amount';
+      }
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return 'Enter an amount greater than 0';
       }
       if (!values.counterpartAccountId) {
-        return 'Select the account this payment moves through.';
+        return 'Choose the account this payment moves through';
       }
       if (!values.date) {
-        return 'Pick a date.';
+        return 'Choose a date';
       }
       return null;
     },
     requiredFields: values => {
       const missing: string[] = [];
-      if (!values.amount || Number(values.amount) <= 0) {
+      if (!values.amount.trim()) {
         missing.push('amount');
       }
       if (!values.counterpartAccountId) {

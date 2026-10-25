@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFieldErrors } from './useFieldErrors';
+import { reportError } from '../utils/appErrors';
 
 // The shape behind every "tap a row to act on it" sheet in this app —
 // settle a loan, pay off a credit card, undo an installment payment,
@@ -36,6 +37,14 @@ export interface UseTargetedModalConfig<TTarget, TValues> {
   // that still need to do something ELSE once a save lands (reset
   // local UI state, navigate away).
   onSaved?: () => void | Promise<void>;
+  // Logged with any failure, so the technical cause can be traced back
+  // to the form it came from. Never shown to the user.
+  operation?: string;
+  // Fields this form shows a server-side message UNDER (see
+  // fieldMessage below), e.g. ['account'] for "Insufficient balance".
+  // An error naming any other field still shows as the form's one
+  // inline `error` line, so nothing is ever silently dropped.
+  inlineErrorFields?: string[];
 }
 
 export interface UseTargetedModalResult<TTarget, TValues> {
@@ -48,6 +57,10 @@ export interface UseTargetedModalResult<TTarget, TValues> {
   // tried to submit. Pass straight to fieldErrorStyle / a picker's
   // `invalid` prop.
   isMissing: (field: string) => boolean;
+  // The save-time message for one field (e.g. "Insufficient balance,
+  // transfer or withdraw to the account first" under the account
+  // picker), or null. Cleared as soon as any value in the form changes.
+  fieldMessage: (field: string) => string | null;
   open: (target: TTarget) => void;
   close: () => void;
   submit: () => Promise<void>;
@@ -56,7 +69,15 @@ export interface UseTargetedModalResult<TTarget, TValues> {
 export function useTargetedModal<TTarget, TValues>(
   config: UseTargetedModalConfig<TTarget, TValues>,
 ): UseTargetedModalResult<TTarget, TValues> {
-  const { initialValues, validate, requiredFields, onSubmit, onSaved } = config;
+  const {
+    initialValues,
+    validate,
+    requiredFields,
+    onSubmit,
+    onSaved,
+    operation,
+    inlineErrorFields,
+  } = config;
 
   // target and values are kept in one piece of state (rather than two
   // separate useState calls) specifically so they can never desync —
@@ -67,6 +88,9 @@ export function useTargetedModal<TTarget, TValues>(
     values: TValues;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldMessages, setFieldMessages] = useState<Record<string, string>>(
+    {},
+  );
   const fieldErrors = useFieldErrors(
     state && requiredFields ? requiredFields(state.values, state.target) : [],
   );
@@ -83,6 +107,7 @@ export function useTargetedModal<TTarget, TValues>(
     (target: TTarget) => {
       setState({ target, values: initialValues(target) });
       setError(null);
+      setFieldMessages({});
       // A form the user has only just opened has not been got wrong yet.
       resetFieldErrorsRef.current();
     },
@@ -92,11 +117,17 @@ export function useTargetedModal<TTarget, TValues>(
   const close = useCallback(() => {
     setState(null);
     setError(null);
+    setFieldMessages({});
     resetFieldErrorsRef.current();
   }, []);
 
   const setValues = useCallback<React.Dispatch<React.SetStateAction<TValues>>>(
     updater => {
+      // A save-time message is about the values that were saved; the
+      // moment the user changes one of them it no longer applies.
+      setFieldMessages(current =>
+        Object.keys(current).length === 0 ? current : {},
+      );
       setState(prev => {
         if (!prev) {
           // Nothing targeted — setValues should never be called from a
@@ -137,15 +168,27 @@ export function useTargetedModal<TTarget, TValues>(
       return;
     }
     setError(null);
+    setFieldMessages({});
     resetFieldErrorsRef.current();
     try {
       await onSubmit(currentTarget, currentValues);
       setState(null);
       await onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Never the raw text — see utils/appErrors.ts.
+      const appError = reportError(e, { operation: operation ?? 'save' });
+      if (appError.field && inlineErrorFields?.includes(appError.field)) {
+        setFieldMessages({ [appError.field]: appError.message });
+      } else {
+        setError(appError.message);
+      }
     }
-  }, [state, validate, onSubmit, onSaved]);
+  }, [state, validate, onSubmit, onSaved, operation, inlineErrorFields]);
+
+  const fieldMessage = useCallback(
+    (field: string) => fieldMessages[field] ?? null,
+    [fieldMessages],
+  );
 
   return {
     target,
@@ -154,6 +197,7 @@ export function useTargetedModal<TTarget, TValues>(
     error,
     canSave,
     isMissing: fieldErrors.isMissing,
+    fieldMessage,
     open,
     close,
     submit,

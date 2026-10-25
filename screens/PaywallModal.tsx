@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { toUserMessage } from '../utils/appErrors';
 import { AlertTriangle, Check, Crown, X } from 'lucide-react-native';
 import {
   SafeAreaProvider,
@@ -106,7 +107,10 @@ function PaywallModal(): React.JSX.Element {
       console.error('[PaywallModal] sign-in failed:', error);
       Alert.alert(
         'Sign-in failed',
-        error instanceof Error ? error.message : String(error),
+        toUserMessage(error, {
+          fallback:
+            "Sign-in didn't complete. Check your internet connection and try again.",
+        }),
       );
     } finally {
       setSigningIn(false);

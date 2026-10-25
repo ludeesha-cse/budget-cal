@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
+import FieldErrorText from '../components/common/FieldErrorText';
 import EmptyState from '../components/common/EmptyState';
 import ActionButtons from '../components/common/ActionButtons';
 import {
@@ -62,6 +63,7 @@ function CategoriesScreen(): React.JSX.Element {
     setVisible,
     notifyFullyClosed,
     waitForFullyClosed,
+    error,
   } = useEntityFormModal<CategoryRow, string, string>({
     initialValues: '',
     populateFromRow: category => category.name,
@@ -211,6 +213,7 @@ function CategoriesScreen(): React.JSX.Element {
           placeholder="e.g. Groceries"
           placeholderTextColor={colors.textSecondary}
         />
+        <FieldErrorText message={error} />
       </BottomSheetModal>
     </View>
   );

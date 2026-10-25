@@ -5,6 +5,7 @@ import BottomSheetModal from '../components/BottomSheetModal';
 import OccurrenceHistoryList from '../components/recurringRules/OccurrenceHistoryList';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import SegmentedToggle, {
   type SegmentedToggleOption,
 } from '../components/common/SegmentedToggle';
@@ -53,6 +54,8 @@ function RecurringRulesScreen(): React.JSX.Element {
     accounts,
     categories,
     loading,
+    loadFailed,
+    retry,
     visibleRules,
   } = useRecurringRulesData();
 
@@ -114,7 +117,9 @@ function RecurringRulesScreen(): React.JSX.Element {
         </Text>
       </Pressable>
 
-      {loading ? (
+      {loadFailed ? (
+        <LoadErrorState what="your recurring rules" onRetry={retry} />
+      ) : loading ? (
         <EmptyState message="Loading..." />
       ) : (
         <FlatList

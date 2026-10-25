@@ -1,5 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
+import { requireMoneyAccount } from './balanceGuard';
 import {
   accounts,
   categories,
@@ -39,17 +41,19 @@ export type NewRecurringRuleParams = {
 // surprise the first time a short month comes around.
 function validateRecurringRuleParams(params: NewRecurringRuleParams): void {
   if (!params.name.trim()) {
-    throw new Error('A name is required for the recurring rule.');
+    throw validationError('A name is required for the recurring rule.');
   }
   if (
     !Number.isInteger(params.dayOfMonth) ||
     params.dayOfMonth < 1 ||
     params.dayOfMonth > 31
   ) {
-    throw new Error('Day of month must be a whole number between 1 and 31.');
+    throw validationError(
+      'Day of month must be a whole number between 1 and 31.',
+    );
   }
   if (params.ruleType === 'Expense' && params.categoryId == null) {
-    throw new Error('Select a category for an Expense rule.');
+    throw validationError('Select a category for an Expense rule.');
   }
 }
 
@@ -218,7 +222,7 @@ export async function deleteRecurringRule(id: number): Promise<void> {
   try {
     const hasConfirmed = await recurringRuleHasConfirmedOccurrences(id);
     if (hasConfirmed) {
-      throw new Error(
+      throw validationError(
         'This rule has confirmed occurrences and cannot be deleted — deactivate it instead so its history is kept.',
       );
     }
@@ -379,10 +383,10 @@ export async function confirmOccurrence(
       .where(eq(recurringOccurrences.id, params.occurrenceId))
       .limit(1);
     if (!occurrence) {
-      throw new Error('That recurring occurrence no longer exists.');
+      throw validationError('That recurring occurrence no longer exists.');
     }
     if (occurrence.status !== 'pending') {
-      throw new Error(
+      throw validationError(
         `This occurrence was already ${occurrence.status} and cannot be confirmed again.`,
       );
     }
@@ -392,28 +396,45 @@ export async function confirmOccurrence(
       .where(eq(recurringRules.id, occurrence.recurringRuleId))
       .limit(1);
     if (!rule) {
-      throw new Error('The recurring rule behind this occurrence no longer exists.');
+      throw validationError(
+        'The recurring rule behind this occurrence no longer exists.',
+      );
     }
     if (!Number.isFinite(params.amount) || params.amount <= 0) {
-      throw new Error('Enter a valid amount before confirming.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
+    // The rule may point at an account that has since been closed, or a
+    // currency the account no longer holds — say which, rather than
+    // writing a transaction against it.
+    await requireMoneyAccount(db, {
+      accountId: params.accountId,
+      currencyId: rule.currencyId,
+      requireActive: true,
+    });
 
     const description = `${rule.name} (recurring)`;
 
     await db.transaction(async tx => {
-      const [transaction] = await tx
-        .insert(transactions)
-        .values({
-          accountId: params.accountId,
-          amount: params.amount,
-          categoryId: rule.categoryId,
-          description,
-          date: params.date,
-          entryType: rule.ruleType,
-          currencyId: rule.currencyId,
-          createdAt: Date.now(),
-        })
-        .returning();
+      // An Expense occurrence is refused, and rolled back, if the
+      // account cannot cover it; an Income one only ever adds money.
+      const insertTransaction = () =>
+        tx
+          .insert(transactions)
+          .values({
+            accountId: params.accountId,
+            amount: params.amount,
+            categoryId: rule.categoryId,
+            description,
+            date: params.date,
+            entryType: rule.ruleType,
+            currencyId: rule.currencyId,
+            createdAt: Date.now(),
+          })
+          .returning();
+      const [transaction] =
+        rule.ruleType === 'Expense'
+          ? await insertTransaction()
+          : await insertTransaction();
       await tx
         .update(recurringOccurrences)
         .set({
@@ -452,10 +473,10 @@ export async function skipOccurrence(occurrenceId: number): Promise<void> {
       .where(eq(recurringOccurrences.id, occurrenceId))
       .limit(1);
     if (!occurrence) {
-      throw new Error('That recurring occurrence no longer exists.');
+      throw validationError('That recurring occurrence no longer exists.');
     }
     if (occurrence.status !== 'pending') {
-      throw new Error(
+      throw validationError(
         `This occurrence was already ${occurrence.status} and cannot be skipped.`,
       );
     }
@@ -490,7 +511,10 @@ export async function getOccurrenceHistory(ruleId: number) {
         accountName: accounts.name,
       })
       .from(recurringOccurrences)
-      .leftJoin(transactions, eq(recurringOccurrences.transactionId, transactions.id))
+      .leftJoin(
+        transactions,
+        eq(recurringOccurrences.transactionId, transactions.id),
+      )
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
       .where(eq(recurringOccurrences.recurringRuleId, ruleId))
       .orderBy(desc(recurringOccurrences.dueDate));
@@ -502,7 +526,6 @@ export async function getOccurrenceHistory(ruleId: number) {
     throw error;
   }
 }
-
 
 // NETWORK-READY: If a backend is added later, replace this with
 // fetch(DELETE /api/transactions/:id/occurrence). The mirror of

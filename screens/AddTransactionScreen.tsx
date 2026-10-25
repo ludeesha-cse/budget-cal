@@ -16,7 +16,6 @@ import type { RootTabParamList } from '../navigation/types';
 import {
   useAddIncome as useAddIncomeMutation,
   useAddTransaction as useAddTransactionMutation,
-  useSetTransactionTags as useSetTransactionTagsMutation,
 } from '../hooks/queries';
 
 type AddScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Add'>;
@@ -48,7 +47,6 @@ function AddScreen(): React.JSX.Element {
   // unchanged — these hooks take the wrapped function's own arguments.
   const addIncome = useAddIncomeMutation();
   const addTransaction = useAddTransactionMutation();
-  const setTransactionTags = useSetTransactionTagsMutation();
   const { colors } = useTheme();
   const navigation = useNavigation<AddScreenNavigationProp>();
   const route = useRoute<RouteProp<RootTabParamList, 'Add'>>();
@@ -70,7 +68,11 @@ function AddScreen(): React.JSX.Element {
   }, [route.params?.initialTab]);
 
   const handleExpenseSubmit = async (values: TransactionFormSubmitValues) => {
-    const [inserted] = await addTransaction({
+    // Tags are written in the same database transaction as the expense
+    // itself, so the two can never be half-saved. A failure (including
+    // "Insufficient balance…") is thrown back to TransactionForm, which
+    // shows it and keeps what the user typed.
+    await addTransaction({
       accountId: values.accountId,
       amount: values.amount,
       categoryId: values.categoryId,
@@ -79,26 +81,22 @@ function AddScreen(): React.JSX.Element {
       currencyId: values.currencyId,
       entryType: 'Expense',
       excludeFromBudget: values.excludeFromBudget,
+      tagIds: values.tagIds,
     });
-    // Tags apply to the real transaction row that was just created — a
-    // brand-new transaction always starts with an empty tag set, so this
-    // is really just "add" rather than "replace", but setTransactionTags
-    // is the one function that does both correctly either way.
-    await setTransactionTags(inserted.id, values.tagIds);
     setSuccessMessage('Expense added');
     setFormKey(key => key + 1);
   };
 
   const handleIncomeSubmit = async (values: IncomeFormSubmitValues) => {
-    const [inserted] = await addIncome({
+    await addIncome({
       accountId: values.accountId,
       amount: values.amount,
       description: values.description,
       date: values.date,
       currencyId: values.currencyId,
       excludeFromBudget: values.excludeFromBudget,
+      tagIds: values.tagIds,
     });
-    await setTransactionTags(inserted.id, values.tagIds);
     setSuccessMessage('Income added');
     setFormKey(key => key + 1);
   };

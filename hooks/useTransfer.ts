@@ -3,12 +3,13 @@ import { Alert } from 'react-native';
 import { getTransferableAccounts } from '../db/queries';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { checkAmount } from '../utils/amountValidation';
+import { reportError } from '../utils/appErrors';
 import {
   convertAmount,
   getPairRate,
   indexRatesByCurrencyId,
 } from '../utils/currencyConversion';
-import { useAsyncAction } from './useAsyncAction';
 import { useFieldErrors } from './useFieldErrors';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
 import { preferredCurrencyId } from '../utils/currencyHelpers';
@@ -84,8 +85,25 @@ export interface UseTransferResult {
   // pressed Transfer. See hooks/useFieldErrors.
   isMissing: (field: string) => boolean;
   summaryText: string | null;
+  // The sheet's one message line ("Enter an amount greater than 0", or
+  // why a save failed), or null.
+  error: string | null;
+  // Shown in red under the From picker — "Insufficient balance, transfer
+  // or withdraw to the account first", or a problem with that account.
+  // Cleared when the From account, its currency or the amount changes.
+  fromAccountError: string | null;
+  // The same, for the To picker.
+  toAccountError: string | null;
+  // True while the transfer is being saved (the in-flight guard).
+  submitting: boolean;
   openTransferModal: (options?: OpenTransferOptions) => Promise<void>;
   close: () => void;
+  // Closes the sheet and runs `then` once it has fully closed — for an
+  // empty state's "Add an account" button, which opens another sheet
+  // (two native modals at once freeze iOS).
+  closeThen: (then: () => void) => void;
+  // Wire to the sheet's BottomSheetModal onFullyClosed.
+  handleFullyClosed: () => void;
   handleTransferSubmit: () => void;
 }
 
@@ -113,7 +131,6 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   const { data: rateRows } = useCurrencyRates();
   const { data: defaultCurrency } = useDefaultCurrency();
   const { accounts, routeParams, clearRouteParams, onSaved } = deps;
-  const runAction = useAsyncAction();
 
   const [visible, setVisible] = useState(false);
   const [fromOptions, setFromOptions] = useState<TransferableAccountRow[]>([]);
@@ -142,6 +159,22 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   // they meant to create as Bank look like an account that never saved.
   const [fromTypeFilter, setFromTypeFilter] = useState<string | null>(null);
   const [title, setTitle] = useState('Transfer');
+  const [error, setError] = useState<string | null>(null);
+  const [fromAccountError, setFromAccountError] = useState<string | null>(
+    null,
+  );
+  const [toAccountError, setToAccountError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const afterCloseRef = useRef<(() => void) | null>(null);
+
+  // A message about the From side describes the combination that was
+  // tried; changing any part of it makes the message stale.
+  useEffect(() => {
+    setFromAccountError(null);
+  }, [fromAccountId, currencyId, amount]);
+  useEffect(() => {
+    setToAccountError(null);
+  }, [toAccountId, toCurrencyId]);
 
   const ratesByCurrencyId = useMemo(
     () => indexRatesByCurrencyId(rateRows ?? []),
@@ -320,16 +353,13 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     if (!toCurrencyId) {
       missing.push('toCurrencyId');
     }
-    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+    // Blank amounts are outlined; a present-but-wrong one ("0", "-5") is
+    // explained in the message line instead.
+    if (!amount.trim()) {
       missing.push('amount');
     }
     // Only a field at all when the two currencies differ.
-    if (
-      isCrossCurrency &&
-      (!convertedAmount ||
-        Number.isNaN(Number(convertedAmount)) ||
-        Number(convertedAmount) <= 0)
-    ) {
+    if (isCrossCurrency && !convertedAmount.trim()) {
       missing.push('convertedAmount');
     }
     return missing;
@@ -354,6 +384,9 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
 
   const resetForm = useCallback(() => {
     fieldErrorsRef.current.reset();
+    setError(null);
+    setFromAccountError(null);
+    setToAccountError(null);
     setFromAccountId('');
     setCurrencyId('');
     setToAccountId('');
@@ -408,7 +441,8 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
 
   const performTransfer = useCallback(
     async (parsedAmount: number, parsedToAmount: number) => {
-      await runAction(async () => {
+      setSubmitting(true);
+      try {
         await createTransfer({
           fromAccountId: Number(fromAccountId),
           toAccountId: Number(toAccountId),
@@ -420,10 +454,23 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
         });
         setVisible(false);
         await onSaved?.();
-      }, 'Cannot transfer');
+      } catch (e) {
+        // Never raw database text — see utils/appErrors.ts. A problem
+        // with one side goes under that side's picker; anything else is
+        // the sheet's message line, and the form stays filled in.
+        const appError = reportError(e, { operation: 'Transfer' });
+        if (appError.field === 'account') {
+          setFromAccountError(appError.message);
+        } else if (appError.field === 'toAccount') {
+          setToAccountError(appError.message);
+        } else {
+          setError(appError.message);
+        }
+      } finally {
+        setSubmitting(false);
+      }
     },
     [
-      runAction,
       fromAccountId,
       toAccountId,
       currencyId,
@@ -435,42 +482,56 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
   );
 
   const handleTransferSubmit = useCallback(() => {
+    if (submitting) {
+      return;
+    }
     // The save button is muted but pressable while the form is
     // incomplete (see BottomSheetModal's footer), so this is the path an
-    // incomplete press takes — reveal the outlines rather than only
-    // showing an alert the user then has to map back onto the form.
+    // incomplete press takes: outline what is missing and say the first
+    // thing to fix, in the sheet itself.
     if (missingFields.length > 0) {
       fieldErrorsRef.current.reveal();
     }
-    if (!fromAccountId || !toAccountId || !currencyId || !toCurrencyId) {
-      Alert.alert(
-        'Missing information',
-        'Select both accounts and both currencies.',
+    if (!fromAccountId) {
+      setError('Choose the account to transfer from');
+      return;
+    }
+    if (!currencyId) {
+      setError('Choose the currency to send');
+      return;
+    }
+    if (!toAccountId) {
+      setError('Choose the account to transfer to');
+      return;
+    }
+    if (!toCurrencyId) {
+      setError('Choose the currency to receive');
+      return;
+    }
+    const amountCheck = checkAmount(amount);
+    if (amountCheck.kind !== 'ok') {
+      setError(
+        amountCheck.kind === 'blank' ? 'Enter an amount' : amountCheck.message,
       );
       return;
     }
-    const parsedAmount = Number(amount);
-    if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Invalid amount', 'Enter a transfer amount greater than zero.');
-      return;
-    }
+    const parsedAmount = amountCheck.value;
     // Same currency both sides: the two amounts are the same number by
     // definition, so the converted field is never shown and never read.
-    const parsedToAmount = isCrossCurrency
-      ? Number(convertedAmount)
-      : parsedAmount;
-    if (
-      isCrossCurrency &&
-      (!convertedAmount ||
-        Number.isNaN(parsedToAmount) ||
-        parsedToAmount <= 0)
-    ) {
-      Alert.alert(
-        'Invalid converted amount',
-        'Enter the amount that will land in the destination account.',
-      );
-      return;
+    let parsedToAmount = parsedAmount;
+    if (isCrossCurrency) {
+      const convertedCheck = checkAmount(convertedAmount);
+      if (convertedCheck.kind !== 'ok') {
+        setError(
+          convertedCheck.kind === 'blank'
+            ? 'Enter the amount that will land in the destination account'
+            : convertedCheck.message,
+        );
+        return;
+      }
+      parsedToAmount = convertedCheck.value;
     }
+    setError(null);
     // Real accounts can go negative — this is a warning, not a hard
     // block, per the Stage 11 spec. Computed from the same currentBalance
     // already loaded for display, not a fresh query, and always against
@@ -481,6 +542,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     );
     const fromBalance = fromBalanceRow?.currentBalance ?? 0;
     const resultingBalance = fromBalance - parsedAmount;
+    fieldErrorsRef.current.reset();
     if (resultingBalance < 0) {
       Alert.alert(
         'This will leave the account negative',
@@ -500,6 +562,7 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     }
     performTransfer(parsedAmount, parsedToAmount);
   }, [
+    submitting,
     fromAccountId,
     toAccountId,
     currencyId,
@@ -577,6 +640,17 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
 
   const close = useCallback(() => setVisible(false), []);
 
+  const closeThen = useCallback((then: () => void) => {
+    afterCloseRef.current = then;
+    setVisible(false);
+  }, []);
+
+  const handleFullyClosed = useCallback(() => {
+    const then = afterCloseRef.current;
+    afterCloseRef.current = null;
+    then?.();
+  }, []);
+
   const setConvertedAmountFromUser = useCallback((value: string) => {
     setConvertedTouched(true);
     setConvertedAmount(value);
@@ -609,8 +683,14 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
     canSave,
     isMissing: fieldErrors.isMissing,
     summaryText,
+    error,
+    fromAccountError,
+    toAccountError,
+    submitting,
     openTransferModal,
     close,
+    closeThen,
+    handleFullyClosed,
     handleTransferSubmit,
   };
 }

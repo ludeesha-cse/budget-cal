@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { loadFailureOf } from './loadFailure';
 import { useQueries } from '@tanstack/react-query';
 import {
   getActiveCurrencies,
@@ -22,13 +23,19 @@ import { isWholeMonthRange, resolveReportPeriod } from '../utils/dateUtils';
 import type { ReportPeriod, ResolvedReportPeriod } from '../utils/dateUtils';
 import { getCurrentDateString } from '../utils/date';
 
-export type ReportCurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
+export type ReportCurrencyRow = Awaited<
+  ReturnType<typeof getActiveCurrencies>
+>[number];
 export type ReportSummaryResult = Awaited<ReturnType<typeof getReportSummary>>;
-export type ReportCategoryRow = Awaited<ReturnType<typeof getSpendingByCategory>>[number];
+export type ReportCategoryRow = Awaited<
+  ReturnType<typeof getSpendingByCategory>
+>[number];
 export type ReportAccountTypeRow = Awaited<
   ReturnType<typeof getSpendingByAccountType>
 >[number];
-export type ReportTrendRow = Awaited<ReturnType<typeof getMonthlyTrend>>[number];
+export type ReportTrendRow = Awaited<
+  ReturnType<typeof getMonthlyTrend>
+>[number];
 export type ReportRange = ResolvedReportPeriod;
 
 // A second date range whose activity also makes a currency selectable —
@@ -46,6 +53,9 @@ export interface UseReportDataResult {
   accountTypeBreakdown: ReportAccountTypeRow[];
   trend: ReportTrendRow[];
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
   range: ReportRange;
   // The date the range was resolved against ('YYYY-MM-DD').
   today: string;
@@ -70,7 +80,10 @@ export function useReportData(
   // Computed once per mount — a report screen isn't expected to stay open
   // across a real midnight rollover in a way that matters here.
   const today = useMemo(() => getCurrentDateString(), []);
-  const range = useMemo(() => resolveReportPeriod(period, today), [period, today]);
+  const range = useMemo(
+    () => resolveReportPeriod(period, today),
+    [period, today],
+  );
   // Only a range that cuts months short (a custom range) needs the trend
   // clamped to its exact days; whole months keep the original query.
   const trendClamp = isWholeMonthRange(range.startDate, range.endDate)
@@ -81,8 +94,8 @@ export function useReportData(
   // app — a currency the user has disabled on the Currencies screen
   // shouldn't surface as a report tab even if it has old activity
   // sitting in it.
-  const { data: allCurrencies, isPending: currenciesPending } =
-    useActiveCurrencies();
+  const currenciesQuery = useActiveCurrencies();
+  const { data: allCurrencies, isPending: currenciesPending } = currenciesQuery;
   const { data: defaultCurrency } = useDefaultCurrency();
 
   // One summary per currency, purely to test "does this currency have
@@ -162,7 +175,10 @@ export function useReportData(
   // The current selection if it's still valid, else the app's default
   // currency if that's available, else the first available one.
   const resolvedCurrencyId = useMemo(() => {
-    if (currencyId != null && availableCurrencies.some(c => c.id === currencyId)) {
+    if (
+      currencyId != null &&
+      availableCurrencies.some(c => c.id === currencyId)
+    ) {
       return currencyId;
     }
     if (
@@ -218,18 +234,29 @@ export function useReportData(
         accountTypeBreakdown.isPending ||
         trend.isPending));
 
+  const failure = loadFailureOf(
+    currenciesQuery,
+    ...probeResults,
+    ...extraProbeResults,
+    summary,
+    categoryBreakdown,
+    accountTypeBreakdown,
+    trend,
+  );
+
   return {
     currencyId,
     setCurrencyId,
     currencies: allCurrencies ?? [],
     availableCurrencies,
-    summary: resolvedCurrencyId == null ? null : (summary.data ?? null),
+    summary: resolvedCurrencyId == null ? null : summary.data ?? null,
     categoryBreakdown:
-      resolvedCurrencyId == null ? [] : (categoryBreakdown.data ?? []),
+      resolvedCurrencyId == null ? [] : categoryBreakdown.data ?? [],
     accountTypeBreakdown:
-      resolvedCurrencyId == null ? [] : (accountTypeBreakdown.data ?? []),
-    trend: resolvedCurrencyId == null ? [] : (trend.data ?? []),
-    loading,
+      resolvedCurrencyId == null ? [] : accountTypeBreakdown.data ?? [],
+    trend: resolvedCurrencyId == null ? [] : trend.data ?? [],
+    ...failure,
+    loading: loading && !failure.loadFailed,
     range,
     today,
   };

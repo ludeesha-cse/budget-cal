@@ -14,6 +14,9 @@ import MonthYearPicker from '../components/MonthYearPicker';
 import CurrencyTabs from '../components/common/CurrencyTabs';
 import InfoBanner from '../components/common/InfoBanner';
 import { fieldErrorStyle } from '../utils/formFieldStyle';
+import { checkAmount } from '../utils/amountValidation';
+import FieldErrorText from '../components/common/FieldErrorText';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 import { useBudgetSettingsData } from '../hooks/useBudgetSettingsData';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
@@ -62,10 +65,18 @@ function BudgetSettingsScreen(): React.JSX.Element {
     creditCards,
   } = useBudgetSettingsData(selectedMonth, () => setSavedMessage(null));
 
-  // Whether the user has pressed Save on an empty/invalid amount.
+  const runAction = useAsyncAction();
+  // Whether the user has pressed Save on an empty amount (outlined), and
+  // the message for one that is filled in but wrong (explained).
   const [amountErrorShown, setAmountErrorShown] = useState(false);
-  const parsedAmount = Number(amount);
-  const amountValid = amount.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount >= 0;
+  const [amountMessage, setAmountMessage] = useState<string | null>(null);
+  // A budget of 0 is a real answer ("spend nothing in this currency").
+  const amountCheck = checkAmount(amount, { allowZero: true });
+  const amountValid = amountCheck.kind === 'ok';
+  const parsedAmount = amountCheck.kind === 'ok' ? amountCheck.value : 0;
+  React.useEffect(() => {
+    setAmountMessage(null);
+  }, [amount]);
   const [yearNum, monthNum] = selectedMonth.split('-').map(Number);
   const daysInMonth = clampDayToMonth(yearNum, monthNum, 31);
   const perDayRate = amountValid
@@ -73,12 +84,16 @@ function BudgetSettingsScreen(): React.JSX.Element {
     : null;
 
   const handleSave = async () => {
-    if (!amountValid || currencyId == null) {
+    if (amountCheck.kind === 'blank' || currencyId == null) {
       // Same muted-but-pressable pattern as every form in the app (see
       // hooks/useFieldErrors): the button looks unavailable, but the tap
       // still lands here and turns the amount field red, rather than
       // doing nothing at all and leaving the user guessing.
       setAmountErrorShown(true);
+      return;
+    }
+    if (amountCheck.kind === 'invalid') {
+      setAmountMessage(amountCheck.message);
       return;
     }
     setAmountErrorShown(false);
@@ -87,8 +102,11 @@ function BudgetSettingsScreen(): React.JSX.Element {
     // bar) — so without this, tapping Save while that field is focused
     // submits the form but leaves the keyboard open on both platforms.
     Keyboard.dismiss();
-    await upsertBudget(selectedMonth, currencyId, parsedAmount);
-    setSavedMessage('Budget saved');
+    // Was un-awaited-for-errors: a failed save showed nothing at all.
+    await runAction(async () => {
+      await upsertBudget(selectedMonth, currencyId, parsedAmount);
+      setSavedMessage('Budget saved');
+    }, 'Cannot save budget');
     // No reload() here any more: the mutation already invalidated every
     // budget query this write affects, and awaiting it waits for those
     // refetches — a second read would be redundant.
@@ -106,10 +124,11 @@ function BudgetSettingsScreen(): React.JSX.Element {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            await deleteBudget(currentBudgetId);
-            setAmount('');
-          },
+          onPress: () =>
+            runAction(async () => {
+              await deleteBudget(currentBudgetId);
+              setAmount('');
+            }, 'Cannot delete budget'),
         },
       ],
     );
@@ -123,9 +142,10 @@ function BudgetSettingsScreen(): React.JSX.Element {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Settle',
-          onPress: async () => {
-            await settleCreditCardAccount(id);
-          },
+          onPress: () =>
+            runAction(async () => {
+              await settleCreditCardAccount(id);
+            }, 'Cannot settle credit card'),
         },
       ],
     );
@@ -184,7 +204,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
             typography.amountLarge,
             styles.amountInput,
             { color: colors.text },
-            fieldErrorStyle(colors, amountErrorShown && !amountValid),
+            fieldErrorStyle(colors, amountErrorShown && amountCheck.kind === 'blank'),
           ]}
           value={amount}
           onChangeText={setAmount}
@@ -194,6 +214,7 @@ function BudgetSettingsScreen(): React.JSX.Element {
           placeholder="0"
           placeholderTextColor={colors.textSecondary}
         />
+        <FieldErrorText message={amountMessage} />
         {perDayRate !== null && (
           <Text style={[typography.amountMono, styles.perDayText, { color: colors.textSecondary }]}>
             ≈ {formatAmount(perDayRate, currencyCode)} / day across {daysInMonth} days

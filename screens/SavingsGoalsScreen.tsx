@@ -6,6 +6,7 @@ import type { SettingsStackParamList } from '../navigation/types';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import InfoBanner from '../components/common/InfoBanner';
 import SegmentedToggle, {
   type SegmentedToggleOption,
@@ -43,6 +44,8 @@ function SavingsGoalsScreen({ navigation }: Props): React.JSX.Element {
     currencies,
     accountOptions,
     loading,
+    loadFailed,
+    retry,
     filter,
     setFilter,
     visibleGoals,
@@ -88,7 +91,9 @@ function SavingsGoalsScreen({ navigation }: Props): React.JSX.Element {
         </Text>
       </Pressable>
 
-      {loading ? (
+      {loadFailed ? (
+        <LoadErrorState what="your savings goals" onRetry={retry} />
+      ) : loading ? (
         <EmptyState message="Loading..." />
       ) : (
         <FlatList
@@ -140,6 +145,7 @@ function SavingsGoalsScreen({ navigation }: Props): React.JSX.Element {
         onClose={transferForm.close}
         onSave={transferForm.submit}
         canSave={transferForm.canSave}
+        saving={transferForm.submitting}
         title={transferGoal ? `Add money — ${transferGoal.name}` : undefined}
         saveLabel="Add money">
         {transferGoal && (

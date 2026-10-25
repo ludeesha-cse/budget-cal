@@ -16,6 +16,8 @@ import NumericInputAccessory, {
 } from '../components/NumericInputAccessory';
 import { useTheme } from '../contexts/ThemeContext';
 import { fieldErrorStyle } from '../utils/formFieldStyle';
+import { checkAmount } from '../utils/amountValidation';
+import FieldErrorText from '../components/common/FieldErrorText';
 import { scaleFont, typography } from '../theme/typography';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import {
@@ -58,6 +60,7 @@ const EDIT_SCROLL_MS = 320;
 function ExchangeRatesScreen(): React.JSX.Element {
   const { colors } = useTheme();
   const runAction = useAsyncAction();
+  const [rateMessage, setRateMessage] = useState<string | null>(null);
   const setExchangeRate = useSetExchangeRateMutation();
   const resetExchangeRate = useResetExchangeRateMutation();
   const { data: rates, isPending } = useExchangeRates();
@@ -124,6 +127,7 @@ function ExchangeRatesScreen(): React.JSX.Element {
     setEditingCurrencyId(row.currencyId);
     setDraftRate(row.ratePerAnchor > 0 ? String(row.ratePerAnchor) : '');
     setRateErrorShown(false);
+    setRateMessage(null);
   };
 
   const cancelEdit = () => {
@@ -133,14 +137,23 @@ function ExchangeRatesScreen(): React.JSX.Element {
   };
 
   const saveEdit = (row: ExchangeRateListRow) => {
-    const parsed = Number(draftRate);
     // A rate has to be a positive number: zero or negative would make
     // every conversion through this currency either Infinity or a
-    // negative amount.
-    if (!draftRate || Number.isNaN(parsed) || parsed <= 0) {
+    // negative amount. Blank is outlined; a wrong value is explained.
+    const check = checkAmount(draftRate);
+    if (check.kind === 'blank') {
       setRateErrorShown(true);
       return;
     }
+    if (check.kind === 'invalid') {
+      setRateMessage(
+        check.message === 'Enter an amount greater than 0'
+          ? 'Enter a rate greater than 0'
+          : check.message,
+      );
+      return;
+    }
+    const parsed = check.value;
     runAction(async () => {
       await setExchangeRate(row.currencyId, parsed);
       setEditingCurrencyId(null);
@@ -204,10 +217,13 @@ function ExchangeRatesScreen(): React.JSX.Element {
                   color: colors.text,
                   backgroundColor: colors.surface,
                 },
-                fieldErrorStyle(colors, rateErrorShown && !draftValid),
+                fieldErrorStyle(colors, rateErrorShown && !draftRate.trim()),
               ]}
               value={draftRate}
-              onChangeText={setDraftRate}
+              onChangeText={text => {
+                setDraftRate(text);
+                setRateMessage(null);
+              }}
               keyboardType="numeric"
               returnKeyType="done"
               inputAccessoryViewID={NUMERIC_KEYBOARD_ACCESSORY_ID}
@@ -215,6 +231,7 @@ function ExchangeRatesScreen(): React.JSX.Element {
               placeholderTextColor={colors.textSecondary}
               autoFocus
             />
+            <FieldErrorText message={rateMessage} />
             <View style={styles.actions}>
               <Pressable
                 style={[styles.pill, { borderColor: colors.border }]}

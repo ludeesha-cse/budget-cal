@@ -14,6 +14,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -40,6 +41,7 @@ import {
 } from 'lucide-react-native';
 import { runMigrations } from './db';
 import { createQueryClient } from './db/queryClient';
+import { reportError, toUserMessage } from './utils/appErrors';
 import { ensureDefaultAccount, getAppMeta } from './db/queries';
 import DashboardScreen from './screens/DashboardScreen';
 import HistoryListScreen from './screens/HistoryListScreen';
@@ -572,6 +574,38 @@ function AppNavigator(): React.JSX.Element {
   );
 }
 
+function StartupErrorScreen({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}): React.JSX.Element {
+  const dark = useColorScheme() === 'dark';
+  return (
+    <View
+      style={[
+        styles.center,
+        styles.startupError,
+        dark ? styles.startupErrorDark : styles.startupErrorLight,
+      ]}>
+      <Text
+        style={[
+          styles.startupErrorText,
+          dark ? styles.startupErrorTextDark : styles.startupErrorTextLight,
+        ]}>
+        {message}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRetry}
+        style={styles.startupRetryButton}>
+        <Text style={styles.startupRetryText}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<Error | null>(null);
@@ -581,19 +615,33 @@ function App(): React.JSX.Element {
   // silently drop everything that was already loaded.
   const [queryClient] = useState(createQueryClient);
 
+  const [startupAttempt, setStartupAttempt] = useState(0);
+
   useEffect(() => {
+    setStartupError(null);
     runMigrations()
       .then(() => ensureDefaultAccount())
       .then(() => generatePendingOccurrences())
       .then(() => setReady(true))
-      .catch(setStartupError);
-  }, []);
+      .catch(error => {
+        // Logged in full; the screen gets a sentence (see
+        // utils/appErrors.ts), never the raw SQLite text.
+        reportError(error, { operation: 'App startup' });
+        setStartupError(error instanceof Error ? error : new Error(String(error)));
+      });
+  }, [startupAttempt]);
 
   if (startupError) {
+    // Rendered outside ThemeProvider (the database it reads from is what
+    // failed), so this uses the system scheme directly.
     return (
-      <View style={styles.center}>
-        <Text>Database setup failed: {startupError.message}</Text>
-      </View>
+      <StartupErrorScreen
+        message={toUserMessage(startupError, {
+          fallback:
+            "The app couldn't open your data. Nothing has been lost — please try again. If this keeps happening, restart your phone.",
+        })}
+        onRetry={() => setStartupAttempt(attempt => attempt + 1)}
+      />
     );
   }
 
@@ -644,6 +692,41 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
+  },
+  startupError: {
+    paddingHorizontal: 28,
+  },
+  // Plain light/dark pair rather than theme tokens: this screen is shown
+  // when the database (which stores the chosen theme) failed to open, so
+  // ThemeProvider is not mounted yet.
+  startupErrorLight: {
+    backgroundColor: '#FFFFFF',
+  },
+  startupErrorDark: {
+    backgroundColor: '#0F1115',
+  },
+  startupErrorTextLight: {
+    color: '#1A1D23',
+  },
+  startupErrorTextDark: {
+    color: '#F2F4F7',
+  },
+  startupErrorText: {
+    fontSize: 16,
+    lineHeight: 23,
+    textAlign: 'center',
+  },
+  startupRetryButton: {
+    marginTop: 18,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 26,
+    backgroundColor: '#2F6FED',
+  },
+  startupRetryText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   fill: {
     flex: 1,

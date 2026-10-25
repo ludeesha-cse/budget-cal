@@ -1,7 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Button, FlatList, StyleSheet, View } from 'react-native';
+import { reportError, validationError } from '../utils/appErrors';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import PendingOccurrenceCard from '../components/reviewOccurrences/PendingOccurrenceCard';
 import PendingInstallmentCard from '../components/reviewOccurrences/PendingInstallmentCard';
 import {
@@ -57,9 +59,25 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
   // due date (see getPendingScheduledPayments) — the same cache entry the
   // Dashboard banner counts, so the banner's number and this list can
   // never disagree.
-  const { data: pending, isPending: pendingLoading } =
-    usePendingScheduledPayments();
-  const { data: accountRows, isPending: accountsLoading } = useAccountList();
+  const {
+    data: pending,
+    isPending: pendingLoading,
+    isError: pendingFailed,
+    refetch: refetchPending,
+  } = usePendingScheduledPayments();
+  const {
+    data: accountRows,
+    isPending: accountsLoading,
+    isError: accountsFailed,
+    refetch: refetchAccounts,
+  } = useAccountList();
+  // A failed read must not fall through to "Nothing to review", which
+  // would be a false all-clear.
+  const loadFailed = pendingFailed || accountsFailed;
+  const retryLoad = () => {
+    refetchPending();
+    refetchAccounts();
+  };
 
   const rows = useMemo<PendingScheduledPayment[]>(() => pending ?? [], [pending]);
   const accounts = useMemo<AccountRow[]>(
@@ -69,7 +87,7 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
       ),
     [accountRows],
   );
-  const loading = pendingLoading || accountsLoading;
+  const loading = !loadFailed && (pendingLoading || accountsLoading);
 
   // useRowEditState is keyed by recurring-occurrence id and seeds itself
   // from a rule's amount/account/date, so it is fed only the recurring
@@ -139,8 +157,9 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
     await runAction(async () => {
       const accountId = accountIdFor(row);
       if (accountId == null) {
-        throw new Error(
-          `Choose which account is paying "${row.planName}".`,
+        throw validationError(
+          `Choose which account is paying "${row.planName}"`,
+          'account',
         );
       }
       // payInstallment resolves this occurrence and schedules the next
@@ -184,7 +203,10 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
         } else {
           const accountId = accountIdFor(row.installment);
           if (accountId == null) {
-            throw new Error('No account available to pay from.');
+            throw validationError(
+              'Choose the account to pay from',
+              'account',
+            );
           }
           await payInstallment({
             planId: row.installment.installmentPlanId,
@@ -193,11 +215,13 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
           });
         }
       } catch (error) {
-        failures.push(
-          `${row.name} (${row.dueDate}): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        // Same sentence the single-row button would show — "Insufficient
+        // balance, transfer or withdraw to the account first" for an
+        // account that cannot cover it — never raw database text.
+        const appError = reportError(error, {
+          operation: `Confirm all: ${row.name} (${row.dueDate})`,
+        });
+        failures.push(`${row.name} (${row.dueDate}): ${appError.message}`);
       }
     }
     if (failures.length > 0) {
@@ -207,7 +231,9 @@ function ReviewOccurrencesScreen(): React.JSX.Element {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {loading ? (
+      {loadFailed ? (
+        <LoadErrorState what="your scheduled entries" onRetry={retryLoad} />
+      ) : loading ? (
         <EmptyState message="Loading..." />
       ) : rows.length === 0 ? (
         <EmptyState message="Nothing to review — every recurring rule and installment plan is up to date." />

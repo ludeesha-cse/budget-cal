@@ -10,18 +10,24 @@ export function useConfirmDelete(): (
   title: string,
   message: string,
   confirmLabel: string,
-  onConfirm: () => void | Promise<void>,
+  onConfirm: () => unknown,
 ) => void {
   return useCallback(
     (
       title: string,
       message: string,
       confirmLabel: string,
-      onConfirm: () => void | Promise<void>,
+      onConfirm: () => unknown,
     ) => {
       Alert.alert(title, message, [
         { text: 'Cancel', style: 'cancel' },
-        { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+        {
+          text: confirmLabel,
+          style: 'destructive',
+          onPress: () => {
+            onConfirm();
+          },
+        },
       ]);
     },
     [],

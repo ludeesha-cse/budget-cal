@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useAccountList,
   useActiveCurrencies,
@@ -7,7 +8,9 @@ import {
 } from './queries';
 import { getActiveCurrencies, getSavingsGoals } from '../db/queries';
 
-export type SavingsGoalRow = Awaited<ReturnType<typeof getSavingsGoals>>[number];
+export type SavingsGoalRow = Awaited<
+  ReturnType<typeof getSavingsGoals>
+>[number];
 export type SavingsGoalCurrencyRow = Awaited<
   ReturnType<typeof getActiveCurrencies>
 >[number];
@@ -37,6 +40,9 @@ export interface UseSavingsGoalsDataResult {
   currencies: SavingsGoalCurrencyRow[];
   accountOptions: SavingsGoalAccountOption[];
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
   filter: SavingsGoalFilter;
   setFilter: (filter: SavingsGoalFilter) => void;
   visibleGoals: SavingsGoalRow[];
@@ -60,11 +66,14 @@ const SAVEABLE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 // cached query, so this costs nothing extra.
 export function useSavingsGoalsData(): UseSavingsGoalsDataResult {
   const [filter, setFilter] = useState<SavingsGoalFilter>('active');
-  const { data: goals, isPending: goalsPending } = useSavingsGoals();
-  const { data: currencies, isPending: currenciesPending } =
-    useActiveCurrencies();
-  const { data: accounts, isPending: accountsPending } = useAccountList();
-  const { data: balances, isPending: balancesPending } = useAllAccountBalances();
+  const goalsQuery = useSavingsGoals();
+  const { data: goals, isPending: goalsPending } = goalsQuery;
+  const currenciesQuery = useActiveCurrencies();
+  const { data: currencies, isPending: currenciesPending } = currenciesQuery;
+  const accountsQuery = useAccountList();
+  const { data: accounts, isPending: accountsPending } = accountsQuery;
+  const balancesQuery = useAllAccountBalances();
+  const { data: balances, isPending: balancesPending } = balancesQuery;
 
   const accountOptions = useMemo<SavingsGoalAccountOption[]>(() => {
     if (!accounts) {
@@ -85,7 +94,8 @@ export function useSavingsGoalsData(): UseSavingsGoalsDataResult {
     }
     return accounts
       .filter(
-        account => account.active && SAVEABLE_ACCOUNT_TYPES.includes(account.type),
+        account =>
+          account.active && SAVEABLE_ACCOUNT_TYPES.includes(account.type),
       )
       .map(account => {
         const held = byAccountId.get(account.id);
@@ -107,7 +117,15 @@ export function useSavingsGoalsData(): UseSavingsGoalsDataResult {
     [goals, filter],
   );
 
+  const failure = loadFailureOf(
+    goalsQuery,
+    currenciesQuery,
+    accountsQuery,
+    balancesQuery,
+  );
+
   return {
+    ...failure,
     goals: goals ?? [],
     currencies: currencies ?? [],
     accountOptions,

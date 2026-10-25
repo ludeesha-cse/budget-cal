@@ -33,6 +33,10 @@ type Props = {
   onClose: () => void;
   onSave?: () => void;
   canSave?: boolean;
+  // True while the save is in flight. The one case where the Save button
+  // IS disabled — a guard against a double submit, not a "form is
+  // incomplete" state (that stays muted-but-pressable, see below).
+  saving?: boolean;
   title?: string;
   saveLabel?: string;
   cancelLabel?: string;
@@ -320,6 +324,7 @@ function BottomSheetModal({
   onClose,
   onSave,
   canSave = true,
+  saving = false,
   title,
   saveLabel = 'Save',
   cancelLabel = 'Cancel',
@@ -466,10 +471,12 @@ function BottomSheetModal({
                     // with no way to find out why nothing happened. See
                     // hooks/useFieldErrors for the other half.
                     <Pressable
+                      disabled={saving}
+                      accessibilityState={{ disabled: saving, busy: saving }}
                       style={[
                         styles.footerButton,
                         {
-                          backgroundColor: !canSave
+                          backgroundColor: !canSave || saving
                             ? colors.neutralSoft
                             : saveDestructive
                             ? colors.danger
@@ -482,7 +489,7 @@ function BottomSheetModal({
                         style={[
                           styles.footerButtonText,
                           {
-                            color: !canSave
+                            color: !canSave || saving
                               ? colors.textSecondary
                               : saveDestructive
                               ? '#FFFFFF'

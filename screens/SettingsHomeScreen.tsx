@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { reportError } from '../utils/appErrors';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import RNFS from 'react-native-fs';
 import {
@@ -126,7 +127,11 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
     } catch (error) {
       Alert.alert(
         'Export failed',
-        error instanceof Error ? error.message : String(error),
+        reportError(error, {
+          operation: 'Export data',
+          fallback:
+            "Couldn't create the export file. Your data is unchanged — please check your phone has free storage and try again.",
+        }).message,
       );
     } finally {
       setExporting(false);
@@ -170,9 +175,15 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
         } finished successfully.\n\n${formatRowCounts(result)}`,
       );
     } catch (error) {
+      // importData writes in one transaction, so a failure here really
+      // does leave the existing data as it was.
       Alert.alert(
         'Import failed',
-        error instanceof Error ? error.message : String(error),
+        reportError(error, {
+          operation: `Import data (${mode})`,
+          fallback:
+            "Couldn't import this file. Nothing was changed — your existing data is as it was. Please try again.",
+        }).message,
       );
     } finally {
       setImporting(false);
@@ -193,7 +204,10 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       }
       Alert.alert(
         'Could not open file picker',
-        error instanceof Error ? error.message : String(error),
+        reportError(error, {
+          operation: 'Open file picker',
+          fallback: "Couldn't open the file picker. Please try again.",
+        }).message,
       );
       return;
     }
@@ -209,7 +223,11 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       destination: 'cachesDirectory',
     });
     if (copy.status !== 'success') {
-      Alert.alert('Could not read file', copy.copyError);
+      console.error('pickAndValidate: could not copy the picked file', copy.copyError);
+      Alert.alert(
+        'Could not read file',
+        "Couldn't open that file. Make sure it is downloaded to your phone, then try again.",
+      );
       return;
     }
     const path = copy.localUri;
@@ -222,7 +240,11 @@ function SettingsHomeScreen({ navigation }: Props): React.JSX.Element {
       setImporting(false);
       Alert.alert(
         'Could not read file',
-        error instanceof Error ? error.message : String(error),
+        reportError(error, {
+          operation: 'Read import file',
+          fallback:
+            "Couldn't read that file. Make sure it is an export from this app (.xlsx) and try again.",
+        }).message,
       );
       return;
     }

@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { getContributions } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
+import { checkAmount } from '../utils/amountValidation';
+import { reportError } from '../utils/appErrors';
 import { useAsyncAction } from './useAsyncAction';
 import { useConfirmDelete } from './useConfirmDelete';
 import { useFieldErrors } from './useFieldErrors';
@@ -38,6 +40,14 @@ export interface UseSavingsTransferFormResult {
   // True when this required field is empty AND the user has already
   // pressed Transfer & Save. See hooks/useFieldErrors.
   isMissing: (field: string) => boolean;
+  // The sheet's one message line, or null.
+  error: string | null;
+  // Shown under the "Transfer from" picker — "Insufficient balance,
+  // transfer or withdraw to the account first", or another problem with
+  // that account. Cleared when the account or the amount changes.
+  fromAccountError: string | null;
+  // True while the transfer is being saved (the in-flight guard).
+  submitting: boolean;
   open: (goal: SavingsGoalRow) => void;
   close: () => void;
   submit: () => void;
@@ -81,6 +91,15 @@ export function useSavingsTransferForm(
   const [fromAccountId, setFromAccountId] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(getCurrentDateString());
+  const [error, setError] = useState<string | null>(null);
+  const [fromAccountError, setFromAccountError] = useState<string | null>(
+    null,
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setFromAccountError(null);
+  }, [fromAccountId, amount]);
 
   const sourceOptions = useMemo(() => {
     if (!goal) {
@@ -113,7 +132,8 @@ export function useSavingsTransferForm(
     if (!fromAccountId) {
       missing.push('fromAccountId');
     }
-    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+    // Blank is outlined; present-but-wrong is explained in the message.
+    if (!amount.trim()) {
       missing.push('amount');
     }
     return missing;
@@ -131,6 +151,8 @@ export function useSavingsTransferForm(
     setFromAccountId('');
     setAmount('');
     setDate(getCurrentDateString());
+    setError(null);
+    setFromAccountError(null);
     fieldErrorsRef.current.reset();
   }, []);
 
@@ -138,7 +160,8 @@ export function useSavingsTransferForm(
 
   const perform = useCallback(
     async (parsedAmount: number, target: SavingsGoalRow) => {
-      await runAction(async () => {
+      setSubmitting(true);
+      try {
         await createSavingsTransfer({
           savingsGoalId: target.id,
           fromAccountId: Number(fromAccountId),
@@ -147,35 +170,50 @@ export function useSavingsTransferForm(
         });
         setGoal(null);
         await onSaved?.(target.id);
-      }, 'Could not transfer to this goal');
+      } catch (e) {
+        const appError = reportError(e, {
+          operation: 'Could not transfer to this goal',
+        });
+        if (appError.field === 'account') {
+          setFromAccountError(appError.message);
+        } else {
+          setError(appError.message);
+        }
+      } finally {
+        setSubmitting(false);
+      }
     },
-    [runAction, createSavingsTransfer, fromAccountId, date, onSaved],
+    [createSavingsTransfer, fromAccountId, date, onSaved],
   );
 
   const submit = useCallback(() => {
-    if (!goal) {
+    if (!goal || submitting) {
       return;
     }
     // The button is muted but pressable while the form is incomplete, so
-    // this is the path an incomplete press takes — point at the controls
-    // rather than only raising an alert the user has to map back.
+    // this is the path an incomplete press takes — outline what is
+    // missing and say what to fix in the sheet itself.
     if (missingFields.length > 0) {
       fieldErrorsRef.current.reveal();
     }
     if (!fromAccountId) {
-      Alert.alert('Missing information', 'Choose an account to transfer from.');
+      setError('Choose the account to transfer from');
       return;
     }
-    const parsedAmount = Number(amount);
-    if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Invalid amount', 'Enter an amount greater than zero.');
+    const amountCheck = checkAmount(amount);
+    if (amountCheck.kind !== 'ok') {
+      setError(
+        amountCheck.kind === 'blank' ? 'Enter an amount' : amountCheck.message,
+      );
       return;
     }
+    setError(null);
     // Same rule as an ordinary transfer: real accounts can go negative,
     // so this warns rather than blocks.
     const source = sourceOptions.find(a => String(a.id) === fromAccountId);
     const available = source?.balanceByCurrencyId[goal.currencyId] ?? 0;
-    const resulting = available - parsedAmount;
+    const resulting = available - amountCheck.value;
+    fieldErrorsRef.current.reset();
     if (resulting < 0) {
       Alert.alert(
         'This will leave the account negative',
@@ -185,13 +223,21 @@ export function useSavingsTransferForm(
         )}. Continue?`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue', onPress: () => perform(parsedAmount, goal) },
+          { text: 'Continue', onPress: () => perform(amountCheck.value, goal) },
         ],
       );
       return;
     }
-    perform(parsedAmount, goal);
-  }, [goal, fromAccountId, amount, sourceOptions, perform, missingFields]);
+    perform(amountCheck.value, goal);
+  }, [
+    goal,
+    submitting,
+    fromAccountId,
+    amount,
+    sourceOptions,
+    perform,
+    missingFields,
+  ]);
 
   // Removing a contribution reverses the transfer behind it — the money
   // goes back where it came from. The prompt says so explicitly, because
@@ -235,6 +281,9 @@ export function useSavingsTransferForm(
     sourceBalanceText,
     canSave,
     isMissing: fieldErrors.isMissing,
+    error,
+    fromAccountError,
+    submitting,
     open,
     close,
     submit,

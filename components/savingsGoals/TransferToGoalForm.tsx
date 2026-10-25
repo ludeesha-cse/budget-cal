@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import CollapsiblePicker from '../CollapsiblePicker';
 import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
+import FieldErrorText from '../common/FieldErrorText';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -61,6 +62,7 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
           invalid={form.isMissing('fromAccountId')}
         />
       )}
+      <FieldErrorText message={form.fromAccountError} />
 
       {form.sourceBalanceText && (
         <Text style={[styles.balance, { color: colors.textSecondary }]}>
@@ -109,6 +111,8 @@ function TransferToGoalForm({ goal, form }: Props): React.JSX.Element {
         This moves the money into {goal.accountName ?? 'the goal account'} and
         records it in History as "{goal.name}".
       </Text>
+
+      <FieldErrorText message={form.error} />
 
       <NumericInputAccessory />
     </View>

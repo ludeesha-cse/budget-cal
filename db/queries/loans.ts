@@ -1,6 +1,8 @@
 import { and, desc, eq, like, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
+import { requireMoneyAccount } from './balanceGuard';
 import {
   accountBalances,
   accounts,
@@ -9,9 +11,7 @@ import {
   loanOriginations,
   loanPayments,
 } from '../schema';
-import {
-  getCurrentDateString,
-} from '../../utils/date';
+import { getCurrentDateString } from '../../utils/date';
 import { getTotalOwed } from '../../utils/interestCalculations';
 import { getAccountBalance, reactivateAccount } from './accounts';
 import type { Account } from './accounts';
@@ -69,6 +69,12 @@ export type UpdateLoanAccountParams = LoanTerms & {
 // inside the same transaction as the rest of a loan's writes.
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+function requirePrincipal(principal: number): void {
+  if (!Number.isFinite(principal) || principal <= 0) {
+    throw validationError('Enter an amount greater than 0', 'principal');
+  }
+}
+
 // Borrowing puts money into the counterpart account; lending takes it out.
 // Both directions follow from `type` alone, the same way a credit card's
 // sign is inferred from its account type rather than stored separately.
@@ -83,7 +89,10 @@ function counterpartDeltaSign(type: LoanAccountType): 1 | -1 {
 // loan_details.counterpartyName (and everywhere on the Liabilities &
 // Receivables screen itself, which already labels Liability vs.
 // Receivable) keeps the bare name — see createLoanAccount below.
-function loanAccountName(type: LoanAccountType, counterpartyName: string): string {
+function loanAccountName(
+  type: LoanAccountType,
+  counterpartyName: string,
+): string {
   return type === 'Liability'
     ? `Borrowed_from_${counterpartyName}`
     : `Lend_to_${counterpartyName}`;
@@ -129,7 +138,7 @@ async function assertNoOpenLoanWithName(
     row => normalizeCounterpartyName(row.counterpartyName) === target,
   );
   if (clash) {
-    throw new Error(
+    throw validationError(
       type === 'Liability'
         ? `You already have an open liability with ${counterpartyName.trim()}. Add to that one instead of opening a second.`
         : `You already have an open receivable with ${counterpartyName.trim()}. Add to that one instead of opening a second.`,
@@ -305,9 +314,18 @@ export async function createLoanAccount(
 ): Promise<Account> {
   try {
     if (!params.counterpartyName.trim()) {
-      throw new Error('A counterparty name is required to create a loan.');
+      throw validationError(
+        'A counterparty name is required to create a loan.',
+      );
     }
+    requirePrincipal(params.principal);
     await assertNoOpenLoanWithName(params.type, params.counterpartyName);
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: params.currencyId,
+      requireActive: true,
+      requireHolding: false,
+    });
     const today = getCurrentDateString();
     return await db.transaction(async tx => {
       const [account] = await tx
@@ -377,7 +395,9 @@ export async function reactivateLoanAccount(
       .where(eq(accounts.id, params.accountId))
       .limit(1);
     if (!existingAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     const [existingDetails] = await db
       .select()
@@ -391,6 +411,13 @@ export async function reactivateLoanAccount(
         params.accountId,
       );
     }
+    requirePrincipal(params.principal);
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: params.currencyId,
+      requireActive: true,
+      requireHolding: false,
+    });
     // Terms and balances are committed before the account is flipped back
     // to active, so a failure part-way leaves it closed and untouched
     // rather than active with a half-applied new loan on it.
@@ -408,7 +435,7 @@ export async function reactivateLoanAccount(
         .where(eq(loanDetails.accountId, params.accountId))
         .returning();
       if (updated.length === 0) {
-        throw new Error(
+        throw validationError(
           'This account has no loan details to reuse. Create a new loan account instead.',
         );
       }
@@ -467,7 +494,7 @@ export async function getLoanTotalOwed(
       .where(eq(loanDetails.accountId, accountId))
       .limit(1);
     if (!details) {
-      throw new Error('No loan details found for this account.');
+      throw validationError('No loan details found for this account.');
     }
     const [balanceRow] = await db
       .select()
@@ -509,7 +536,7 @@ export async function topUpLoanAccount(
 ): Promise<void> {
   try {
     if (params.amount <= 0) {
-      throw new Error('Enter an amount greater than zero.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
     const [loanAccount] = await db
       .select()
@@ -517,10 +544,12 @@ export async function topUpLoanAccount(
       .where(eq(accounts.id, params.accountId))
       .limit(1);
     if (!loanAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     if (!loanAccount.active) {
-      throw new Error(
+      throw validationError(
         'That loan is closed. Reopen it from the name suggestions instead.',
       );
     }
@@ -538,11 +567,17 @@ export async function topUpLoanAccount(
     // so it is refused with the currency named rather than silently
     // opening a second balance row on the same account.
     if (balanceRow && balanceRow.currencyId !== params.currencyId) {
-      throw new Error(
+      throw validationError(
         `This loan is held in ${balanceRow.currencyCode}. Add to it in ${balanceRow.currencyCode}, or open a separate loan for another currency.`,
       );
     }
     const totalOwed = await getLoanTotalOwed(params.accountId, params.date);
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: params.currencyId,
+      requireActive: true,
+      requireHolding: false,
+    });
     await db.transaction(async tx => {
       await upsertAccountBalanceWithin(
         tx,
@@ -620,10 +655,10 @@ export async function updateLoanAccount(
 ): Promise<void> {
   try {
     if (!params.counterpartyName.trim()) {
-      throw new Error('A counterparty name is required.');
+      throw validationError('A counterparty name is required.');
     }
     if (params.principal < 0) {
-      throw new Error('Principal cannot be negative.');
+      throw validationError("The amount can't be negative", 'principal');
     }
     const [loanAccount] = await db
       .select()
@@ -631,7 +666,9 @@ export async function updateLoanAccount(
       .where(eq(accounts.id, params.accountId))
       .limit(1);
     if (!loanAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     const type = loanAccount.type as LoanAccountType;
     await assertNoOpenLoanWithName(
@@ -645,7 +682,7 @@ export async function updateLoanAccount(
       .where(eq(loanDetails.accountId, params.accountId))
       .limit(1);
     if (!details) {
-      throw new Error('This account has no loan details to edit.');
+      throw validationError('This account has no loan details to edit.');
     }
     const [balanceRow] = await db
       .select()
@@ -659,6 +696,12 @@ export async function updateLoanAccount(
     const crossedEdges =
       oldCurrencyId !== params.currencyId ||
       oldCounterpartAccountId !== params.counterpartAccountId;
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: params.currencyId,
+      requireActive: crossedEdges,
+      requireHolding: false,
+    });
 
     await db.transaction(async tx => {
       await tx
@@ -776,7 +819,7 @@ export type SettleLoanParams = {
 export async function settleLoan(params: SettleLoanParams): Promise<void> {
   try {
     if (params.paymentAmount <= 0) {
-      throw new Error('Enter a payment amount greater than zero.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
     const [loanAccount] = await db
       .select()
@@ -784,10 +827,18 @@ export async function settleLoan(params: SettleLoanParams): Promise<void> {
       .where(eq(accounts.id, params.loanAccountId))
       .limit(1);
     if (!loanAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     const totalOwed = await getLoanTotalOwed(params.loanAccountId, params.date);
     const isFullPayoff = params.paymentAmount >= totalOwed;
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: params.currencyId,
+      requireActive: true,
+      requireHolding: false,
+    });
 
     await db.transaction(async tx => {
       if (isFullPayoff) {
@@ -893,7 +944,7 @@ export async function updateLoanPayment(
 ): Promise<void> {
   try {
     if (params.paymentAmount <= 0) {
-      throw new Error('Enter a payment amount greater than zero.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
     const [payment] = await db
       .select()
@@ -901,7 +952,9 @@ export async function updateLoanPayment(
       .where(eq(loanPayments.id, params.paymentId))
       .limit(1);
     if (!payment) {
-      throw new Error('That payment no longer exists.');
+      throw validationError(
+        'That payment no longer exists — it may have been deleted.',
+      );
     }
     const [loanAccount] = await db
       .select()
@@ -909,7 +962,9 @@ export async function updateLoanPayment(
       .where(eq(accounts.id, payment.loanAccountId))
       .limit(1);
     if (!loanAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     const type = loanAccount.type as LoanAccountType;
     const sign = counterpartDeltaSign(type);
@@ -926,6 +981,13 @@ export async function updateLoanPayment(
       )
       .limit(1);
     const newOutstanding = Math.max(0, (balanceRow?.balance ?? 0) + difference);
+    await requireMoneyAccount(db, {
+      accountId: params.counterpartAccountId,
+      currencyId: payment.currencyId,
+      requireActive:
+        params.counterpartAccountId !== payment.counterpartAccountId,
+      requireHolding: false,
+    });
 
     await db.transaction(async tx => {
       await upsertAccountBalanceWithin(
@@ -993,7 +1055,9 @@ export async function deleteLoanPayment(paymentId: number): Promise<void> {
       .where(eq(loanPayments.id, paymentId))
       .limit(1);
     if (!payment) {
-      throw new Error('That payment no longer exists.');
+      throw validationError(
+        'That payment no longer exists — it may have been deleted.',
+      );
     }
     const [loanAccount] = await db
       .select()
@@ -1001,7 +1065,9 @@ export async function deleteLoanPayment(paymentId: number): Promise<void> {
       .where(eq(accounts.id, payment.loanAccountId))
       .limit(1);
     if (!loanAccount) {
-      throw new Error('That loan account no longer exists.');
+      throw validationError(
+        'That loan no longer exists — it may have been deleted.',
+      );
     }
     const sign = counterpartDeltaSign(loanAccount.type as LoanAccountType);
     const [balanceRow] = await db
@@ -1134,7 +1200,6 @@ export async function getLoanPaymentsByYear(year: string) {
   }
 }
 
-
 // The origination ledger's own aliases. counterpart_account_id is
 // nullable (migration 0027 backfilled pre-existing loans without one), so
 // this side is LEFT joined — an inner join would silently drop exactly
@@ -1182,7 +1247,10 @@ export async function getLoanOriginationsByMonth(month: string) {
       )
       .leftJoin(
         originationCounterpartAlias,
-        eq(loanOriginations.counterpartAccountId, originationCounterpartAlias.id),
+        eq(
+          loanOriginations.counterpartAccountId,
+          originationCounterpartAlias.id,
+        ),
       )
       .innerJoin(currencies, eq(loanOriginations.currencyId, currencies.id))
       .where(like(loanOriginations.date, `${month}%`));
@@ -1213,7 +1281,10 @@ export async function getLoanOriginationsByYear(year: string) {
       )
       .leftJoin(
         originationCounterpartAlias,
-        eq(loanOriginations.counterpartAccountId, originationCounterpartAlias.id),
+        eq(
+          loanOriginations.counterpartAccountId,
+          originationCounterpartAlias.id,
+        ),
       )
       .innerJoin(currencies, eq(loanOriginations.currencyId, currencies.id))
       .where(like(loanOriginations.date, `${year}%`));

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useAccountList,
   useActiveCurrencies,
@@ -8,7 +9,9 @@ import {
 import { getAccounts, getActiveCurrencies } from '../db/queries';
 
 export type { AccountBalanceRow };
-export type CurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
+export type CurrencyRow = Awaited<
+  ReturnType<typeof getActiveCurrencies>
+>[number];
 export type AccountWithBalances = Awaited<
   ReturnType<typeof getAccounts>
 >[number] & {
@@ -21,6 +24,9 @@ export interface UseAccountsResult {
   // Closed accounts stay in `accounts` (anything that still needs to look
   // one up by id can) but drop out of every visible list.
   activeAccounts: AccountWithBalances[];
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
 }
 
 // AccountsScreen's core data: every account, every currency, and each
@@ -39,9 +45,12 @@ export interface UseAccountsResult {
 // The joining below is plain synchronous work over already-fetched rows,
 // so it stays a memo rather than becoming a cache entry of its own.
 export function useAccounts(): UseAccountsResult {
-  const { data: rows } = useAccountList();
-  const { data: currencyRows } = useActiveCurrencies();
-  const { data: allBalances } = useAllAccountBalances();
+  const rowsQuery = useAccountList();
+  const { data: rows } = rowsQuery;
+  const currencyRowsQuery = useActiveCurrencies();
+  const { data: currencyRows } = currencyRowsQuery;
+  const allBalancesQuery = useAllAccountBalances();
+  const { data: allBalances } = allBalancesQuery;
 
   const accounts = useMemo<AccountWithBalances[]>(() => {
     if (!rows) {
@@ -67,5 +76,12 @@ export function useAccounts(): UseAccountsResult {
     [accounts],
   );
 
-  return { accounts, currencies: currencyRows ?? [], activeAccounts };
+  const failure = loadFailureOf(rowsQuery, currencyRowsQuery, allBalancesQuery);
+
+  return {
+    ...failure,
+    accounts,
+    currencies: currencyRows ?? [],
+    activeAccounts,
+  };
 }

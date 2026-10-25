@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { Pencil, Plus, Tag as TagIcon, Trash2 } from 'lucide-react-native';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
+import FieldErrorText from '../components/common/FieldErrorText';
 import EmptyState from '../components/common/EmptyState';
 import ActionButtons from '../components/common/ActionButtons';
 import {
@@ -55,6 +56,7 @@ function TagsScreen(): React.JSX.Element {
     openEdit: handleEditPress,
     close: closeForm,
     submit: handleSubmit,
+    error,
   } = useEntityFormModal<TagRow, string, string>({
     initialValues: '',
     populateFromRow: tag => tag.name,
@@ -145,6 +147,7 @@ function TagsScreen(): React.JSX.Element {
           placeholder="e.g. Reimbursable"
           placeholderTextColor={colors.textSecondary}
         />
+        <FieldErrorText message={error} />
       </BottomSheetModal>
     </View>
   );

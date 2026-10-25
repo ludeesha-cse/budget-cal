@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import BottomSheetModal from '../BottomSheetModal';
+import FieldErrorText from '../common/FieldErrorText';
 import { useTheme } from '../../contexts/ThemeContext';
 import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import { scaleFont, typography } from '../../theme/typography';
@@ -111,10 +112,20 @@ function AddCurrencySheets({
     // no onUpdate below), so openEdit is never called. Still required by
     // the hook's type.
     populateFromRow: currency => ({ code: currency.code, name: currency.name }),
-    validate: v =>
-      v.code.trim() === '' || v.name.trim() === ''
-        ? 'Enter a currency code and name.'
-        : null,
+    validate: v => {
+      if (v.code.trim() === '') {
+        return 'Enter a currency code';
+      }
+      if (v.name.trim() === '') {
+        return 'Enter a currency name';
+      }
+      // Present but wrong: a code is 2–5 letters (USD, USDT), never a
+      // phrase — "us dollar" would otherwise be saved as a code.
+      if (!/^[A-Za-z]{2,5}$/.test(v.code.trim())) {
+        return 'Enter a short code of 2–5 letters, like USD or JPY';
+      }
+      return null;
+    },
     requiredFields: v => {
       const missing: string[] = [];
       if (v.code.trim() === '') {
@@ -166,6 +177,7 @@ function AddCurrencySheets({
     openAdd: openNewCurrencyForm,
     close: closeForm,
     submit: handleSubmit,
+    error,
   } = form;
 
   const handleEnable = (currencyId: number) => {
@@ -290,6 +302,7 @@ function AddCurrencySheets({
           placeholder="e.g. Japanese Yen"
           placeholderTextColor={colors.textSecondary}
         />
+        <FieldErrorText message={error} />
       </BottomSheetModal>
     </>
   );

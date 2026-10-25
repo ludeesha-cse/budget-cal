@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { reportError, toUserMessage } from '../utils/appErrors';
 import { CircleUser } from 'lucide-react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
@@ -50,7 +51,10 @@ function AccountScreen(): React.JSX.Element {
       console.error('Sign-in failed', error);
       Alert.alert(
         'Sign-in failed',
-        error instanceof Error ? error.message : String(error),
+        toUserMessage(error, {
+          fallback:
+            "Sign-in didn't complete. Check your internet connection and try again.",
+        }),
       );
     } finally {
       setBusy(false);
@@ -65,7 +69,10 @@ function AccountScreen(): React.JSX.Element {
     } catch (error) {
       Alert.alert(
         'Sign-out failed',
-        error instanceof Error ? error.message : String(error),
+        reportError(error, {
+          operation: 'Sign out',
+          fallback: "Couldn't sign out. Please try again.",
+        }).message,
       );
     } finally {
       setBusy(false);

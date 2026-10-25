@@ -1,5 +1,7 @@
 import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
+import { requireMoneyAccount } from './balanceGuard';
 import {
   accounts,
   categories,
@@ -14,7 +16,10 @@ import {
   clampDayToMonth,
   getCurrentDateString,
 } from '../../utils/date';
-import { calculateFromMonthly, calculateFromPrincipal } from '../../utils/installmentMath';
+import {
+  calculateFromMonthly,
+  calculateFromPrincipal,
+} from '../../utils/installmentMath';
 
 type InstallmentPlan = typeof installmentPlans.$inferSelect;
 
@@ -74,10 +79,15 @@ export async function createInstallmentPlan(
 ): Promise<InstallmentPlan> {
   try {
     if (!params.name.trim()) {
-      throw new Error('A name is required for the installment plan.');
+      throw validationError('A name is required for the installment plan.');
     }
-    if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
-      throw new Error('Number of months must be a whole number greater than zero.');
+    if (
+      !Number.isInteger(params.numberOfMonths) ||
+      params.numberOfMonths <= 0
+    ) {
+      throw validationError(
+        'Number of months must be a whole number greater than zero.',
+      );
     }
     if (
       params.dueDayOfMonth != null &&
@@ -85,7 +95,7 @@ export async function createInstallmentPlan(
         params.dueDayOfMonth < 1 ||
         params.dueDayOfMonth > 31)
     ) {
-      throw new Error('Due date must be a day between 1 and 31.');
+      throw validationError('Due date must be a day between 1 and 31.');
     }
     const schedule = scheduleForInstallmentPlan(params);
     const [plan] = await db
@@ -189,15 +199,20 @@ export async function updateInstallmentPlan(
   try {
     const hasPayments = await installmentPlanHasPayments(id);
     if (hasPayments) {
-      throw new Error(
+      throw validationError(
         'This plan already has recorded payments — delete and recreate it instead of editing the schedule.',
       );
     }
     if (!params.name.trim()) {
-      throw new Error('A name is required for the installment plan.');
+      throw validationError('A name is required for the installment plan.');
     }
-    if (!Number.isInteger(params.numberOfMonths) || params.numberOfMonths <= 0) {
-      throw new Error('Number of months must be a whole number greater than zero.');
+    if (
+      !Number.isInteger(params.numberOfMonths) ||
+      params.numberOfMonths <= 0
+    ) {
+      throw validationError(
+        'Number of months must be a whole number greater than zero.',
+      );
     }
     if (
       params.dueDayOfMonth != null &&
@@ -205,7 +220,7 @@ export async function updateInstallmentPlan(
         params.dueDayOfMonth < 1 ||
         params.dueDayOfMonth > 31)
     ) {
-      throw new Error('Due date must be a day between 1 and 31.');
+      throw validationError('Due date must be a day between 1 and 31.');
     }
     const schedule = scheduleForInstallmentPlan(params);
     await db
@@ -245,7 +260,7 @@ export async function deleteInstallmentPlan(id: number): Promise<void> {
   try {
     const hasPayments = await installmentPlanHasPayments(id);
     if (hasPayments) {
-      throw new Error(
+      throw validationError(
         'This plan has recorded payments and cannot be deleted.',
       );
     }
@@ -331,7 +346,7 @@ export async function getNextUnpaidInstallmentNumber(
       .where(eq(installmentPlans.id, planId))
       .limit(1);
     if (!plan) {
-      throw new Error('That installment plan no longer exists.');
+      throw validationError('That installment plan no longer exists.');
     }
     const paidRows = await db
       .select({ installmentNumber: installmentPayments.installmentNumber })
@@ -526,39 +541,41 @@ async function loadInstallmentOccurrences(
     );
   }
 
-  return rows
-    .map(row => {
-      // paidCount + 1 is always the next unpaid installment: the paid
-      // set is always the contiguous prefix {1..paidCount}, since
-      // payInstallment only ever pays the next unpaid number and
-      // unpayInstallment only ever removes the latest.
-      const payableInstallmentNumber =
-        (paidCountByPlan.get(row.installmentPlanId) ?? 0) + 1;
-      return {
-        id: row.id,
-        installmentPlanId: row.installmentPlanId,
-        installmentNumber: row.installmentNumber,
-        payableInstallmentNumber,
-        numberOfMonths: row.numberOfMonths,
-        dueDate: row.dueDate,
-        planName: row.planName,
-        amount:
-          payableInstallmentNumber === row.numberOfMonths
-            ? row.finalInstallmentAmount
-            : row.monthlyAmount,
-        categoryId: row.categoryId,
-        categoryName: row.categoryName,
-        currencyId: row.currencyId,
-        currencyCode: row.currencyCode,
-      };
-    })
-    // A fully-paid plan has nothing left to prompt for. Normally it
-    // has no pending occurrence either (advanceInstallmentSchedule
-    // stops scheduling once getNextUnpaidInstallmentNumber returns
-    // null), but a plan paid from the Installment Plans screen while a
-    // reminder was already open can get here — and offering "pay" on a
-    // finished plan would only produce an error on tap.
-    .filter(row => row.payableInstallmentNumber <= row.numberOfMonths);
+  return (
+    rows
+      .map(row => {
+        // paidCount + 1 is always the next unpaid installment: the paid
+        // set is always the contiguous prefix {1..paidCount}, since
+        // payInstallment only ever pays the next unpaid number and
+        // unpayInstallment only ever removes the latest.
+        const payableInstallmentNumber =
+          (paidCountByPlan.get(row.installmentPlanId) ?? 0) + 1;
+        return {
+          id: row.id,
+          installmentPlanId: row.installmentPlanId,
+          installmentNumber: row.installmentNumber,
+          payableInstallmentNumber,
+          numberOfMonths: row.numberOfMonths,
+          dueDate: row.dueDate,
+          planName: row.planName,
+          amount:
+            payableInstallmentNumber === row.numberOfMonths
+              ? row.finalInstallmentAmount
+              : row.monthlyAmount,
+          categoryId: row.categoryId,
+          categoryName: row.categoryName,
+          currencyId: row.currencyId,
+          currencyCode: row.currencyCode,
+        };
+      })
+      // A fully-paid plan has nothing left to prompt for. Normally it
+      // has no pending occurrence either (advanceInstallmentSchedule
+      // stops scheduling once getNextUnpaidInstallmentNumber returns
+      // null), but a plan paid from the Installment Plans screen while a
+      // reminder was already open can get here — and offering "pay" on a
+      // finished plan would only produce an error on tap.
+      .filter(row => row.payableInstallmentNumber <= row.numberOfMonths)
+  );
 }
 
 export async function getPendingInstallmentOccurrences(): Promise<
@@ -661,10 +678,10 @@ export async function skipInstallmentOccurrence(
       .where(eq(installmentOccurrences.id, occurrenceId))
       .limit(1);
     if (!occurrence) {
-      throw new Error('That installment occurrence no longer exists.');
+      throw validationError('That installment occurrence no longer exists.');
     }
     if (occurrence.status !== 'pending') {
-      throw new Error(
+      throw validationError(
         `This occurrence was already ${occurrence.status} and cannot be skipped.`,
       );
     }
@@ -722,7 +739,7 @@ export async function advanceInstallmentSchedule(
       .where(eq(installmentPlans.id, planId))
       .limit(1);
     if (!plan) {
-      throw new Error('That installment plan no longer exists.');
+      throw validationError('That installment plan no longer exists.');
     }
     // The month to step forward FROM is the latest occurrence this plan
     // already has (paid, skipped or pending), falling back to the plan's
@@ -739,11 +756,7 @@ export async function advanceInstallmentSchedule(
       .map(Number);
     const nextMonth = baseMonth === 12 ? 1 : baseMonth + 1;
     const nextYear = baseMonth === 12 ? baseYear + 1 : baseYear;
-    const day = clampDayToMonth(
-      nextYear,
-      nextMonth,
-      occurrenceAnchorDay(plan),
-    );
+    const day = clampDayToMonth(nextYear, nextMonth, occurrenceAnchorDay(plan));
     const dueDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(
       day,
     ).padStart(2, '0')}`;
@@ -766,7 +779,9 @@ export async function advanceInstallmentSchedule(
     const usedSlots = new Set(
       (
         await db
-          .select({ installmentNumber: installmentOccurrences.installmentNumber })
+          .select({
+            installmentNumber: installmentOccurrences.installmentNumber,
+          })
           .from(installmentOccurrences)
           .where(eq(installmentOccurrences.installmentPlanId, planId))
       ).map(row => row.installmentNumber),
@@ -895,13 +910,13 @@ export async function payInstallment(
       .where(eq(installmentPlans.id, params.planId))
       .limit(1);
     if (!plan) {
-      throw new Error('That installment plan no longer exists.');
+      throw validationError('That installment plan no longer exists.');
     }
     const nextInstallmentNumber = await getNextUnpaidInstallmentNumber(
       params.planId,
     );
     if (nextInstallmentNumber === null) {
-      throw new Error('This plan is already fully paid.');
+      throw validationError('This plan is already fully paid.');
     }
     // Every installment is the plan's flat monthlyAmount EXCEPT the very
     // last one, which absorbs the rounding remainder — see
@@ -917,9 +932,16 @@ export async function payInstallment(
         !Number.isFinite(params.customAmount) ||
         (params.customAmount as number) <= 0
       ) {
-        throw new Error('Enter an amount greater than zero.');
+        throw validationError('Enter an amount greater than 0', 'amount');
       }
     }
+    // The paying account must exist, be open, and hold the plan's
+    // currency — named specifically when it does not.
+    await requireMoneyAccount(db, {
+      accountId: params.accountId,
+      currencyId: plan.currencyId,
+      requireActive: true,
+    });
     const amount = isCustomAmount
       ? (params.customAmount as number)
       : scheduledAmount;
@@ -969,7 +991,11 @@ export async function payInstallment(
     // an occurrence table out of sync with a real payment is always
     // visible in the log rather than inferred later from a reminder that
     // will not go away.
-    await resolvePaidOccurrence(params.planId, nextInstallmentNumber, paymentId);
+    await resolvePaidOccurrence(
+      params.planId,
+      nextInstallmentNumber,
+      paymentId,
+    );
   } catch (error) {
     console.error(
       `payInstallment: failed to pay next installment for plan id=${params.planId}`,
@@ -1063,7 +1089,7 @@ export async function unpayInstallment(paymentId: number): Promise<void> {
       .where(eq(installmentPayments.id, paymentId))
       .limit(1);
     if (!payment) {
-      throw new Error('That payment no longer exists.');
+      throw validationError('That payment no longer exists.');
     }
     const [latest] = await db
       .select()
@@ -1074,7 +1100,7 @@ export async function unpayInstallment(paymentId: number): Promise<void> {
       .orderBy(desc(installmentPayments.installmentNumber))
       .limit(1);
     if (!latest || latest.id !== payment.id) {
-      throw new Error(
+      throw validationError(
         'Only the most recent payment for this plan can be undone. Undo later payments first.',
       );
     }
@@ -1103,13 +1129,20 @@ export async function unpayInstallment(paymentId: number): Promise<void> {
         .delete(installmentOccurrences)
         .where(
           and(
-            eq(installmentOccurrences.installmentPlanId, payment.installmentPlanId),
+            eq(
+              installmentOccurrences.installmentPlanId,
+              payment.installmentPlanId,
+            ),
             eq(installmentOccurrences.status, 'pending'),
           ),
         );
       await tx
         .update(installmentOccurrences)
-        .set({ status: 'pending', installmentPaymentId: null, resolvedAt: null })
+        .set({
+          status: 'pending',
+          installmentPaymentId: null,
+          resolvedAt: null,
+        })
         .where(eq(installmentOccurrences.installmentPaymentId, paymentId));
 
       // Deleting the transaction row IS the balance reversal — balances
@@ -1174,7 +1207,6 @@ export async function getRemainingInstallmentBalance(
     throw error;
   }
 }
-
 
 // NETWORK-READY: If a backend is added later, replace this with
 // fetch(DELETE /api/transactions/:id/installment-payment). The History

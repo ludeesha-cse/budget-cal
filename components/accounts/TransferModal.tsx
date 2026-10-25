@@ -1,9 +1,10 @@
 import React from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
 import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
+import FieldErrorText from '../common/FieldErrorText';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -15,6 +16,9 @@ import { sharedFormStyles as styles } from './sharedFormStyles';
 
 type Props = {
   state: UseTransferResult;
+  // Opens the Add Account form. Offered from the empty states, so a user
+  // with nothing to move money from is one tap from fixing that.
+  onAddAccount?: () => void;
 };
 
 // Reads an account type the way the Accounts screen labels it, so the
@@ -46,7 +50,7 @@ function emptySourceMessage(fromTypeFilter: string | null): string {
 
 // Transfers are a free-tier feature (Stage 11) — no PremiumGate anywhere
 // in here, unlike PayOffCardModal's credit-card row.
-function TransferModal({ state }: Props): React.JSX.Element {
+function TransferModal({ state, onAddAccount }: Props): React.JSX.Element {
   const { colors } = useTheme();
   const {
     visible,
@@ -75,9 +79,26 @@ function TransferModal({ state }: Props): React.JSX.Element {
     canSave,
     isMissing,
     summaryText,
+    error,
+    fromAccountError,
+    toAccountError,
+    submitting,
     close,
+    closeThen,
+    handleFullyClosed,
     handleTransferSubmit,
   } = state;
+
+  const addAccountButton = onAddAccount ? (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => closeThen(onAddAccount)}
+      style={[localStyles.addButton, { borderColor: colors.primary }]}>
+      <Text style={[localStyles.addButtonText, { color: colors.primary }]}>
+        + Add an account
+      </Text>
+    </Pressable>
+  ) : null;
 
   return (
     <BottomSheetModal
@@ -85,11 +106,16 @@ function TransferModal({ state }: Props): React.JSX.Element {
       onClose={close}
       onSave={handleTransferSubmit}
       canSave={canSave}
+      saving={submitting}
+      onFullyClosed={handleFullyClosed}
       title={title}
       saveLabel={title === 'Withdraw to Cash' ? 'Withdraw' : 'Transfer'}>
       <Text style={[styles.label, { color: colors.text }]}>From</Text>
       {fromOptions.length === 0 ? (
-        <EmptyState message={emptySourceMessage(fromTypeFilter)} />
+        <>
+          <EmptyState message={emptySourceMessage(fromTypeFilter)} />
+          {addAccountButton}
+        </>
       ) : (
         <CollapsiblePicker
           displayLabel={labelForId(fromOptions, fromAccountId, 'name', 'Select account')}
@@ -103,6 +129,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
           invalid={isMissing('fromAccountId')}
         />
       )}
+      <FieldErrorText message={fromAccountError} />
 
       {fromAccountId ? (
         <>
@@ -134,7 +161,10 @@ function TransferModal({ state }: Props): React.JSX.Element {
         <>
           <Text style={[styles.label, { color: colors.text }]}>To</Text>
           {toOptions.length === 0 ? (
-            <EmptyState message="No account is able to receive a transfer yet." />
+            <>
+              <EmptyState message="No other cash, bank or crypto account holds a currency yet, so there is nowhere to send this money." />
+              {addAccountButton}
+            </>
           ) : (
             <CollapsiblePicker
               displayLabel={labelForId(toOptions, toAccountId, 'name', 'Select account')}
@@ -157,6 +187,7 @@ function TransferModal({ state }: Props): React.JSX.Element {
               invalid={isMissing('toAccountId')}
             />
           )}
+          <FieldErrorText message={toAccountError} />
         </>
       ) : null}
 
@@ -249,9 +280,25 @@ function TransferModal({ state }: Props): React.JSX.Element {
         </View>
       </View>
 
+      <FieldErrorText message={error} />
+
       <NumericInputAccessory />
     </BottomSheetModal>
   );
 }
+
+const localStyles = StyleSheet.create({
+  addButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});
 
 export default TransferModal;

@@ -42,6 +42,10 @@ export function useSettleLoan(
   // unchanged — these hooks take the wrapped function's own arguments.
   const settleLoan = useSettleLoanMutation();
   const modal = useTargetedModal<ActiveLoan, SettleLoanValues>({
+    operation: 'Settle loan',
+    // "Insufficient balance…" when repaying a liability from an account
+    // that cannot cover it — shown under the Pay from picker.
+    inlineErrorFields: ['account'],
     // Defaults to the account this loan's money actually moved through
     // when it was opened, which is where a repayment almost always goes
     // back to — falling back to the first eligible account only for
@@ -61,21 +65,20 @@ export function useSettleLoan(
     },
     validate: values => {
       const parsedAmount = Number(values.paymentAmount);
-      if (
-        !values.paymentAmount ||
-        Number.isNaN(parsedAmount) ||
-        parsedAmount <= 0
-      ) {
-        return 'Enter a valid payment amount';
-      }
       if (!values.counterpartAccountId) {
-        return 'Select the account this payment moves through';
+        return 'Choose the account this payment moves through';
+      }
+      if (!values.paymentAmount.trim()) {
+        return 'Enter an amount';
+      }
+      if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+        return 'Enter an amount greater than 0';
       }
       return null;
     },
     requiredFields: values => {
       const missing: string[] = [];
-      if (!values.paymentAmount || Number(values.paymentAmount) <= 0) {
+      if (!values.paymentAmount.trim()) {
         missing.push('paymentAmount');
       }
       if (!values.counterpartAccountId) {

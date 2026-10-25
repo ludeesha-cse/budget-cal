@@ -6,6 +6,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import ScreenBackground from '../components/ScreenBackground';
 import PendingReviewBanner from '../components/dashboard/PendingReviewBanner';
 import WalletSetupBanner from '../components/dashboard/WalletSetupBanner';
+import LoadErrorState from '../components/common/LoadErrorState';
 import BudgetSummaryCard from '../components/dashboard/BudgetSummaryCard';
 import CategoryBreakdownList from '../components/dashboard/CategoryBreakdownList';
 import AccountShortcuts from '../components/dashboard/AccountShortcuts';
@@ -83,7 +84,9 @@ function DashboardScreen({ navigation }: Props): React.JSX.Element {
             />
           )}
 
-        {data.loading ? (
+        {data.loadFailed ? (
+          <LoadErrorState what="your dashboard" onRetry={data.retry} />
+        ) : data.loading ? (
           <ActivityIndicator size="large" style={styles.loadingSpinner} />
         ) : (
           <>

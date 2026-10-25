@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react-native';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import InstallmentPlanCard from '../components/installments/InstallmentPlanCard';
 import InstallmentFormFields from '../components/installments/InstallmentFormFields';
 import InstallmentPayModal from '../components/installments/InstallmentPayModal';
@@ -104,7 +105,13 @@ function InstallmentPlansScreen({ route, navigation }: Props): React.JSX.Element
             }
           />
         )}
-        ListEmptyComponent={<EmptyState message="No installment plans yet." />}
+        ListEmptyComponent={
+          data.loadFailed ? (
+            <LoadErrorState what="your installment plans" onRetry={data.retry} />
+          ) : (
+            <EmptyState message="No installment plans yet." />
+          )
+        }
       />
 
       <BottomSheetModal

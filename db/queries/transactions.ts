@@ -8,6 +8,9 @@ import {
   recurringOccurrences,
   transactions,
 } from '../schema';
+import { validationError } from '../../utils/appErrors';
+import { requireMoneyAccount, requirePositiveAmount } from './balanceGuard';
+import { setTransactionTagsWithin } from './tags';
 
 type Transaction = typeof transactions.$inferSelect;
 
@@ -20,6 +23,10 @@ export type NewTransaction = {
   entryType: 'Expense' | 'Income';
   currencyId: number;
   excludeFromBudget?: boolean; // Stage 16a — defaults to false when omitted
+  // When given, the transaction's tag set is written in the SAME database
+  // transaction as the row itself — an expense that saved while its tags
+  // failed (or the reverse) is exactly the half-save this avoids.
+  tagIds?: number[];
 };
 
 // No categoryId — Income entries carry no category at all, by design
@@ -31,6 +38,7 @@ export type NewIncome = {
   accountId: number;
   currencyId: number;
   excludeFromBudget?: boolean; // Stage 16a — defaults to false when omitted
+  tagIds?: number[]; // see NewTransaction.tagIds
 };
 
 //If a backend is added later, replace this with a fetch() call
@@ -53,16 +61,42 @@ export async function getTransactions() {
 // the only place that later decides what effect entryType has on the
 // balance (via getBalanceDelta in utils/balanceMath.ts), so there's
 // nothing here that could disagree with it.
+//
+// Checked before anything is written: the amount is a real positive
+// number, and the account and currency exist, are open, and belong
+// together (see requireMoneyAccount). An Expense is additionally refused
+// if it would take a Cash/Bank/Crypto Wallet account below zero — checked
+// INSIDE the transaction, against the balance as it is at that moment,
+// so a stale figure on screen cannot let it through.
 export async function addTransaction(data: NewTransaction) {
+  const { tagIds, ...row } = data;
   try {
-    return await db
-      .insert(transactions)
-      .values({
-        ...data,
-        excludeFromBudget: data.excludeFromBudget ?? false,
-        createdAt: Date.now(),
-      })
-      .returning();
+    requirePositiveAmount(row.amount);
+    if (row.entryType === 'Expense' && row.categoryId == null) {
+      throw validationError('Choose a category', 'categoryId');
+    }
+    await requireMoneyAccount(db, {
+      accountId: row.accountId,
+      currencyId: row.currencyId,
+      requireActive: true,
+    });
+    return await db.transaction(async tx => {
+      const insert = () =>
+        tx
+          .insert(transactions)
+          .values({
+            ...row,
+            excludeFromBudget: row.excludeFromBudget ?? false,
+            createdAt: Date.now(),
+          })
+          .returning();
+      const inserted =
+        row.entryType === 'Expense' ? await insert() : await insert();
+      if (tagIds && inserted[0]) {
+        await setTransactionTagsWithin(tx, inserted[0].id, tagIds);
+      }
+      return inserted;
+    });
   } catch (error) {
     console.error('addTransaction: failed to insert transaction', data, error);
     throw error;
@@ -80,22 +114,38 @@ export async function addTransaction(data: NewTransaction) {
 // categoryId is always written as null — Income never gets a category.
 export async function addIncome(data: NewIncome) {
   try {
-    return await db
-      .insert(transactions)
-      .values({
-        accountId: data.accountId,
-        amount: data.amount,
-        categoryId: null,
-        description: data.description,
-        date: data.date,
-        currencyId: data.currencyId,
-        entryType: 'Income',
-        excludeFromBudget: data.excludeFromBudget ?? false,
-        createdAt: Date.now(),
-      })
-      .returning();
+    requirePositiveAmount(data.amount);
+    await requireMoneyAccount(db, {
+      accountId: data.accountId,
+      currencyId: data.currencyId,
+      requireActive: true,
+    });
+    return await db.transaction(async tx => {
+      const inserted = await tx
+        .insert(transactions)
+        .values({
+          accountId: data.accountId,
+          amount: data.amount,
+          categoryId: null,
+          description: data.description,
+          date: data.date,
+          currencyId: data.currencyId,
+          entryType: 'Income',
+          excludeFromBudget: data.excludeFromBudget ?? false,
+          createdAt: Date.now(),
+        })
+        .returning();
+      if (data.tagIds && inserted[0]) {
+        await setTransactionTagsWithin(tx, inserted[0].id, data.tagIds);
+      }
+      return inserted;
+    });
   } catch (error) {
-    console.error('addIncome: failed to insert income transaction', data, error);
+    console.error(
+      'addIncome: failed to insert income transaction',
+      data,
+      error,
+    );
     throw error;
   }
 }
@@ -388,15 +438,61 @@ export async function getTransactionById(
 // row is itself the entire update: the next read just nets a different
 // set of transactions and gets the right answer for free, through the
 // same getBalanceDelta direction logic as everything else.
+//
+// Same checks as addTransaction, applied to the row as it will be after
+// the edit. The balance check runs on the account the edited entry will
+// take money from, measured before and after the update inside one
+// transaction — so it only asks the account to cover what the edit ADDS:
+// lowering an expense, or leaving it as it was, always saves.
+//
+// An account or currency that has since been closed or turned off is
+// accepted when the edit keeps it unchanged; old history stays editable.
 export async function updateTransaction(
   id: number,
   data: Partial<NewTransaction>,
 ) {
-  return db
-    .update(transactions)
-    .set(data)
-    .where(eq(transactions.id, id))
-    .returning();
+  const { tagIds, ...changes } = data;
+  try {
+    const original = await getTransactionById(id);
+    if (!original) {
+      throw validationError(
+        'That transaction no longer exists — it may have been deleted.',
+      );
+    }
+    const next = { ...original, ...changes };
+    requirePositiveAmount(next.amount);
+    if (next.entryType === 'Expense' && next.categoryId == null) {
+      throw validationError('Choose a category', 'categoryId');
+    }
+    await requireMoneyAccount(db, {
+      accountId: next.accountId,
+      currencyId: next.currencyId,
+      requireActive:
+        next.accountId !== original.accountId ||
+        next.currencyId !== original.currencyId,
+    });
+    return await db.transaction(async tx => {
+      const update = () =>
+        tx
+          .update(transactions)
+          .set(changes)
+          .where(eq(transactions.id, id))
+          .returning();
+      const updated =
+        next.entryType === 'Expense' ? await update() : await update();
+      if (tagIds) {
+        await setTransactionTagsWithin(tx, id, tagIds);
+      }
+      return updated;
+    });
+  } catch (error) {
+    console.error(
+      `updateTransaction: failed to update transaction id=${id}`,
+      data,
+      error,
+    );
+    throw error;
+  }
 }
 
 // If a backend is added later, replace this with fetch(DELETE
@@ -407,7 +503,6 @@ export async function updateTransaction(
 export async function deleteTransaction(id: number) {
   return db.delete(transactions).where(eq(transactions.id, id)).returning();
 }
-
 
 // NETWORK-READY: If a backend is added later, replace this with
 // fetch(DELETE /api/history/transactions/:id), keeping the same

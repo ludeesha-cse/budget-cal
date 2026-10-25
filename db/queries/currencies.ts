@@ -1,9 +1,7 @@
 import { eq, notInArray } from 'drizzle-orm';
 import { db } from '../index';
-import {
-  accountBalances,
-  currencies,
-} from '../schema';
+import { toAppError, validationError } from '../../utils/appErrors';
+import { accountBalances, currencies } from '../schema';
 import { rescaleRatesToDefaultWithin } from './exchangeRates';
 
 type Currency = typeof currencies.$inferSelect;
@@ -42,11 +40,24 @@ export async function addCurrency(
   code: string,
   name: string,
 ): Promise<Currency> {
-  const [currency] = await db
-    .insert(currencies)
-    .values({ code, name, isDefault: false, active: true, createdAt: Date.now() })
-    .returning();
-  return currency;
+  try {
+    const [currency] = await db
+      .insert(currencies)
+      .values({
+        code,
+        name,
+        isDefault: false,
+        active: true,
+        createdAt: Date.now(),
+      })
+      .returning();
+    return currency;
+  } catch (error) {
+    console.error(`addCurrency: failed to add currency ${code}`, error);
+    // currencies.code is unique — a second "USD" is a duplicate, named
+    // back to the user by its code.
+    throw toAppError(error, { entity: 'currency', name: code });
+  }
 }
 
 // NETWORK-READY: If a backend is added later, replace this with fetch(POST
@@ -67,8 +78,8 @@ export async function setCurrencyActive(
         .where(eq(currencies.id, currencyId))
         .limit(1);
       if (currency?.isDefault) {
-        throw new Error(
-          'The default currency can\'t be disabled. Set another currency as default first.',
+        throw validationError(
+          "The default currency can't be disabled. Set another currency as default first.",
         );
       }
     }
@@ -219,7 +230,7 @@ export async function deleteCurrency(currencyId: number): Promise<void> {
       .where(eq(accountBalances.currencyId, currencyId))
       .limit(1);
     if (referencing.length > 0) {
-      throw new Error(
+      throw validationError(
         'This currency is used in an existing account. Cannot be deleted.',
       );
     }
@@ -232,4 +243,3 @@ export async function deleteCurrency(currencyId: number): Promise<void> {
     throw error;
   }
 }
-

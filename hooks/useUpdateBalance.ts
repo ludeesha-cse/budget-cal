@@ -61,17 +61,21 @@ export function useUpdateBalance(
   // unchanged — these hooks take the wrapped function's own arguments.
   const updateAccountBalanceWithAudit = useUpdateAccountBalanceWithAuditMutation();
   const modal = useTargetedModal<UpdateBalanceTarget, UpdateBalanceValues>({
+    operation: 'Update balance',
     initialValues: target => ({
       newValue: String(target.currentBalance),
       description: '',
     }),
     validate: values => {
       const parsed = Number(values.newValue);
-      if (!values.newValue || Number.isNaN(parsed)) {
-        return 'Enter a valid balance.';
+      if (!values.newValue.trim()) {
+        return 'Enter the balance the account really has';
+      }
+      if (Number.isNaN(parsed)) {
+        return 'Enter a number, like 5000 or 12.50';
       }
       if (!values.description.trim()) {
-        return 'Enter a description explaining this balance correction.';
+        return 'Enter a description explaining this balance correction';
       }
       return null;
     },
@@ -80,7 +84,7 @@ export function useUpdateBalance(
     // numeric rather than positive.
     requiredFields: values => {
       const missing: string[] = [];
-      if (!values.newValue || Number.isNaN(Number(values.newValue))) {
+      if (!values.newValue.trim()) {
         missing.push('newValue');
       }
       if (!values.description.trim()) {

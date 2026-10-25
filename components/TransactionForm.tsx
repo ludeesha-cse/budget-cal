@@ -6,6 +6,8 @@ import { useReferenceData } from '../hooks/useReferenceData';
 import { useAccountCurrency } from '../hooks/useAccountCurrency';
 import { useAmountInput } from '../hooks/useAmountInput';
 import { useFieldErrors } from '../hooks/useFieldErrors';
+import { checkAmount } from '../utils/amountValidation';
+import { reportError } from '../utils/appErrors';
 import CollapsiblePicker from './CollapsiblePicker';
 import SegmentedToggle, {
   type SegmentedToggleOption,
@@ -49,7 +51,10 @@ type TransactionFormProps = {
     tagIds?: number[]; // currently-applied tags, only meaningful when editing an existing transaction
     excludeFromBudget?: boolean;
   };
-  onSubmit: (values: TransactionFormSubmitValues) => void;
+  // Awaited: a rejection is shown on the form (under the account picker
+  // when it is about the account, otherwise as the form's message) and
+  // the user's input is kept.
+  onSubmit: (values: TransactionFormSubmitValues) => Promise<void> | void;
   submitLabel?: string;
   // When true, hides the Expense/Income toggle and the form always
   // submits entryType: 'Expense'. The Add tab now has a dedicated Income
@@ -71,8 +76,8 @@ function TransactionForm({
   const [date, setDate] = useState(
     initialValues?.date ?? formatDateString(new Date()),
   );
-  const { amount, setAmount, parsedAmount, isValid: amountValid } =
-    useAmountInput(initialValues?.amount);
+  const { amount, setAmount } = useAmountInput(initialValues?.amount);
+  const amountCheck = checkAmount(amount);
   const [description, setDescription] = useState(
     initialValues?.description ?? '',
   );
@@ -92,11 +97,20 @@ function TransactionForm({
   const [excludeFromBudget, setExcludeFromBudget] = useState(
     initialValues?.excludeFromBudget ?? false,
   );
-  const { accountBalances, currencyId, setCurrencyId } = useAccountCurrency(
-    accountId,
-    initialValues?.currencyId,
-  );
+  const { accountBalances, currencyId, setCurrencyId, balancesLoadedFor } =
+    useAccountCurrency(accountId, initialValues?.currencyId);
   const [error, setError] = useState<string | null>(null);
+  // Sentences about the chosen account / currency themselves (see
+  // AccountCurrencyPicker). Cleared the moment the account, currency or
+  // amount changes, since they describe the combination that was saved.
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [currencyError, setCurrencyError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    setAccountError(null);
+    setCurrencyError(null);
+  }, [accountId, currencyId, amount]);
 
   // One list feeding both the submit gate and, once the user has pressed
   // Save on an incomplete form, the red outlines. See
@@ -104,7 +118,9 @@ function TransactionForm({
   // rather than disabled.
   const missingFields = React.useMemo(() => {
     const missing: string[] = [];
-    if (!amountValid) {
+    // Only a BLANK amount is outlined; a present-but-wrong one ("-5",
+    // "abc") is explained in the message instead.
+    if (amountCheck.kind === 'blank') {
       missing.push('amount');
     }
     if (accountId == null) {
@@ -117,7 +133,7 @@ function TransactionForm({
       missing.push('currencyId');
     }
     return missing;
-  }, [amountValid, accountId, categoryId, currencyId]);
+  }, [amountCheck.kind, accountId, categoryId, currencyId]);
   const fieldErrors = useFieldErrors(missingFields);
 
   // Keeps the current account/category selections valid (or falls back to
@@ -139,39 +155,65 @@ function TransactionForm({
     );
   }, [categories]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
     if (missingFields.length > 0) {
       fieldErrors.reveal();
     }
-    if (!amountValid) {
-      setError('Enter a valid amount');
-      return;
-    }
     if (accountId == null) {
-      setError('Select an account');
-      return;
-    }
-    if (categoryId == null) {
-      setError('Select a category');
+      setError('Choose an account');
       return;
     }
     if (currencyId == null) {
-      setError('Select a currency');
+      setError('Choose a currency');
+      return;
+    }
+    if (amountCheck.kind === 'blank') {
+      setError('Enter an amount');
+      return;
+    }
+    if (amountCheck.kind === 'invalid') {
+      setError(amountCheck.message);
+      return;
+    }
+    if (entryType === 'Expense' && categoryId == null) {
+      setError('Choose a category');
       return;
     }
     setError(null);
+
     fieldErrors.reset();
-    onSubmit({
-      date,
-      amount: parsedAmount,
-      categoryId,
-      description,
-      accountId,
-      currencyId,
-      entryType,
-      tagIds: selectedTagIds,
-      excludeFromBudget,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        date,
+        amount: amountCheck.value,
+        // Income carries no category; the picker is still shown for an
+        // Income row being edited, so its value is passed through as-is.
+        categoryId: categoryId as number,
+        description,
+        accountId,
+        currencyId,
+        entryType,
+        tagIds: selectedTagIds,
+        excludeFromBudget,
+      });
+    } catch (e) {
+      const appError = reportError(e, {
+        operation: entryType === 'Expense' ? 'Save expense' : 'Save income',
+      });
+      if (appError.field === 'account') {
+        setAccountError(appError.message);
+      } else if (appError.field === 'currency') {
+        setCurrencyError(appError.message);
+      } else {
+        setError(appError.message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const selectedCategoryName = labelForId(
@@ -205,6 +247,9 @@ function TransactionForm({
       <AccountCurrencyPicker
         accountInvalid={fieldErrors.isMissing('accountId')}
         currencyInvalid={fieldErrors.isMissing('currencyId')}
+        accountError={accountError}
+        currencyError={currencyError}
+        balancesLoadedFor={balancesLoadedFor}
         accounts={accounts}
         accountId={accountId}
         onAccountIdChange={setAccountId}
@@ -273,6 +318,7 @@ function TransactionForm({
       <FormSubmitButton
         error={error}
         canSave={canSave}
+        submitting={submitting}
         label={submitLabel}
         onPress={handleSubmit}
       />

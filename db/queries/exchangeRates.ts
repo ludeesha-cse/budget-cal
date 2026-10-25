@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
 import { currencies, exchangeRates } from '../schema';
 import {
   REFERENCE_RATES,
@@ -160,7 +161,7 @@ export async function setExchangeRate(
 ): Promise<void> {
   try {
     if (!Number.isFinite(ratePerAnchor) || ratePerAnchor <= 0) {
-      throw new Error('Enter a rate greater than zero.');
+      throw validationError('Enter a rate greater than zero.');
     }
     const [currency] = await db
       .select()
@@ -171,7 +172,7 @@ export async function setExchangeRate(
     // other rate is measured in, so letting it be anything else would
     // silently rescale every pair in the app at once.
     if (currency?.isDefault) {
-      throw new Error(
+      throw validationError(
         `${currency.code} is your default currency, so its rate is always 1 — it's what every other rate is measured against. Change another currency's rate, or set a different default first.`,
       );
     }
@@ -209,7 +210,7 @@ export async function resetExchangeRate(currencyId: number): Promise<void> {
       ? referenceRateAgainstDefault(currency.code, defaultCurrency?.code ?? '')
       : null;
     if (fallback == null) {
-      throw new Error(
+      throw validationError(
         'This currency has no built-in default rate against your default currency. Enter a rate by hand instead.',
       );
     }

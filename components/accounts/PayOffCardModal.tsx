@@ -4,6 +4,7 @@ import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
 import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
+import FieldErrorText from '../common/FieldErrorText';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -75,6 +76,7 @@ function PayOffCardModal({ state }: Props): React.JSX.Element {
               invalid={state.isMissing('payingAccountId')}
             />
           )}
+          <FieldErrorText message={state.fieldMessage('account')} />
 
           <Text style={[styles.label, { color: colors.text }]}>Amount</Text>
           <TextInput

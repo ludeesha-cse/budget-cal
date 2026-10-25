@@ -1,9 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../index';
-import {
-  accounts,
-  creditCardPayoffs,
-} from '../schema';
+import { validationError } from '../../utils/appErrors';
+import { requireMoneyAccount } from './balanceGuard';
+import { accounts, creditCardPayoffs } from '../schema';
 import {
   getAccounts,
   getAccountBalance,
@@ -108,7 +107,7 @@ export async function payOffCreditCard(
 ): Promise<void> {
   try {
     if (params.amount <= 0) {
-      throw new Error('Enter a payment amount greater than zero.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
     const [creditCardAccount] = await db
       .select()
@@ -116,7 +115,7 @@ export async function payOffCreditCard(
       .where(eq(accounts.id, params.creditCardAccountId))
       .limit(1);
     if (!creditCardAccount || creditCardAccount.type !== CREDIT_CARD_TYPE) {
-      throw new Error('That account is not a credit card.');
+      throw validationError('That account is not a credit card.');
     }
     const [payingAccount] = await db
       .select()
@@ -124,11 +123,15 @@ export async function payOffCreditCard(
       .where(eq(accounts.id, params.payingAccountId))
       .limit(1);
     if (!payingAccount) {
-      throw new Error('The paying account no longer exists.');
+      throw validationError(
+        'The account you are paying from no longer exists — it may have been deleted. Choose another account.',
+        'account',
+      );
     }
     if (payingAccount.type === CREDIT_CARD_TYPE) {
-      throw new Error(
+      throw validationError(
         'You cannot pay off a credit card with another credit card.',
+        'account',
       );
     }
     const currentDebt = await getCreditCardDebt(
@@ -136,12 +139,17 @@ export async function payOffCreditCard(
       params.currencyId,
     );
     if (params.amount > currentDebt) {
-      throw new Error(
+      throw validationError(
         `That payment (${params.amount.toFixed(2)}) is more than the ` +
           `current debt (${currentDebt.toFixed(2)}). Overpaying a card ` +
           'into a credit balance is not supported.',
       );
     }
+    await requireMoneyAccount(db, {
+      accountId: params.payingAccountId,
+      currencyId: params.currencyId,
+      requireActive: true,
+    });
     await db.transaction(async tx => {
       // Paying down debt raises the card's stored balance toward zero
       // (that balance is the negative of what's owed — see
@@ -178,4 +186,3 @@ export async function payOffCreditCard(
     throw error;
   }
 }
-

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { validationError } from '../utils/appErrors';
 import { getPendingOccurrences } from '../db/queries';
 
 export type PendingOccurrenceRow = Awaited<
@@ -97,7 +98,10 @@ export function useRowEditState(
       const amountText = editedAmount[row.id] ?? String(row.amount);
       const parsedAmount = Number(amountText);
       if (!amountText || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-        throw new Error(`Enter a valid amount for "${row.ruleName}".`);
+        throw validationError(
+          `Enter an amount greater than 0 for "${row.ruleName}"`,
+          'amount',
+        );
       }
       const accountId = editedAccountId[row.id] ?? row.accountId;
       const date = editedDate[row.id] ?? row.dueDate;

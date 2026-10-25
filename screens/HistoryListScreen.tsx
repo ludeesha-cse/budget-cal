@@ -6,6 +6,7 @@ import type { HistoryStackParamList } from '../navigation/types';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import { MONTH_OPTIONS } from '../components/MonthYearPicker';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import SearchAndTagFilterBar from '../components/history/SearchAndTagFilterBar';
 import LoanPaymentRow from '../components/history/LoanPaymentRow';
 import LoanOriginationRow from '../components/history/LoanOriginationRow';
@@ -33,7 +34,7 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
   const filters = useTransactionHistoryFilters();
   const { month, year, isSearchMode, debouncedQuery, activeTagFilterIds } = filters;
 
-  const { rows, loading, tagsByTransactionId, defaultCurrencyId } =
+  const { rows, loading, loadFailed, retry, tagsByTransactionId, defaultCurrencyId } =
     useTransactionHistoryData({
       month,
       year,
@@ -67,7 +68,12 @@ function HistoryListScreen({ navigation }: Props): React.JSX.Element {
           {isSearchMode ? 'Results' : 'Recent'}
         </Text>
 
-        {loading ? (
+        {loadFailed ? (
+          <LoadErrorState
+            what={isSearchMode ? 'your search results' : 'your history'}
+            onRetry={retry}
+          />
+        ) : loading ? (
           <EmptyState message="Loading..." />
         ) : rows.length === 0 ? (
           <EmptyState message={isSearchMode ? 'No matches for your search.' : 'No transactions found.'} />

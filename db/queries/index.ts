@@ -130,6 +130,7 @@ export const {
   getCategoryBudget,
   getCategoryBudgetsForMonth,
   upsertCategoryBudget,
+  upsertCategoryBudgets,
   getBudgetCurrencyOptions,
   // --- accounts ---
   ensureDefaultAccount,

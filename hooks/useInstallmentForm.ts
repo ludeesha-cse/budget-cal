@@ -143,10 +143,10 @@ export function useInstallmentForm(
         return 'Enter a whole number of months greater than zero';
       }
       if (!values.categoryId) {
-        return 'Select a category';
+        return 'Choose a category';
       }
       if (!values.currencyId) {
-        return 'Select a currency';
+        return 'Choose a currency';
       }
       if (values.dueDayOfMonth !== '') {
         const candidate = Number(values.dueDayOfMonth);
@@ -161,7 +161,7 @@ export function useInstallmentForm(
           Number.isNaN(parsedPrincipal) ||
           parsedPrincipal <= 0
         ) {
-          return 'Enter a valid principal amount';
+          return 'Enter a principal amount greater than 0';
         }
         const parsedRatePercent = Number(values.interestRatePercent);
         if (
@@ -169,7 +169,7 @@ export function useInstallmentForm(
           Number.isNaN(parsedRatePercent) ||
           parsedRatePercent < 0
         ) {
-          return 'Enter a valid interest rate';
+          return 'Enter an interest rate of 0 or more';
         }
       } else {
         const parsedMonthly = Number(values.monthlyAmountInput);
@@ -178,7 +178,7 @@ export function useInstallmentForm(
           Number.isNaN(parsedMonthly) ||
           parsedMonthly <= 0
         ) {
-          return 'Enter a valid monthly amount';
+          return 'Enter a monthly amount greater than 0';
         }
       }
       return null;
@@ -193,12 +193,9 @@ export function useInstallmentForm(
       if (!values.name.trim()) {
         missing.push('name');
       }
-      const parsedMonths = Number(values.numberOfMonths);
-      if (
-        values.numberOfMonths === '' ||
-        !Number.isInteger(parsedMonths) ||
-        parsedMonths <= 0
-      ) {
+      // Blank is outlined; a present-but-wrong value is explained by
+      // validate()'s message instead (the app-wide form rule).
+      if (values.numberOfMonths.trim() === '') {
         missing.push('numberOfMonths');
       }
       if (!values.categoryId) {
@@ -208,19 +205,13 @@ export function useInstallmentForm(
         missing.push('currencyId');
       }
       if (values.mode === 'principal') {
-        if (!values.principalAmount || Number(values.principalAmount) <= 0) {
+        if (!values.principalAmount.trim()) {
           missing.push('principalAmount');
         }
-        if (
-          values.interestRatePercent === '' ||
-          Number(values.interestRatePercent) < 0
-        ) {
+        if (values.interestRatePercent.trim() === '') {
           missing.push('interestRatePercent');
         }
-      } else if (
-        !values.monthlyAmountInput ||
-        Number(values.monthlyAmountInput) <= 0
-      ) {
+      } else if (!values.monthlyAmountInput.trim()) {
         missing.push('monthlyAmountInput');
       }
       return missing;

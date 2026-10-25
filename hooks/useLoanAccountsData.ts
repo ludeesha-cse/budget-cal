@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useAccountList,
   useActiveCurrencies,
@@ -15,11 +16,15 @@ import {
 } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
 
-export type ActiveLoan = Awaited<ReturnType<typeof getActiveLoanAccounts>>[number];
+export type ActiveLoan = Awaited<
+  ReturnType<typeof getActiveLoanAccounts>
+>[number];
 export type InactiveLoan = Awaited<
   ReturnType<typeof getInactiveLoanAccounts>
 >[number];
-export type LoanCurrencyRow = Awaited<ReturnType<typeof getActiveCurrencies>>[number];
+export type LoanCurrencyRow = Awaited<
+  ReturnType<typeof getActiveCurrencies>
+>[number];
 export type LoanAccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
 
 export interface UseLoanAccountsDataResult {
@@ -33,6 +38,9 @@ export interface UseLoanAccountsDataResult {
   currencies: LoanCurrencyRow[];
   accounts: LoanAccountRow[];
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
   // Live total owed (principal + accrued interest, computed fresh — never
   // stored) per active loan account, keyed by accountId.
   totalOwedByAccountId: Record<string | number, number>;
@@ -67,15 +75,19 @@ export function useLoanAccountsData(
     routeParams?.type ?? 'Liability',
   );
 
+  const activeLiabilitiesQuery = useActiveLoanAccounts('Liability');
   const { data: activeLiabilities, isPending: liabilitiesPending } =
-    useActiveLoanAccounts('Liability');
+    activeLiabilitiesQuery;
+  const activeReceivablesQuery = useActiveLoanAccounts('Receivable');
   const { data: activeReceivables, isPending: receivablesPending } =
-    useActiveLoanAccounts('Receivable');
+    activeReceivablesQuery;
+  const inactiveLoansQuery = useInactiveLoanAccounts(type);
   const { data: inactiveLoans, isPending: inactivePending } =
-    useInactiveLoanAccounts(type);
-  const { data: currencies, isPending: currenciesPending } =
-    useActiveCurrencies();
-  const { data: accounts, isPending: accountsPending } = useAccountList();
+    inactiveLoansQuery;
+  const currenciesQuery = useActiveCurrencies();
+  const { data: currencies, isPending: currenciesPending } = currenciesQuery;
+  const accountsQuery = useAccountList();
+  const { data: accounts, isPending: accountsPending } = accountsQuery;
 
   // Consumes the FAB's one-time `type` preset exactly once, mirroring
   // useTransfer's withdrawMode/openTransfer handling — clearRouteParams
@@ -107,7 +119,16 @@ export function useLoanAccountsData(
     getCurrentDateString(),
   );
 
+  const failure = loadFailureOf(
+    activeLiabilitiesQuery,
+    activeReceivablesQuery,
+    inactiveLoansQuery,
+    currenciesQuery,
+    accountsQuery,
+  );
+
   return {
+    ...failure,
     type,
     setType,
     activeLiabilities: activeLiabilities ?? [],

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import CollapsiblePicker from '../CollapsiblePicker';
+import FieldErrorText from '../common/FieldErrorText';
 import DateField from '../common/DateField';
 import { NUMERIC_KEYBOARD_ACCESSORY_ID } from '../NumericInputAccessory';
 import CounterpartySuggestions from './CounterpartySuggestions';
@@ -182,6 +183,7 @@ function LoanFormFields({
         label={type === 'Liability' ? 'Deposit into' : 'Paid from'}
         invalid={isMissing('counterpartAccountId')}
       />
+      <FieldErrorText message={form.fieldMessage('account')} />
 
       {/* Due date and interest describe the loan itself, not this
           particular hand-over of money, so a top-up leaves them alone —

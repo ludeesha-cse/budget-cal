@@ -4,6 +4,7 @@ import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
 import DateField from '../common/DateField';
 import EmptyState from '../common/EmptyState';
+import FieldErrorText from '../common/FieldErrorText';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -47,6 +48,9 @@ function InstallmentPayModal({
     isMissing,
     close,
     submit,
+    error,
+    fieldMessage,
+    payingAccountOptions,
   } = pay;
 
   return (
@@ -109,14 +113,20 @@ function InstallmentPayModal({
           )}
 
           <Text style={[styles.label, { color: colors.text }]}>Pay from</Text>
-          {activeAccounts.length === 0 ? (
-            <EmptyState message="No active accounts available." />
+          {payingAccountOptions.length === 0 ? (
+            <EmptyState
+              message={
+                activeAccounts.length === 0
+                  ? 'You have no open account to pay from. Add one on the Accounts screen first.'
+                  : `None of your open accounts holds ${target.currencyCode}. Add ${target.currencyCode} to an account on the Accounts screen first.`
+              }
+            />
           ) : (
             <CollapsiblePicker
-              displayLabel={labelForId(activeAccounts, values.accountId, 'name', 'Select account')}
+              displayLabel={labelForId(payingAccountOptions, values.accountId, 'name', 'Select account')}
               selectedValue={values.accountId}
               onValueChange={setAccountId}
-              items={activeAccounts.map(a => ({
+              items={payingAccountOptions.map(a => ({
                 label: `${a.name} (${a.type})`,
                 value: String(a.id),
               }))}
@@ -124,6 +134,7 @@ function InstallmentPayModal({
               invalid={isMissing('accountId')}
             />
           )}
+          <FieldErrorText message={fieldMessage('account')} />
 
           <Text style={[styles.label, { color: colors.text }]}>Date</Text>
           {/* Capped at today: this records money that has already left
@@ -134,6 +145,8 @@ function InstallmentPayModal({
             onChange={setDate}
             maxDate={getCurrentDateString()}
           />
+
+          <FieldErrorText message={error} />
 
           <NumericInputAccessory />
         </>

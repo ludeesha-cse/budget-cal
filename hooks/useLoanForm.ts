@@ -171,20 +171,19 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
         return 'Enter a counterparty name';
       }
       const parsedPrincipal = Number(values.principal);
-      if (
-        !values.principal ||
-        Number.isNaN(parsedPrincipal) ||
-        parsedPrincipal <= 0
-      ) {
+      if (!values.principal.trim()) {
         return values.topUpAccountId != null
-          ? 'Enter a valid amount to add'
-          : 'Enter a valid principal amount';
+          ? 'Enter the amount to add'
+          : 'Enter an amount';
+      }
+      if (Number.isNaN(parsedPrincipal) || parsedPrincipal <= 0) {
+        return 'Enter an amount greater than 0';
       }
       if (!values.currencyId) {
-        return 'Select a currency';
+        return 'Choose a currency';
       }
       if (!values.counterpartAccountId) {
-        return 'Select the account this money moves through';
+        return 'Choose the account this money moves through';
       }
       if (values.interestRate.trim()) {
         const rate = Number(values.interestRate);
@@ -192,7 +191,7 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
           return 'Enter a valid interest rate';
         }
         if (!values.interestPeriod) {
-          return 'Select an interest period';
+          return 'Choose an interest period';
         }
       }
       return null;
@@ -205,7 +204,7 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
       if (!values.counterpartyName.trim()) {
         missing.push('counterpartyName');
       }
-      if (!values.principal || Number(values.principal) <= 0) {
+      if (!values.principal.trim()) {
         missing.push('principal');
       }
       if (!values.currencyId) {
@@ -320,6 +319,9 @@ export function useLoanForm(deps: UseLoanFormDeps): UseLoanFormResult {
     },
     onSaved,
     errorTitle: 'Could not save',
+    // Lending, or adding to a lend, takes money out of the chosen account
+    // — "Insufficient balance…" goes under that picker.
+    inlineErrorFields: ['account'],
   });
 
   const setField = <K extends keyof LoanFormValues>(

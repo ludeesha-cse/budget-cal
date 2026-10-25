@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { useAsyncAction } from './useAsyncAction';
 import { useFieldErrors } from './useFieldErrors';
 
@@ -58,6 +59,13 @@ export interface UseEntityFormModalConfig<
   // per-screen (rather than one generic string) so each entity keeps its
   // own exact wording ("Cannot save tag", "Cannot add currency", ...).
   errorTitle: string;
+  // Fields this form shows a save-time message UNDER (see fieldMessage).
+  // A failure that names any other field — or none — is shown as an
+  // Alert titled errorTitle, as before.
+  inlineErrorFields?: string[];
+  // Used to name a duplicate in the message ("A category called 'Food'
+  // already exists.") when the database reports one.
+  describeForErrors?: (values: TValues) => { entity?: string; name?: string };
 }
 
 export interface UseEntityFormModalResult<TRow, TValues> {
@@ -78,6 +86,9 @@ export interface UseEntityFormModalResult<TRow, TValues> {
   // tried to submit. Pass straight to fieldErrorStyle / a picker's
   // `invalid` prop.
   isMissing: (field: string) => boolean;
+  // The save-time message for one field, or null. Cleared as soon as any
+  // value changes.
+  fieldMessage: (field: string) => string | null;
   openAdd: () => void;
   openEdit: (row: TRow) => void;
   close: () => void;
@@ -112,14 +123,30 @@ export function useEntityFormModal<
     onUpdate,
     onSaved,
     errorTitle,
+    inlineErrorFields,
+    describeForErrors,
   } = config;
 
   const runAction = useAsyncAction();
   const [visible, setVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingRow, setEditingRow] = useState<TRow | null>(null);
-  const [values, setValues] = useState<TValues>(initialValues);
+  const [values, setRawValues] = useState<TValues>(initialValues);
   const [error, setError] = useState<string | null>(null);
+  const [fieldMessages, setFieldMessages] = useState<Record<string, string>>(
+    {},
+  );
+  // A save-time message is about the values that were saved; the moment
+  // the user changes one of them it no longer applies.
+  const setValues = useCallback<React.Dispatch<React.SetStateAction<TValues>>>(
+    updater => {
+      setFieldMessages(current =>
+        Object.keys(current).length === 0 ? current : {},
+      );
+      setRawValues(updater);
+    },
+    [],
+  );
   const fieldErrors = useFieldErrors(requiredFields ? requiredFields(values) : []);
   // Read through a ref inside the callbacks below so they can clear the
   // reveal without taking fieldErrors' identity as a dependency — which
@@ -140,7 +167,7 @@ export function useEntityFormModal<
     // yet, so nothing is highlighted until they try to save.
     resetFieldErrorsRef.current();
     setVisible(true);
-  }, [initialValues]);
+  }, [initialValues, setValues]);
 
   const openEdit = useCallback(
     (row: TRow) => {
@@ -151,7 +178,7 @@ export function useEntityFormModal<
       resetFieldErrorsRef.current();
       setVisible(true);
     },
-    [populateFromRow],
+    [populateFromRow, setValues],
   );
 
   const close = useCallback(() => {
@@ -161,7 +188,7 @@ export function useEntityFormModal<
     setValues(initialValues);
     setError(null);
     resetFieldErrorsRef.current();
-  }, [initialValues]);
+  }, [initialValues, setValues]);
 
   const closeWaitersRef = useRef<Array<() => void>>([]);
 
@@ -193,6 +220,7 @@ export function useEntityFormModal<
     setError(null);
     resetFieldErrorsRef.current();
     const params = toParams(values);
+    setFieldMessages({});
     await runAction(async () => {
       if (editingId != null) {
         if (!onUpdate) {
@@ -209,14 +237,31 @@ export function useEntityFormModal<
       }
       close();
       await onSaved?.();
-    }, errorTitle);
-  }, [values, editingId, onUpdate, onCreate, onSaved, errorTitle, toParams, validate, runAction, close]);
+    }, errorTitle, {
+      ...describeForErrors?.(values),
+      onFieldError: inlineErrorFields
+        ? (field, message) => {
+            if (inlineErrorFields.includes(field)) {
+              setFieldMessages({ [field]: message });
+            } else {
+              Alert.alert(errorTitle, message);
+            }
+          }
+        : undefined,
+    });
+  }, [values, editingId, onUpdate, onCreate, onSaved, errorTitle, toParams, validate, runAction, close, inlineErrorFields, describeForErrors]);
+
+  const fieldMessage = useCallback(
+    (field: string) => fieldMessages[field] ?? null,
+    [fieldMessages],
+  );
 
   return {
     visible,
     editingId,
     editingRow,
     isMissing: fieldErrors.isMissing,
+    fieldMessage,
     values,
     setValues,
     error,

@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../index';
+import { AppError, validationError } from '../../utils/appErrors';
 import { getDefaultCurrency } from './currencies';
 import {
   accountBalances,
@@ -10,9 +11,7 @@ import {
   savingsGoals,
   transactions,
 } from '../schema';
-import {
-  getCurrentDateString,
-} from '../../utils/date';
+import { getCurrentDateString } from '../../utils/date';
 import { getBalanceDelta } from '../../utils/balanceMath';
 
 const RESERVED_BANK_CATEGORY_NAME = 'Bank';
@@ -45,6 +44,12 @@ const LEGACY_DEFAULT_CASH_ACCOUNT_NAME = 'Cash';
 // "do I now have half an account?".
 const ACCOUNT_NOT_CREATED_MESSAGE =
   'The account could not be created. Nothing was saved — please check your device storage and try again.';
+
+// A fresh AppError each time (rather than one shared instance) so the
+// stack trace in the log points at the line that actually failed.
+function accountNotCreated(cause?: unknown): AppError {
+  return new AppError('STORAGE', ACCOUNT_NOT_CREATED_MESSAGE, { cause });
+}
 
 // The default wallet, located by what it IS (a Cash account carrying the
 // seeded name) rather than by "the first account", which is what
@@ -146,8 +151,9 @@ async function upsertAccountBalance(
   accountId: number,
   currencyId: number,
   balance: number,
+  executor: Pick<typeof db, 'select' | 'insert' | 'update'> = db,
 ): Promise<void> {
-  const [existing] = await db
+  const [existing] = await executor
     .select()
     .from(accountBalances)
     .where(
@@ -158,12 +164,14 @@ async function upsertAccountBalance(
     )
     .limit(1);
   if (existing) {
-    await db
+    await executor
       .update(accountBalances)
       .set({ balance })
       .where(eq(accountBalances.id, existing.id));
   } else {
-    await db.insert(accountBalances).values({ accountId, currencyId, balance });
+    await executor
+      .insert(accountBalances)
+      .values({ accountId, currencyId, balance });
   }
 }
 
@@ -199,7 +207,7 @@ export async function addAccountWithBalance(
         .values({ name, type, createdAt: Date.now() })
         .returning();
       if (!inserted) {
-        throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+        throw accountNotCreated();
       }
       await tx.insert(accountBalances).values({
         accountId: inserted.id,
@@ -215,7 +223,7 @@ export async function addAccountWithBalance(
       .where(eq(accounts.id, account.id))
       .limit(1);
     if (!confirmed) {
-      throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+      throw accountNotCreated();
     }
     return confirmed;
   } catch (error) {
@@ -229,7 +237,7 @@ export async function addAccountWithBalance(
       `addAccountWithBalance: failed to create account name="${name}" type=${type} currencyId=${currencyId}`,
       error,
     );
-    throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+    throw accountNotCreated(error);
   }
 }
 
@@ -254,7 +262,13 @@ export async function addCurrencyToAccount(
     )
     .limit(1);
   if (existing) {
-    throw new Error('This account already has a balance in this currency.');
+    throw new AppError(
+      'DUPLICATE',
+      'This account already holds that currency.',
+      {
+        field: 'currency',
+      },
+    );
   }
   await db.insert(accountBalances).values({
     accountId,
@@ -272,32 +286,35 @@ export async function addCurrencyToAccount(
 // later with an error that names a property instead of the problem.
 export async function addAccount(data: NewAccount): Promise<Account> {
   try {
-    const [account] = await db
-      .insert(accounts)
-      .values({
-        name: data.name,
-        type: data.type,
-        createdAt: Date.now(),
-      })
-      .returning();
-    if (!account) {
-      throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
-    }
     const defaultCurrency = await getDefaultCurrency();
-    if (defaultCurrency) {
-      await upsertAccountBalance(
-        account.id,
-        defaultCurrency.id,
-        data.openingBalance,
-      );
-    }
-    return account;
+    return await db.transaction(async tx => {
+      const [account] = await tx
+        .insert(accounts)
+        .values({
+          name: data.name,
+          type: data.type,
+          createdAt: Date.now(),
+        })
+        .returning();
+      if (!account) {
+        throw accountNotCreated();
+      }
+      if (defaultCurrency) {
+        await upsertAccountBalance(
+          account.id,
+          defaultCurrency.id,
+          data.openingBalance,
+          tx,
+        );
+      }
+      return account;
+    });
   } catch (error) {
     console.error(
       `addAccount: failed to create account name="${data.name}" type=${data.type}`,
       error,
     );
-    throw new Error(ACCOUNT_NOT_CREATED_MESSAGE);
+    throw accountNotCreated(error);
   }
 }
 
@@ -336,7 +353,7 @@ export async function deleteAccount(id: number): Promise<Account[]> {
     .where(eq(transactions.accountId, id))
     .limit(1);
   if (referencing.length > 0) {
-    throw new Error(
+    throw validationError(
       'Cannot delete this account because it has existing transactions.',
     );
   }
@@ -347,14 +364,19 @@ export async function deleteAccount(id: number): Promise<Account[]> {
   // edit, and it keeps that goal's history.
   const linkedGoals = await getGoalsSavingIntoAccount(id);
   if (linkedGoals.length > 0) {
-    throw new Error(
+    throw validationError(
       `Cannot delete this account because ${describeLinkedGoals(
         linkedGoals,
       )}. Point them at another account first.`,
     );
   }
-  await db.delete(accountBalances).where(eq(accountBalances.accountId, id));
-  return db.delete(accounts).where(eq(accounts.id, id)).returning();
+  // One transaction, so a failure between the two deletes cannot leave
+  // an account with its balances gone but the account itself still
+  // listed.
+  return db.transaction(async tx => {
+    await tx.delete(accountBalances).where(eq(accountBalances.accountId, id));
+    return tx.delete(accounts).where(eq(accounts.id, id)).returning();
+  });
 }
 
 export const CREDIT_CARD_TYPE = 'CreditCard';
@@ -536,7 +558,7 @@ export async function updateAccountBalanceWithAudit(
 ): Promise<void> {
   try {
     if (!description.trim()) {
-      throw new Error(
+      throw validationError(
         'A description is required to correct a balance — that record is the whole point of the audit trail.',
       );
     }
@@ -569,33 +591,39 @@ export async function updateAccountBalanceWithAudit(
         ? 'Income'
         : 'Expense'
       : getStoredBalanceDelta(accountType, 'Income', amount) === delta
-        ? 'Income'
-        : 'Expense';
-    await db.insert(transactions).values({
-      accountId,
-      amount,
-      categoryId: bankCategoryId,
-      description: description.trim(),
-      date: getCurrentDateString(),
-      currencyId,
-      entryType,
-      createdAt: Date.now(),
+      ? 'Income'
+      : 'Expense';
+    // The audit row and the balance row's existence are one change: a
+    // failure between them must not leave a correction recorded against
+    // a holding that was never created.
+    await db.transaction(async tx => {
+      await tx.insert(transactions).values({
+        accountId,
+        amount,
+        categoryId: bankCategoryId,
+        description: description.trim(),
+        date: getCurrentDateString(),
+        currencyId,
+        entryType,
+        createdAt: Date.now(),
+      });
+      const [existingBalanceRow] = await tx
+        .select()
+        .from(accountBalances)
+        .where(
+          and(
+            eq(accountBalances.accountId, accountId),
+            eq(accountBalances.currencyId, currencyId),
+          ),
+        )
+        .limit(1);
+      await upsertAccountBalance(
+        accountId,
+        currencyId,
+        existingBalanceRow?.balance ?? 0,
+        tx,
+      );
     });
-    const [existingBalanceRow] = await db
-      .select()
-      .from(accountBalances)
-      .where(
-        and(
-          eq(accountBalances.accountId, accountId),
-          eq(accountBalances.currencyId, currencyId),
-        ),
-      )
-      .limit(1);
-    await upsertAccountBalance(
-      accountId,
-      currencyId,
-      existingBalanceRow?.balance ?? 0,
-    );
   } catch (error) {
     console.error(
       `updateAccountBalanceWithAudit: failed to correct balance for account id=${accountId} currency id=${currencyId} to ${newBalance}`,
@@ -678,8 +706,15 @@ export async function getAllAccountBalances(): Promise<
     for (const row of transactionRows) {
       const accountType = accountTypeById.get(row.accountId) ?? 'Bank';
       const key = `${row.accountId}:${row.currencyId}`;
-      const delta = getStoredBalanceDelta(accountType, row.entryType, row.amount);
-      netBalanceEffectByKey.set(key, (netBalanceEffectByKey.get(key) ?? 0) + delta);
+      const delta = getStoredBalanceDelta(
+        accountType,
+        row.entryType,
+        row.amount,
+      );
+      netBalanceEffectByKey.set(
+        key,
+        (netBalanceEffectByKey.get(key) ?? 0) + delta,
+      );
     }
 
     return balanceRows.map(row => {
@@ -688,7 +723,10 @@ export async function getAllAccountBalances(): Promise<
       return { ...row, currentBalance: row.balance + netBalanceEffect };
     });
   } catch (error) {
-    console.error('getAllAccountBalances: failed to batch-compute account balances', error);
+    console.error(
+      'getAllAccountBalances: failed to batch-compute account balances',
+      error,
+    );
     throw error;
   }
 }
@@ -770,13 +808,13 @@ export async function closeAccount(
   try {
     const isZeroBalance = await getAccountTotalBalance(accountId);
     if (!isZeroBalance) {
-      throw new Error(
+      throw validationError(
         'This account still has a nonzero balance in at least one currency. Transfer the remainder elsewhere or log a transaction accounting for it before closing.',
       );
     }
     const linkedGoals = await getGoalsSavingIntoAccount(accountId);
     if (linkedGoals.length > 0 && !options?.deleteLinkedSavingsGoals) {
-      throw new Error(
+      throw validationError(
         `${describeLinkedGoals(linkedGoals)}. Closing it deletes them.`,
       );
     }
@@ -799,7 +837,10 @@ export async function closeAccount(
     });
     return updated;
   } catch (error) {
-    console.error(`closeAccount: failed to close account id=${accountId}`, error);
+    console.error(
+      `closeAccount: failed to close account id=${accountId}`,
+      error,
+    );
     throw error;
   }
 }
@@ -848,4 +889,3 @@ export async function getActiveAccountCountByType(
     throw error;
   }
 }
-

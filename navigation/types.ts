@@ -17,8 +17,12 @@ export type SettingsStackParamList = {
     | {
         openTransfer?: boolean;
         withdrawMode?: boolean;
+        // Opens the Add Account form — from an empty state that found no
+        // account to pay from.
+        openAddAccount?: boolean;
         // Opens the "add a currency" form under this account — from the
-        // Dashboard's "Cash in wallet has no currency yet" banner.
+        // Dashboard's "Cash in wallet has no currency yet" banner, or a
+        // form whose chosen account holds no currency.
         setupAccountId?: number;
       }
     | undefined;

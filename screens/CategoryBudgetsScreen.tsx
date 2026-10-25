@@ -11,6 +11,9 @@ import {
   useSpendingByCategory,
 } from '../hooks/queries';
 import KeyboardAwareScrollView from '../components/common/KeyboardAwareScrollView';
+import FieldErrorText from '../components/common/FieldErrorText';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import { checkAmount } from '../utils/amountValidation';
 import { clampDayToMonth, getCurrentMonthString, getCurrentYearString } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
 import { scaleFont, typography } from '../theme/typography';
@@ -23,7 +26,7 @@ import { budgetStatusFor } from '../utils/statusColor';
 import { formatAmount } from '../utils/formatAmount';
 import { useEditGate } from '../hooks/useEditGate';
 import {
-  useUpsertCategoryBudget as useUpsertCategoryBudgetMutation,
+  useUpsertCategoryBudgets as useUpsertCategoryBudgetsMutation,
 } from '../hooks/queries';
 import { SCREEN_BOTTOM_CLEARANCE } from '../theme/layout';
 
@@ -33,7 +36,12 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   // invalidates every query its write can affect (see
   // hooks/queries/invalidation.ts). The call sites below are
   // unchanged — these hooks take the wrapped function's own arguments.
-  const upsertCategoryBudget = useUpsertCategoryBudgetMutation();
+  const upsertCategoryBudgets = useUpsertCategoryBudgetsMutation();
+  const runAction = useAsyncAction();
+  // What is wrong with a filled-in amount ("Food: Enter a number, like
+  // 5000 or 12.50"). Cleared as soon as any amount changes.
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const { colors } = useTheme();
   const [month, setMonth] = useState(getCurrentMonthString().slice(5));
   const [year, setYear] = useState(getCurrentYearString());
@@ -148,10 +156,11 @@ function CategoryBudgetsScreen(): React.JSX.Element {
   const handleAmountChange = (categoryId: number, value: string) => {
     setAmounts(current => ({ ...current, [categoryId]: value }));
     setSavedMessage(null);
+    setSaveMessage(null);
   };
 
   const handleSaveAll = async () => {
-    if (currencyId == null) {
+    if (currencyId == null || saving) {
       return;
     }
     // Same gap as BudgetSettingsScreen's Save button — the per-row amount
@@ -159,28 +168,42 @@ function CategoryBudgetsScreen(): React.JSX.Element {
     // so without this the keyboard stays open (on both platforms) after
     // tapping Save while a field is still focused.
     Keyboard.dismiss();
-    const entries = Object.entries(amounts).filter(
-      ([, value]) => value.trim() !== '',
-    );
-    await Promise.all(
-      entries.map(([categoryId, value]) => {
-        const parsedAmount = Number(value);
-        if (Number.isNaN(parsedAmount)) {
-          return Promise.resolve();
-        }
-        return upsertCategoryBudget(
-          selectedMonth,
-          Number(categoryId),
-          currencyId,
-          parsedAmount,
-        );
-      }),
-    );
-    editGate.finishEdit();
-    setSavedMessage('Category budgets saved');
-    // No load() here any more: upsertCategoryBudget's mutation
-    // invalidated every budget query this write affects, and awaiting it
-    // above waited for those refetches.
+    if (!editGate.isDirty) {
+      // Nothing changed — pressing Save just leaves edit mode.
+      editGate.finishEdit();
+      return;
+    }
+    // Every amount here is optional (blank = no budget for that
+    // category), so nothing is outlined; but a filled-in amount that is
+    // not a valid number used to be skipped SILENTLY. It is now named,
+    // and nothing is saved until it is fixed.
+    const entries: { categoryId: number; amount: number }[] = [];
+    for (const [categoryId, value] of Object.entries(amounts)) {
+      const check = checkAmount(value, { allowZero: true });
+      if (check.kind === 'blank') {
+        continue;
+      }
+      if (check.kind === 'invalid') {
+        const name =
+          (categories ?? []).find(c => c.id === Number(categoryId))?.name ??
+          'A category';
+        setSaveMessage(`${name}: ${check.message}`);
+        return;
+      }
+      entries.push({ categoryId: Number(categoryId), amount: check.value });
+    }
+    setSaveMessage(null);
+    setSaving(true);
+    // One write for every row (see upsertCategoryBudgets), so a failure
+    // saves none of them rather than some.
+    const saved = await runAction(async () => {
+      await upsertCategoryBudgets(selectedMonth, currencyId, entries);
+    }, 'Cannot save category budgets');
+    setSaving(false);
+    if (saved) {
+      editGate.finishEdit();
+      setSavedMessage('Category budgets saved');
+    }
   };
 
   const handleCancel = () => {
@@ -296,6 +319,7 @@ function CategoryBudgetsScreen(): React.JSX.Element {
         })
       )}
 
+      <FieldErrorText message={saveMessage} />
       {editGate.isEditing ? (
         <View style={styles.editActionRow}>
           <Pressable
@@ -305,18 +329,28 @@ function CategoryBudgetsScreen(): React.JSX.Element {
               Cancel
             </Text>
           </Pressable>
+          {/* Muted (not disabled) while nothing has changed; disabled
+              only while the save is in flight. */}
           <Pressable
-            disabled={!editGate.isDirty}
+            disabled={saving}
             style={[
               styles.saveButton,
               styles.actionButtonGrow,
-              { backgroundColor: !editGate.isDirty ? colors.neutralSoft : colors.primary },
+              {
+                backgroundColor:
+                  !editGate.isDirty || saving ? colors.neutralSoft : colors.primary,
+              },
             ]}
             onPress={handleSaveAll}>
             <Text
               style={[
                 styles.saveButtonText,
-                { color: !editGate.isDirty ? colors.textSecondary : colors.primaryText },
+                {
+                  color:
+                    !editGate.isDirty || saving
+                      ? colors.textSecondary
+                      : colors.primaryText,
+                },
               ]}>
               Save All
             </Text>

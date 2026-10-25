@@ -1,9 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../index';
-import {
-  categories,
-  transactions,
-} from '../schema';
+import { toAppError, validationError } from '../../utils/appErrors';
+import { categories, transactions } from '../schema';
 
 type Category = typeof categories.$inferSelect;
 
@@ -15,12 +13,24 @@ export async function getCategories(): Promise<Category[]> {
 
 // If a backend is added later, replace this with a fetch() call to POST
 // /api/categories, keeping the same input/return shape.
+//
+// A duplicate name comes back from SQLite as "UNIQUE constraint failed:
+// categories.name"; it is rethrown as an AppError that names the
+// category the user typed ("A category called 'Food' already exists.").
 export async function addCategory(name: string): Promise<Category> {
-  const [category] = await db
-    .insert(categories)
-    .values({ name, createdAt: Date.now() })
-    .returning();
-  return category;
+  try {
+    if (!name.trim()) {
+      throw validationError('Enter a name for the category.', 'name');
+    }
+    const [category] = await db
+      .insert(categories)
+      .values({ name, createdAt: Date.now() })
+      .returning();
+    return category;
+  } catch (error) {
+    console.error('addCategory: failed to add category', name, error);
+    throw toAppError(error, { entity: 'category', name });
+  }
 }
 
 // If a backend is added later, replace this with fetch(PATCH
@@ -29,12 +39,29 @@ export async function updateCategory(
   id: number,
   name: string,
 ): Promise<Category> {
-  const [updated] = await db
-    .update(categories)
-    .set({ name })
-    .where(eq(categories.id, id))
-    .returning();
-  return updated;
+  try {
+    if (!name.trim()) {
+      throw validationError('Enter a name for the category.', 'name');
+    }
+    const [updated] = await db
+      .update(categories)
+      .set({ name })
+      .where(eq(categories.id, id))
+      .returning();
+    if (!updated) {
+      throw validationError(
+        'That category no longer exists — it may have been deleted.',
+      );
+    }
+    return updated;
+  } catch (error) {
+    console.error(
+      `updateCategory: failed to rename category id=${id}`,
+      name,
+      error,
+    );
+    throw toAppError(error, { entity: 'category', name });
+  }
 }
 
 // If a backend is added later, replace this with fetch(DELETE
@@ -46,7 +73,7 @@ export async function deleteCategory(id: number): Promise<Category[]> {
     .where(eq(transactions.categoryId, id))
     .limit(1);
   if (referencing.length > 0) {
-    throw new Error(
+    throw validationError(
       'Cannot delete this category because it has existing transactions.',
     );
   }
@@ -73,4 +100,3 @@ export async function getUserCategoryCount(): Promise<number> {
     throw error;
   }
 }
-

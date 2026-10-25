@@ -8,6 +8,7 @@ import Card from '../components/Card';
 import BottomSheetModal from '../components/BottomSheetModal';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import SegmentedToggle, {
   type SegmentedToggleOption,
 } from '../components/common/SegmentedToggle';
@@ -169,7 +170,9 @@ function LiabilitiesReceivablesScreen(): React.JSX.Element {
         </Text>
       </Pressable>
 
-      {loading ? (
+      {data.loadFailed ? (
+        <LoadErrorState what="your loans" onRetry={data.retry} />
+      ) : loading ? (
         <EmptyState message="Loading..." />
       ) : loans.length === 0 ? (
         <EmptyState

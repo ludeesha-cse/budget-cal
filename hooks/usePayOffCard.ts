@@ -68,6 +68,8 @@ export function usePayOffCard(
   // unchanged — these hooks take the wrapped function's own arguments.
   const payOffCreditCard = usePayOffCreditCardMutation();
   const modal = useTargetedModal<PayOffTarget, PayOffValues>({
+    operation: 'Pay off credit card',
+    inlineErrorFields: ['account'],
     initialValues: target => {
       const eligiblePayingAccounts = activeAccounts.filter(
         a =>
@@ -87,17 +89,20 @@ export function usePayOffCard(
     },
     validate: values => {
       const parsedAmount = Number(values.amount);
-      if (!values.amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-        return 'Enter a payment amount greater than zero.';
-      }
       if (!values.payingAccountId) {
-        return 'Choose the Bank, Cash, or Crypto Wallet account this payment is coming from.';
+        return 'Choose the account this payment comes from';
+      }
+      if (!values.amount.trim()) {
+        return 'Enter an amount';
+      }
+      if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+        return 'Enter an amount greater than 0';
       }
       return null;
     },
     requiredFields: values => {
       const missing: string[] = [];
-      if (!values.amount || Number(values.amount) <= 0) {
+      if (!values.amount.trim()) {
         missing.push('amount');
       }
       if (!values.payingAccountId) {

@@ -1,11 +1,18 @@
 import { useMemo, useState } from 'react';
+import { loadFailureOf } from './loadFailure';
 import { useAccountList, useCategories, useRecurringRules } from './queries';
 import { getAccounts, getCategories, getRecurringRules } from '../db/queries';
 import { isPayableAccount } from '../utils/accountTypes';
 
-export type RecurringRuleRow = Awaited<ReturnType<typeof getRecurringRules>>[number];
-export type RecurringRuleAccountRow = Awaited<ReturnType<typeof getAccounts>>[number];
-export type RecurringRuleCategoryRow = Awaited<ReturnType<typeof getCategories>>[number];
+export type RecurringRuleRow = Awaited<
+  ReturnType<typeof getRecurringRules>
+>[number];
+export type RecurringRuleAccountRow = Awaited<
+  ReturnType<typeof getAccounts>
+>[number];
+export type RecurringRuleCategoryRow = Awaited<
+  ReturnType<typeof getCategories>
+>[number];
 
 export type RecurringRuleListType = 'Income' | 'Expense';
 
@@ -22,6 +29,9 @@ export interface UseRecurringRulesDataResult {
   accounts: RecurringRuleAccountRow[];
   categories: RecurringRuleCategoryRow[];
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
   visibleRules: RecurringRuleRow[];
 }
 
@@ -33,15 +43,15 @@ export function useRecurringRulesData(): UseRecurringRulesDataResult {
   // Which section of the list is showing — independent of the form's own
   // type toggle, so switching tabs never disturbs an open form.
   const [listType, setListType] = useState<RecurringRuleListType>('Income');
-  const { data: rules, isPending: rulesPending } = useRecurringRules(false);
-  const { data: accountRows, isPending: accountsPending } = useAccountList();
-  const { data: categories, isPending: categoriesPending } = useCategories();
+  const rulesQuery = useRecurringRules(false);
+  const { data: rules, isPending: rulesPending } = rulesQuery;
+  const accountRowsQuery = useAccountList();
+  const { data: accountRows, isPending: accountsPending } = accountRowsQuery;
+  const categoriesQuery = useCategories();
+  const { data: categories, isPending: categoriesPending } = categoriesQuery;
 
   const accounts = useMemo(
-    () =>
-      (accountRows ?? []).filter(
-        isPayableAccount,
-      ),
+    () => (accountRows ?? []).filter(isPayableAccount),
     [accountRows],
   );
 
@@ -50,7 +60,10 @@ export function useRecurringRulesData(): UseRecurringRulesDataResult {
     [rules, listType],
   );
 
+  const failure = loadFailureOf(rulesQuery, accountRowsQuery, categoriesQuery);
+
   return {
+    ...failure,
     listType,
     setListType,
     rules: rules ?? [],

@@ -101,19 +101,19 @@ export function useAccountForm(deps: UseAccountFormDeps): UseAccountFormResult {
     }),
     validate: values => {
       if (values.name.trim() === '') {
-        return 'Enter a name.';
+        return 'Enter a name for the account';
       }
       if (values.isEditing) {
         return null;
       }
       if (values.initialCurrencyId === '') {
-        return 'Select a starting currency.';
+        return 'Choose a starting currency';
       }
-      if (
-        values.initialBalance === '' ||
-        Number.isNaN(Number(values.initialBalance))
-      ) {
-        return 'Enter a valid starting balance.';
+      if (values.initialBalance.trim() === '') {
+        return 'Enter a starting balance (0 is fine)';
+      }
+      if (Number.isNaN(Number(values.initialBalance))) {
+        return 'Enter a number, like 5000 or 12.50';
       }
       return null;
     },
@@ -130,10 +130,8 @@ export function useAccountForm(deps: UseAccountFormDeps): UseAccountFormResult {
         if (values.initialCurrencyId === '') {
           missing.push('initialCurrencyId');
         }
-        if (
-          values.initialBalance === '' ||
-          Number.isNaN(Number(values.initialBalance))
-        ) {
+        // Blank is outlined; "abc" is explained in the message line.
+        if (values.initialBalance.trim() === '') {
           missing.push('initialBalance');
         }
       }

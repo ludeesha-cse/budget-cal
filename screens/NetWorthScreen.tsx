@@ -1,4 +1,5 @@
 import React from 'react';
+import LoadErrorState from '../components/common/LoadErrorState';
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from 'react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import Card from '../components/Card';
@@ -10,7 +11,7 @@ import { FAB_CLEARANCE } from '../theme/layout';
 
 function NetWorthScreen(): React.JSX.Element {
   const { colors } = useTheme();
-  const { netWorthByCurrency, loading } = useNetWorthData();
+  const { netWorthByCurrency, loading, loadFailed, retry } = useNetWorthData();
 
   return (
     <ScreenBackground colors={colors}>
@@ -26,7 +27,9 @@ function NetWorthScreen(): React.JSX.Element {
           installments — by currency, never summed across them.
         </Text>
 
-        {loading ? (
+        {loadFailed ? (
+          <LoadErrorState what="your net worth" onRetry={retry} />
+        ) : loading ? (
           <ActivityIndicator size="large" style={styles.loadingSpinner} />
         ) : Object.keys(netWorthByCurrency).length > 0 ? (
           Object.values(netWorthByCurrency)

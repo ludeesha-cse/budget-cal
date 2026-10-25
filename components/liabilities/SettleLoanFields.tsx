@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
 import CollapsiblePicker from '../CollapsiblePicker';
+import FieldErrorText from '../common/FieldErrorText';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
 } from '../NumericInputAccessory';
@@ -38,6 +39,7 @@ function SettleLoanFields({
     setCounterpartAccountId,
     error,
     isMissing,
+    fieldMessage,
   } = settle;
 
   if (!target) {
@@ -89,6 +91,7 @@ function SettleLoanFields({
         label={type === 'Receivable' ? 'Deposit into' : 'Pay from'}
         invalid={isMissing('counterpartAccountId')}
       />
+      <FieldErrorText message={fieldMessage('account')} />
 
       {error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}
       <NumericInputAccessory />

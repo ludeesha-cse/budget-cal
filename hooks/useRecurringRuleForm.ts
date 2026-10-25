@@ -99,20 +99,20 @@ export function useRecurringRuleForm(
       }
       const parsedAmount = Number(values.amount);
       if (!values.amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-        return 'Enter a valid amount';
+        return 'Enter an amount greater than 0';
       }
       const parsedDay = Number(values.dayOfMonth);
       if (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31) {
-        return 'Select a day of month between 1 and 31';
+        return 'Enter a day of the month between 1 and 31';
       }
       if (accountId == null) {
-        return 'Select an account';
+        return 'Choose an account';
       }
       if (currencyId == null) {
-        return 'Select a currency';
+        return 'Choose a currency';
       }
       if (values.ruleType === 'Expense' && values.categoryId == null) {
-        return 'Select a category';
+        return 'Choose a category';
       }
       return null;
     },
@@ -124,11 +124,12 @@ export function useRecurringRuleForm(
       if (!values.name.trim()) {
         missing.push('name');
       }
-      if (!values.amount || Number(values.amount) <= 0) {
+      // Blank is outlined; a present-but-wrong value is explained by
+      // validate()'s message instead (the app-wide form rule).
+      if (!values.amount.trim()) {
         missing.push('amount');
       }
-      const parsedDay = Number(values.dayOfMonth);
-      if (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31) {
+      if (!String(values.dayOfMonth).trim()) {
         missing.push('dayOfMonth');
       }
       if (accountId == null) {

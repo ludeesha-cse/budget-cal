@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
 import BottomSheetModal from '../BottomSheetModal';
+import FieldErrorText from '../common/FieldErrorText';
 import CollapsiblePicker from '../CollapsiblePicker';
 import { fieldErrorStyle } from '../../utils/formFieldStyle';
 import NumericInputAccessory, {
@@ -107,6 +108,11 @@ function AccountFormModal({ form, currencies, tier }: Props): React.JSX.Element 
           />
         </>
       )}
+
+      {/* The one message line: what is wrong with a value that IS filled
+          in ("Enter a number, like 5000 or 12.50"). Blank fields are
+          outlined instead. */}
+      <FieldErrorText message={form.error} />
 
       <NumericInputAccessory />
     </BottomSheetModal>

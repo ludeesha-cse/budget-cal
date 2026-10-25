@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useAccountList,
   useActiveLoanAccounts,
@@ -14,6 +15,9 @@ import { getCurrentDateString } from '../utils/date';
 export interface UseNetWorthDataResult {
   netWorthByCurrency: Record<string, NetWorthByCurrency>;
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
 }
 
 const EMPTY_IDS: number[] = [];
@@ -32,13 +36,16 @@ const EMPTY_IDS: number[] = [];
 export function useNetWorthData(): UseNetWorthDataResult {
   const today = getCurrentDateString();
 
-  const { data: accounts, isPending: accountsPending } = useAccountList();
-  const { data: balances, isPending: balancesPending } = useAllAccountBalances();
-  const { data: liabilities, isPending: liabilitiesPending } =
-    useActiveLoanAccounts('Liability');
-  const { data: receivables, isPending: receivablesPending } =
-    useActiveLoanAccounts('Receivable');
-  const { data: currencies, isPending: currenciesPending } = useAllCurrencies();
+  const accountsQuery = useAccountList();
+  const { data: accounts, isPending: accountsPending } = accountsQuery;
+  const balancesQuery = useAllAccountBalances();
+  const { data: balances, isPending: balancesPending } = balancesQuery;
+  const liabilitiesQuery = useActiveLoanAccounts('Liability');
+  const { data: liabilities, isPending: liabilitiesPending } = liabilitiesQuery;
+  const receivablesQuery = useActiveLoanAccounts('Receivable');
+  const { data: receivables, isPending: receivablesPending } = receivablesQuery;
+  const currenciesQuery = useAllCurrencies();
+  const { data: currencies, isPending: currenciesPending } = currenciesQuery;
 
   const loanAccountIds = useMemo(
     () =>
@@ -83,7 +90,16 @@ export function useNetWorthData(): UseNetWorthDataResult {
     ],
   );
 
+  const failure = loadFailureOf(
+    accountsQuery,
+    balancesQuery,
+    liabilitiesQuery,
+    receivablesQuery,
+    currenciesQuery,
+  );
+
   return {
+    ...failure,
     netWorthByCurrency,
     loading:
       accountsPending ||

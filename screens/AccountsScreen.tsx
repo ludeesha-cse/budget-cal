@@ -5,6 +5,7 @@ import { ChevronRight, Plus, Repeat, TrendingUp } from 'lucide-react-native';
 import Card from '../components/Card';
 import NumericInputAccessory from '../components/NumericInputAccessory';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import AccountListItem from '../components/accounts/AccountListItem';
 import AccountFormModal from '../components/accounts/AccountFormModal';
 import UpdateBalanceModal from '../components/accounts/UpdateBalanceModal';
@@ -55,7 +56,8 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
   const { tier } = useEntitlement();
   const { openPaywall } = usePaywall();
 
-  const { accounts, currencies, activeAccounts } = useAccounts();
+  const { accounts, currencies, activeAccounts, loadFailed, retry } =
+    useAccounts();
   const accountForm = useAccountForm({ currencies, tier, openPaywall });
   const addCurrency = useAddCurrency();
   const updateBalance = useUpdateBalance();
@@ -67,10 +69,20 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       navigation.setParams({ withdrawMode: undefined, openTransfer: undefined }),
   });
 
-  // Deep link from the Dashboard's "Cash in wallet has no currency yet"
-  // banner: opens the existing "add a currency" form under that account,
-  // then clears the param so coming back here later does not reopen it.
+  // Deep links from elsewhere in the app: an empty state with no account
+  // to pay from ("Add an account"), or the Dashboard's "Cash in wallet
+  // has no currency yet" banner / a form whose account holds no currency
+  // ("Add a currency to …"). Each opens the existing form for that job,
+  // then clears its param so coming back here later does not reopen it.
+  const openAddAccountParam = route.params?.openAddAccount;
   const setupAccountIdParam = route.params?.setupAccountId;
+  const openAddAccount = accountForm.openAdd;
+  React.useEffect(() => {
+    if (openAddAccountParam) {
+      openAddAccount();
+      navigation.setParams({ openAddAccount: undefined });
+    }
+  }, [openAddAccountParam, openAddAccount, navigation]);
   const setupAccount =
     setupAccountIdParam != null
       ? activeAccounts.find(a => a.id === setupAccountIdParam)
@@ -185,7 +197,9 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
       </View>
 
       <View style={styles.list}>
-        {activeAccounts.length === 0 ? (
+        {loadFailed ? (
+          <LoadErrorState what="your accounts" onRetry={retry} />
+        ) : activeAccounts.length === 0 ? (
           <EmptyState message="No accounts yet." />
         ) : (
           ACCOUNT_SECTIONS.filter(section =>
@@ -242,7 +256,7 @@ function AccountsScreen({ route, navigation }: Props): React.JSX.Element {
 
       <UpdateBalanceModal state={updateBalance} />
       <PayOffCardModal state={payOffCard} />
-      <TransferModal state={transfer} />
+      <TransferModal state={transfer} onAddAccount={accountForm.openAdd} />
 
       <NumericInputAccessory />
     </ScrollView>

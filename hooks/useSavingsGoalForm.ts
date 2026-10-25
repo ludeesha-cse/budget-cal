@@ -94,10 +94,10 @@ export function useSavingsGoalForm(
       }
       const parsedTarget = Number(values.targetAmount);
       if (!values.targetAmount || Number.isNaN(parsedTarget) || parsedTarget <= 0) {
-        return 'Enter a valid target amount';
+        return 'Enter a target amount greater than 0';
       }
       if (values.currencyId == null) {
-        return 'Select a currency';
+        return 'Choose a currency';
       }
       if (values.accountId == null) {
         return 'Choose an account to save this money in';
@@ -111,7 +111,9 @@ export function useSavingsGoalForm(
       if (!values.name.trim()) {
         missing.push('name');
       }
-      if (!values.targetAmount || Number(values.targetAmount) <= 0) {
+      // Blank is outlined; a present-but-wrong value is explained by
+      // validate()'s message instead (the app-wide form rule).
+      if (!values.targetAmount.trim()) {
         missing.push('targetAmount');
       }
       if (values.currencyId == null) {

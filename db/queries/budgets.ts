@@ -1,5 +1,6 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
 import {
   budgets,
   categories,
@@ -201,6 +202,60 @@ export async function upsertCategoryBudget(
     .values({ month, categoryId, currencyId, amount })
     .returning();
   return created;
+}
+
+// NETWORK-READY: If a backend is added later, replace this with fetch(PUT
+// /api/category-budgets?month=&currencyId=), keeping the same input shape.
+// Every row the Category Budgets screen saves at once, as ONE write: the
+// screen used to fire one upsert per category in parallel, so a failure
+// part-way left some categories saved and others not, with no way to
+// tell which.
+export async function upsertCategoryBudgets(
+  month: string,
+  currencyId: number,
+  entries: { categoryId: number; amount: number }[],
+): Promise<void> {
+  try {
+    for (const entry of entries) {
+      if (!Number.isFinite(entry.amount) || entry.amount < 0) {
+        throw validationError("A budget amount can't be negative");
+      }
+    }
+    await db.transaction(async tx => {
+      for (const entry of entries) {
+        const [existing] = await tx
+          .select()
+          .from(categoryBudgets)
+          .where(
+            and(
+              eq(categoryBudgets.month, month),
+              eq(categoryBudgets.categoryId, entry.categoryId),
+              eq(categoryBudgets.currencyId, currencyId),
+            ),
+          )
+          .limit(1);
+        if (existing) {
+          await tx
+            .update(categoryBudgets)
+            .set({ amount: entry.amount })
+            .where(eq(categoryBudgets.id, existing.id));
+        } else {
+          await tx.insert(categoryBudgets).values({
+            month,
+            categoryId: entry.categoryId,
+            currencyId,
+            amount: entry.amount,
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.error(
+      `upsertCategoryBudgets: failed to save ${entries.length} category budget(s) for ${month} currency id=${currencyId}`,
+      error,
+    );
+    throw error;
+  }
 }
 
 export type CurrencyOption = { id: number; code: string; name: string };

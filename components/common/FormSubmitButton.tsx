@@ -6,6 +6,10 @@ import { scaleFont } from '../../theme/typography';
 type Props = {
   error: string | null;
   canSave: boolean;
+  // True while a save is in flight. The ONE case where the button is
+  // genuinely disabled: it guards against a double submit, it is not a
+  // "you haven't filled this in" state.
+  submitting?: boolean;
   label: string;
   onPress: () => void;
 };
@@ -15,6 +19,7 @@ type Props = {
 function FormSubmitButton({
   error,
   canSave,
+  submitting = false,
   label,
   onPress,
 }: Props): React.JSX.Element {
@@ -31,15 +36,25 @@ function FormSubmitButton({
           hooks/useFieldErrors, for why a genuinely disabled button is
           the wrong answer here. */}
       <Pressable
+        disabled={submitting}
+        accessibilityState={{ disabled: submitting, busy: submitting }}
         style={[
           styles.submitButton,
-          { backgroundColor: !canSave ? colors.neutralSoft : colors.primary },
+          {
+            backgroundColor:
+              !canSave || submitting ? colors.neutralSoft : colors.primary,
+          },
         ]}
         onPress={onPress}>
         <Text
           style={[
             styles.submitButtonText,
-            { color: !canSave ? colors.textSecondary : colors.primaryText },
+            {
+              color:
+                !canSave || submitting
+                  ? colors.textSecondary
+                  : colors.primaryText,
+            },
           ]}>
           {label}
         </Text>

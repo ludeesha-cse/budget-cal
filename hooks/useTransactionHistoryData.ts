@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useDefaultCurrency,
   useLoanOriginationsByMonth,
@@ -20,8 +21,12 @@ import {
 } from '../db/queries';
 import type { TagRow } from './useTransactionHistoryFilters';
 
-export type TransactionRow = Awaited<ReturnType<typeof getTransactionsByMonth>>[number];
-export type LoanPaymentRow = Awaited<ReturnType<typeof getLoanPaymentsByMonth>>[number];
+export type TransactionRow = Awaited<
+  ReturnType<typeof getTransactionsByMonth>
+>[number];
+export type LoanPaymentRow = Awaited<
+  ReturnType<typeof getLoanPaymentsByMonth>
+>[number];
 export type LoanOriginationRow = Awaited<
   ReturnType<typeof getLoanOriginationsByMonth>
 >[number];
@@ -38,8 +43,18 @@ export type TransferRow = Awaited<ReturnType<typeof getTransfers>>[number];
 // render branch. mergeHistoryRows itself never needs to change — see its
 // own comment.
 export type HistoryRow =
-  | { kind: 'transaction'; date: string; createdAt: number; data: TransactionRow }
-  | { kind: 'loanPayment'; date: string; createdAt: number; data: LoanPaymentRow }
+  | {
+      kind: 'transaction';
+      date: string;
+      createdAt: number;
+      data: TransactionRow;
+    }
+  | {
+      kind: 'loanPayment';
+      date: string;
+      createdAt: number;
+      data: LoanPaymentRow;
+    }
   | {
       kind: 'loanOrigination';
       date: string;
@@ -47,7 +62,6 @@ export type HistoryRow =
       data: LoanOriginationRow;
     }
   | { kind: 'transfer'; date: string; createdAt: number; data: TransferRow };
-
 
 function mergeHistoryRows(...sources: HistoryRow[][]): HistoryRow[] {
   const merged = sources.flat();
@@ -71,6 +85,9 @@ export interface UseTransactionHistoryDataFilters {
 export interface UseTransactionHistoryDataResult {
   rows: HistoryRow[];
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
   tagsByTransactionId: Record<number, TagRow[]>;
   // Threaded down to TransactionRow so it can show a currency tag only on
   // rows whose currency differs from this — see TransactionRow's own
@@ -94,7 +111,8 @@ export interface UseTransactionHistoryDataResult {
 export function useTransactionHistoryData(
   filters: UseTransactionHistoryDataFilters,
 ): UseTransactionHistoryDataResult {
-  const { month, year, isSearchMode, debouncedQuery, activeTagFilterIds } = filters;
+  const { month, year, isSearchMode, debouncedQuery, activeTagFilterIds } =
+    filters;
 
   // Read from the reference cache rather than re-fetched on every load:
   // changing the default currency (Currencies screen) invalidates it, so
@@ -218,18 +236,37 @@ export function useTransactionHistoryData(
   const loading = isSearchMode
     ? search.isPending
     : monthMode
-      ? monthTransactions.isPending ||
-        monthLoanPayments.isPending ||
-        monthLoanOriginations.isPending ||
-        monthTransfers.isPending
-      : yearTransactions.isPending ||
-        yearLoanPayments.isPending ||
-        yearLoanOriginations.isPending ||
-        yearTransfers.isPending;
+    ? monthTransactions.isPending ||
+      monthLoanPayments.isPending ||
+      monthLoanOriginations.isPending ||
+      monthTransfers.isPending
+    : yearTransactions.isPending ||
+      yearLoanPayments.isPending ||
+      yearLoanOriginations.isPending ||
+      yearTransfers.isPending;
+
+  // Only the queries for the mode on screen can have failed — the others
+  // are disabled.
+  const failure = isSearchMode
+    ? loadFailureOf(search)
+    : monthMode
+    ? loadFailureOf(
+        monthTransactions,
+        monthLoanPayments,
+        monthLoanOriginations,
+        monthTransfers,
+      )
+    : loadFailureOf(
+        yearTransactions,
+        yearLoanPayments,
+        yearLoanOriginations,
+        yearTransfers,
+      );
 
   return {
+    ...failure,
     rows,
-    loading,
+    loading: loading && !failure.loadFailed,
     tagsByTransactionId,
     defaultCurrencyId: defaultCurrency?.id ?? null,
   };

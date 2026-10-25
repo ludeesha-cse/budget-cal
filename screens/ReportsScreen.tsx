@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import EmptyState from '../components/common/EmptyState';
+import LoadErrorState from '../components/common/LoadErrorState';
 import SegmentedToggle from '../components/common/SegmentedToggle';
 import CurrencyTabs from '../components/common/CurrencyTabs';
 import DateField from '../components/common/DateField';
@@ -148,6 +149,8 @@ function ReportsScreen(): React.JSX.Element {
     accountTypeBreakdown,
     trend,
     loading,
+    loadFailed,
+    retry,
     range,
   } = useReportData(
     period,
@@ -329,7 +332,9 @@ function ReportsScreen(): React.JSX.Element {
           />
         </View>
 
-        {tab === 'compare' ? (
+        {loadFailed ? (
+          <LoadErrorState what="this report" onRetry={retry} />
+        ) : tab === 'compare' ? (
           loading ? (
             <EmptyState message="Loading..." />
           ) : (

@@ -3,6 +3,7 @@ import type { UseTargetedModalResult } from './useTargetedModal';
 import type { SavingsContributionRow } from './useSavingsTransferForm';
 import type { SavingsGoalRow } from './useSavingsGoalsData';
 import { useUpdateTransfer as useUpdateTransferMutation } from './queries';
+import { validationError } from '../utils/appErrors';
 
 export type EditContributionValues = {
   amount: string;
@@ -54,31 +55,34 @@ export function useEditContributionModal(
     EditContributionTarget,
     EditContributionValues
   >({
+    operation: 'Edit savings contribution',
     initialValues: target => ({
       amount: String(target.contribution.amount),
       date: target.contribution.date,
     }),
     validate: values => {
       const parsed = Number(values.amount);
-      if (!values.amount || Number.isNaN(parsed) || parsed <= 0) {
-        return 'Enter an amount greater than zero.';
+      if (!values.amount.trim()) {
+        return 'Enter an amount';
+      }
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return 'Enter an amount greater than 0';
       }
       if (!values.date) {
-        return 'Pick a date.';
+        return 'Choose a date';
       }
       return null;
     },
-    requiredFields: values =>
-      !values.amount || Number(values.amount) <= 0 ? ['amount'] : [],
+    requiredFields: values => (!values.amount.trim() ? ['amount'] : []),
     onSubmit: (target, values) => {
       const { contribution, goal } = target;
       if (contribution.transferId == null || contribution.fromAccountId == null) {
-        throw new Error(
+        throw validationError(
           'This entry was logged before goals were tied to an account, so there is no transfer to correct. Remove it and add the money again.',
         );
       }
       if (goal.accountId == null) {
-        throw new Error(
+        throw validationError(
           'This goal has no account to save into yet — pick one by editing the goal first.',
         );
       }

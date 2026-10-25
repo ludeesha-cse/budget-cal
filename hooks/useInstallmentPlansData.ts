@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { loadFailureOf } from './loadFailure';
 import {
   useAccountList,
   useActiveCurrencies,
@@ -10,14 +11,14 @@ import {
   type InstallmentPaymentRow,
   type InstallmentPlanRow,
 } from './queries';
-import {
-  getAccounts,
-  getActiveCurrencies,
-  getCategories,
-} from '../db/queries';
+import { getAccounts, getActiveCurrencies, getCategories } from '../db/queries';
 import { isPayableAccount } from '../utils/accountTypes';
 
-export type { InstallmentPlanRow, InstallmentPaymentRow, InstallmentOccurrenceRow };
+export type {
+  InstallmentPlanRow,
+  InstallmentPaymentRow,
+  InstallmentOccurrenceRow,
+};
 export type InstallmentCategoryRow = Awaited<
   ReturnType<typeof getCategories>
 >[number];
@@ -45,6 +46,9 @@ export interface UseInstallmentPlansDataResult {
   expandedPlanId: number | null;
   toggleExpanded: (planId: number) => void;
   loading: boolean;
+  // See hooks/loadFailure.ts.
+  loadFailed: boolean;
+  retry: () => void;
 }
 
 // Plans from the transactional cache; categories, currencies and the
@@ -63,10 +67,14 @@ export function useInstallmentPlansData(
 ): UseInstallmentPlansDataResult {
   const [expandedPlanId, setExpandedPlanId] = useState<number | null>(null);
 
-  const { data: plans, isPending: plansPending } = useInstallmentPlans();
-  const { data: categories } = useCategories();
-  const { data: currencies } = useActiveCurrencies();
-  const { data: accounts } = useAccountList();
+  const plansQuery = useInstallmentPlans();
+  const { data: plans, isPending: plansPending } = plansQuery;
+  const categoriesQuery = useCategories();
+  const { data: categories } = categoriesQuery;
+  const currenciesQuery = useActiveCurrencies();
+  const { data: currencies } = currenciesQuery;
+  const accountsQuery = useAccountList();
+  const { data: accounts } = accountsQuery;
 
   const planIds = useMemo(() => (plans ?? []).map(p => p.id), [plans]);
 
@@ -93,8 +101,9 @@ export function useInstallmentPlansData(
   // expandedPlanId straight in means collapsing simply disables the
   // query rather than needing a separate teardown.
   const detailPlanId = forcedPlanId ?? expandedPlanId;
-  const { data: expandedOccurrences } =
+  const expandedOccurrencesQuery =
     useInstallmentOccurrenceHistory(detailPlanId);
+  const { data: expandedOccurrences } = expandedOccurrencesQuery;
 
   // Loan-tracking accounts are filtered out here as well as everywhere
   // else money is paid from (see utils/accountTypes.ts). This picker was
@@ -150,7 +159,15 @@ export function useInstallmentPlansData(
     setExpandedPlanId(current => (current === planId ? null : planId));
   }, []);
 
+  const failure = loadFailureOf(
+    plansQuery,
+    categoriesQuery,
+    currenciesQuery,
+    accountsQuery,
+  );
+
   return {
+    ...failure,
     plans: plans ?? [],
     categories: categories ?? [],
     currencies: currencies ?? [],

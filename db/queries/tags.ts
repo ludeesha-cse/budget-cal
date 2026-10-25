@@ -1,9 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../index';
-import {
-  tags,
-  transactionTags,
-} from '../schema';
+import { toAppError, validationError } from '../../utils/appErrors';
+import type { DbTransaction } from './balanceGuard';
+import { tags, transactionTags } from '../schema';
 
 type Tag = typeof tags.$inferSelect;
 
@@ -31,7 +30,7 @@ export async function getTags(): Promise<Tag[]> {
 export async function addTag(name: string): Promise<Tag> {
   try {
     if (!name.trim()) {
-      throw new Error('A name is required for the tag.');
+      throw validationError('A name is required for the tag.');
     }
     const [tag] = await db
       .insert(tags)
@@ -40,7 +39,9 @@ export async function addTag(name: string): Promise<Tag> {
     return tag;
   } catch (error) {
     console.error('addTag: failed to add tag', name, error);
-    throw error;
+    // A duplicate name comes back from SQLite as "UNIQUE constraint
+    // failed: tags.name" — said back to the user with the name they typed.
+    throw toAppError(error, { entity: 'tag', name });
   }
 }
 
@@ -53,7 +54,7 @@ export async function addTag(name: string): Promise<Tag> {
 export async function updateTag(id: number, name: string): Promise<Tag> {
   try {
     if (!name.trim()) {
-      throw new Error('A name is required for the tag.');
+      throw validationError('A name is required for the tag.');
     }
     const [updated] = await db
       .update(tags)
@@ -63,7 +64,7 @@ export async function updateTag(id: number, name: string): Promise<Tag> {
     return updated;
   } catch (error) {
     console.error(`updateTag: failed to update tag id=${id}`, name, error);
-    throw error;
+    throw toAppError(error, { entity: 'tag', name });
   }
 }
 
@@ -104,16 +105,9 @@ export async function setTransactionTags(
   tagIds: number[],
 ): Promise<void> {
   try {
-    await db.transaction(async tx => {
-      await tx
-        .delete(transactionTags)
-        .where(eq(transactionTags.transactionId, transactionId));
-      if (tagIds.length > 0) {
-        await tx
-          .insert(transactionTags)
-          .values(tagIds.map(tagId => ({ transactionId, tagId })));
-      }
-    });
+    await db.transaction(tx =>
+      setTransactionTagsWithin(tx, transactionId, tagIds),
+    );
   } catch (error) {
     console.error(
       `setTransactionTags: failed to set tags for transaction id=${transactionId}`,
@@ -121,6 +115,24 @@ export async function setTransactionTags(
       error,
     );
     throw error;
+  }
+}
+
+// setTransactionTags' body, inside a caller's transaction — so saving an
+// expense and its tags is one write (see addTransaction), not two where
+// the second can fail after the first has already landed.
+export async function setTransactionTagsWithin(
+  tx: DbTransaction,
+  transactionId: number,
+  tagIds: number[],
+): Promise<void> {
+  await tx
+    .delete(transactionTags)
+    .where(eq(transactionTags.transactionId, transactionId));
+  if (tagIds.length > 0) {
+    await tx
+      .insert(transactionTags)
+      .values(tagIds.map(tagId => ({ transactionId, tagId })));
   }
 }
 
@@ -148,4 +160,3 @@ export async function getTagsForTransaction(
     throw error;
   }
 }
-

@@ -1,6 +1,7 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
 import {
   accountBalances,
   accounts,
@@ -103,7 +104,7 @@ export async function validateTransferSides(
   // NOT "the accounts must differ" any more: same account + different
   // currencies is the in-place conversion this stage exists to support.
   if (fromAccountId === toAccountId && fromCurrencyId === toCurrencyId) {
-    throw new Error(
+    throw validationError(
       'Choose two different accounts, or two different currencies on the same account.',
     );
   }
@@ -113,7 +114,12 @@ export async function validateTransferSides(
     .where(eq(accounts.id, fromAccountId))
     .limit(1);
   if (!fromAccount || !TRANSFERABLE_ACCOUNT_TYPES.includes(fromAccount.type)) {
-    throw new Error('The source account is not a transferable account type.');
+    throw validationError(
+      fromAccount
+        ? `${fromAccount.name} can't send a transfer. Choose a cash, bank or crypto account.`
+        : 'That account no longer exists — it may have been deleted.',
+      'account',
+    );
   }
   const [toAccount] = await db
     .select()
@@ -121,8 +127,11 @@ export async function validateTransferSides(
     .where(eq(accounts.id, toAccountId))
     .limit(1);
   if (!toAccount || !TRANSFERABLE_ACCOUNT_TYPES.includes(toAccount.type)) {
-    throw new Error(
-      'The destination account is not a transferable account type.',
+    throw validationError(
+      toAccount
+        ? `${toAccount.name} can't receive a transfer. Choose a cash, bank or crypto account.`
+        : 'The account you are sending to no longer exists — it may have been deleted.',
+      'toAccount',
     );
   }
   const [fromBalanceRow] = await db
@@ -136,7 +145,10 @@ export async function validateTransferSides(
     )
     .limit(1);
   if (!fromBalanceRow) {
-    throw new Error('The source account has no balance in this currency.');
+    throw validationError(
+      `${fromAccount.name} doesn't hold that currency yet — add it to the account or pick another account`,
+      'account',
+    );
   }
   const [toBalanceRow] = await db
     .select()
@@ -149,8 +161,9 @@ export async function validateTransferSides(
     )
     .limit(1);
   if (!toBalanceRow) {
-    throw new Error(
-      'The destination account has no balance in that currency yet. Add the currency to the account first.',
+    throw validationError(
+      `${toAccount.name} doesn't hold that currency yet — add it to the account or pick another account`,
+      'toAccount',
     );
   }
   return { fromAccount, toAccount };
@@ -193,10 +206,13 @@ function resolveSides(params: TransferSides) {
 // nothing back.
 function validateAmounts(fromAmount: number, toAmount: number): void {
   if (!Number.isFinite(fromAmount) || fromAmount <= 0) {
-    throw new Error('Enter a transfer amount greater than zero.');
+    throw validationError('Enter an amount greater than 0', 'amount');
   }
   if (!Number.isFinite(toAmount) || toAmount <= 0) {
-    throw new Error('Enter a converted amount greater than zero.');
+    throw validationError(
+      'Enter a converted amount greater than 0',
+      'convertedAmount',
+    );
   }
 }
 
@@ -341,7 +357,9 @@ export async function updateTransfer(
       .where(eq(transfers.id, id))
       .limit(1);
     if (!original) {
-      throw new Error('That transfer no longer exists.');
+      throw validationError(
+        'That transfer no longer exists — it may have been deleted.',
+      );
     }
     const { toCurrencyId, toAmount } = resolveSides(params);
     validateAmounts(params.amount, toAmount);
@@ -472,7 +490,9 @@ export async function deleteTransfer(id: number): Promise<void> {
       .where(eq(transfers.id, id))
       .limit(1);
     if (!original) {
-      throw new Error('That transfer no longer exists.');
+      throw validationError(
+        'That transfer no longer exists — it may have been deleted.',
+      );
     }
     const [fromAccount] = await db
       .select()
@@ -530,7 +550,10 @@ const transferFromAccountAlias = alias(accounts, 'transfer_from_account_alias');
 
 const transferToAccountAlias = alias(accounts, 'transfer_to_account_alias');
 
-const transferFromCurrencyAlias = alias(currencies, 'transfer_from_currency_alias');
+const transferFromCurrencyAlias = alias(
+  currencies,
+  'transfer_from_currency_alias',
+);
 
 const transferToCurrencyAlias = alias(currencies, 'transfer_to_currency_alias');
 

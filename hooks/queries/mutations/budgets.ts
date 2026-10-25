@@ -2,6 +2,7 @@ import {
   deleteBudget,
   upsertBudget,
   upsertCategoryBudget,
+  upsertCategoryBudgets,
 } from '../../../db/queries';
 import { invalidates, useDbMutation } from '../invalidation';
 
@@ -19,4 +20,9 @@ export function useDeleteBudget() {
 
 export function useUpsertCategoryBudget() {
   return useDbMutation(upsertCategoryBudget, invalidates.budgetWrite);
+}
+
+// Every row of the Category Budgets screen in one transaction.
+export function useUpsertCategoryBudgets() {
+  return useDbMutation(upsertCategoryBudgets, invalidates.budgetWrite);
 }

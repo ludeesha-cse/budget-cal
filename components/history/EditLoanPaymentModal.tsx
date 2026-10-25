@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
 import BottomSheetModal from '../BottomSheetModal';
 import CollapsiblePicker from '../CollapsiblePicker';
+import FieldErrorText from '../common/FieldErrorText';
 import DateField from '../common/DateField';
 import NumericInputAccessory, {
   NUMERIC_KEYBOARD_ACCESSORY_ID,
@@ -93,6 +94,7 @@ function EditLoanPaymentModal({ modal }: Props): React.JSX.Element {
             label={isLiability ? 'Paid from' : 'Received into'}
             invalid={modal.isMissing('counterpartAccountId')}
           />
+          <FieldErrorText message={modal.fieldMessage('account')} />
 
           <Text style={[styles.label, { color: colors.text }]}>Date</Text>
           <DateField value={values.date} onChange={modal.setDate} />

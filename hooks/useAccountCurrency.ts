@@ -9,6 +9,11 @@ export interface UseAccountCurrencyResult {
   accountBalances: AccountBalanceRow[];
   currencyId: number | null;
   setCurrencyId: React.Dispatch<React.SetStateAction<number | null>>;
+  // The account whose balances `accountBalances` currently holds, or null
+  // while they are still loading. Lets a form tell "this account holds no
+  // currency" apart from "not loaded yet" without flashing an empty state
+  // on every account switch.
+  balancesLoadedFor: number | null;
 }
 
 // Shared by TransactionForm and IncomeForm: after an account is picked
@@ -37,33 +42,47 @@ export function useAccountCurrency(
   // honors initialCurrencyId; every run after an actual account switch
   // resets to "no selection" or the account's one currency instead.
   const [hasInitializedCurrency, setHasInitializedCurrency] = useState(false);
+  const [balancesLoadedFor, setBalancesLoadedFor] = useState<number | null>(
+    null,
+  );
   const { data: defaultCurrency } = useDefaultCurrency();
 
   useEffect(() => {
+    setBalancesLoadedFor(null);
     if (accountId == null) {
       setAccountBalances([]);
       setCurrencyId(null);
       return;
     }
     let cancelled = false;
-    getAccountBalances(accountId).then(balances => {
-      if (cancelled) {
-        return;
-      }
-      setAccountBalances(balances);
-      const initialCurrencyStillValid =
-        !hasInitializedCurrency &&
-        initialCurrencyId != null &&
-        balances.some(b => b.currencyId === initialCurrencyId);
-      setCurrencyId(
-        initialCurrencyStillValid
-          ? initialCurrencyId!
-          : balances.length === 1
+    getAccountBalances(accountId)
+      .then(balances => {
+        if (cancelled) {
+          return;
+        }
+        setAccountBalances(balances);
+        setBalancesLoadedFor(accountId);
+        const initialCurrencyStillValid =
+          !hasInitializedCurrency &&
+          initialCurrencyId != null &&
+          balances.some(b => b.currencyId === initialCurrencyId);
+        setCurrencyId(
+          initialCurrencyStillValid
+            ? initialCurrencyId!
+            : balances.length === 1
             ? balances[0].currencyId
             : null,
-      );
-      setHasInitializedCurrency(true);
-    });
+        );
+        setHasInitializedCurrency(true);
+      })
+      .catch(error => {
+        // Leaves the picker on "Select currency"; saving then says what
+        // is missing rather than failing silently.
+        console.error(
+          `useAccountCurrency: failed to load balances for account id=${accountId}`,
+          error,
+        );
+      });
     return () => {
       cancelled = true;
     };
@@ -97,5 +116,5 @@ export function useAccountCurrency(
     }
   }, [currencyId, accountBalances, defaultCurrency?.id]);
 
-  return { accountBalances, currencyId, setCurrencyId };
+  return { accountBalances, currencyId, setCurrencyId, balancesLoadedFor };
 }

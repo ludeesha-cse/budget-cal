@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
+import { validationError } from '../../utils/appErrors';
 import {
   accountBalances,
   accounts,
@@ -10,10 +11,7 @@ import {
   transfers,
 } from '../schema';
 import { getAllAccountBalances } from './accounts';
-import {
-  insertTransferWithin,
-  validateTransferSides,
-} from './transfers';
+import { insertTransferWithin, validateTransferSides } from './transfers';
 import {
   allocateGoalSavings,
   poolKey,
@@ -63,13 +61,13 @@ const SAVEABLE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 // meaningless (a goal with nothing to save toward isn't a goal).
 function validateSavingsGoalFields(params: NewSavingsGoalParams): void {
   if (!params.name.trim()) {
-    throw new Error('A name is required for the savings goal.');
+    throw validationError('A name is required for the savings goal.');
   }
   if (!Number.isFinite(params.targetAmount) || params.targetAmount <= 0) {
-    throw new Error('Target amount must be a positive number.');
+    throw validationError('Target amount must be a positive number.');
   }
   if (params.accountId == null) {
-    throw new Error('Choose an account to save this money in.');
+    throw validationError('Choose an account to save this money in.');
   }
 }
 
@@ -90,13 +88,13 @@ async function validateGoalAccount(
     .where(eq(accounts.id, accountId))
     .limit(1);
   if (!account) {
-    throw new Error('That account no longer exists.');
+    throw validationError('That account no longer exists.');
   }
   if (!account.active) {
-    throw new Error('That account is closed. Choose an open account.');
+    throw validationError('That account is closed. Choose an open account.');
   }
   if (!SAVEABLE_ACCOUNT_TYPES.includes(account.type)) {
-    throw new Error(
+    throw validationError(
       'Savings can only be held in a Bank, Cash, or Crypto Wallet account.',
     );
   }
@@ -111,7 +109,7 @@ async function validateGoalAccount(
     )
     .limit(1);
   if (!balanceRow) {
-    throw new Error(
+    throw validationError(
       `${account.name} doesn't hold that currency. Add the currency to the account first, or pick a different account.`,
     );
   }
@@ -162,7 +160,10 @@ export async function getSavingsGoals(
         })
         .from(savingsGoals)
         .innerJoin(currencies, eq(savingsGoals.currencyId, currencies.id))
-        .leftJoin(goalAccountAlias, eq(savingsGoals.accountId, goalAccountAlias.id))
+        .leftJoin(
+          goalAccountAlias,
+          eq(savingsGoals.accountId, goalAccountAlias.id),
+        )
         .orderBy(desc(savingsGoals.createdAt)),
       db
         .select({
@@ -393,7 +394,7 @@ export async function createSavingsTransfer(
 ): Promise<void> {
   try {
     if (!Number.isFinite(params.amount) || params.amount <= 0) {
-      throw new Error('Enter an amount greater than zero.');
+      throw validationError('Enter an amount greater than 0', 'amount');
     }
     const [goal] = await db
       .select()
@@ -401,21 +402,21 @@ export async function createSavingsTransfer(
       .where(eq(savingsGoals.id, params.savingsGoalId))
       .limit(1);
     if (!goal) {
-      throw new Error('That savings goal no longer exists.');
+      throw validationError('That savings goal no longer exists.');
     }
     if (goal.status !== 'active') {
-      throw new Error(
+      throw validationError(
         `"${goal.name}" is ${goal.status}. Reactivate it before adding to it.`,
       );
     }
     if (goal.accountId == null) {
-      throw new Error(
+      throw validationError(
         `"${goal.name}" has no account to save into yet. Edit the goal and choose one first.`,
       );
     }
     if (goal.accountId === params.fromAccountId) {
-      throw new Error(
-        'That money is already in this goal\'s account. Choose a different account to transfer from.',
+      throw validationError(
+        "That money is already in this goal's account. Choose a different account to transfer from.",
       );
     }
     // Reuses the transfer layer's own rules rather than restating them:
@@ -530,7 +531,7 @@ export async function deleteContribution(id: number): Promise<void> {
       .where(eq(savingsContributions.id, id))
       .limit(1);
     if (!contribution) {
-      throw new Error('That contribution no longer exists.');
+      throw validationError('That contribution no longer exists.');
     }
     if (contribution.transferId == null) {
       await db
@@ -579,4 +580,3 @@ export async function getSavingsGoalsForAccount(
     throw error;
   }
 }
-

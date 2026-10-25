@@ -10,10 +10,8 @@ import {
   getTransactionById,
 } from '../db/queries';
 import { useTheme } from '../contexts/ThemeContext';
-import {
-  useSetTransactionTags as useSetTransactionTagsMutation,
-  useUpdateTransaction as useUpdateTransactionMutation,
-} from '../hooks/queries';
+import { useUpdateTransaction as useUpdateTransactionMutation } from '../hooks/queries';
+import LoadErrorState from '../components/common/LoadErrorState';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'EditTransaction'>;
 
@@ -26,7 +24,6 @@ function EditTransactionScreen({
   // invalidates every query its write can affect (see
   // hooks/queries/invalidation.ts). The call sites below are
   // unchanged — these hooks take the wrapped function's own arguments.
-  const setTransactionTags = useSetTransactionTagsMutation();
   const updateTransaction = useUpdateTransactionMutation();
   const { colors } = useTheme();
   const { id } = route.params;
@@ -35,18 +32,33 @@ function EditTransactionScreen({
   >(null);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    Promise.all([getTransactionById(id), getTagsForTransaction(id)]).then(
-      ([row, currentTags]) => {
+    setLoading(true);
+    setLoadFailed(false);
+    Promise.all([getTransactionById(id), getTagsForTransaction(id)])
+      .then(([row, currentTags]) => {
         setTransaction(row);
         setTagIds(currentTags.map(tag => tag.id));
         setLoading(false);
-      },
-    );
-  }, [id]);
+      })
+      .catch(error => {
+        // Was an unhandled rejection that left the spinner up forever.
+        console.error(
+          `EditTransactionScreen: failed to load transaction id=${id}`,
+          error,
+        );
+        setLoadFailed(true);
+        setLoading(false);
+      });
+  }, [id, attempt]);
 
   const handleSubmit = async (values: TransactionFormSubmitValues) => {
+    // One write for the row and its tags (see updateTransaction). A
+    // failure is thrown back to TransactionForm, which shows it and keeps
+    // the edit on screen.
     await updateTransaction(id, {
       accountId: values.accountId,
       amount: values.amount,
@@ -56,8 +68,8 @@ function EditTransactionScreen({
       currencyId: values.currencyId,
       entryType: values.entryType,
       excludeFromBudget: values.excludeFromBudget,
+      tagIds: values.tagIds,
     });
-    await setTransactionTags(id, values.tagIds);
     navigation.navigate('HistoryList');
   };
 
@@ -69,10 +81,23 @@ function EditTransactionScreen({
     );
   }
 
+  if (loadFailed) {
+    return (
+      <View style={[styles.padded, { backgroundColor: colors.background }]}>
+        <LoadErrorState
+          what="this transaction"
+          onRetry={() => setAttempt(current => current + 1)}
+        />
+      </View>
+    );
+  }
+
   if (!transaction) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Transaction not found.</Text>
+        <Text style={{ color: colors.text }}>
+          This transaction no longer exists — it may have been deleted.
+        </Text>
       </View>
     );
   }
@@ -106,6 +131,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  padded: {
+    flex: 1,
+    padding: 16,
   },
 });
 

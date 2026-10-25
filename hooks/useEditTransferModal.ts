@@ -63,6 +63,9 @@ export function useEditTransferModal(
   );
 
   const modal = useTargetedModal<TransferRow, EditTransferFormValues>({
+    // The accounts are fixed in this sheet, so a problem with one
+    // ("Insufficient balance…") is the sheet's one message line.
+    operation: 'Edit transfer',
     initialValues: transfer => ({
       amount: String(transfer.amount),
       convertedAmount: String(transfer.toAmount),
@@ -76,8 +79,11 @@ export function useEditTransferModal(
     }),
     validate: (values, transfer) => {
       const parsedAmount = Number(values.amount);
-      if (!values.amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-        return 'Enter a transfer amount greater than zero.';
+      if (!values.amount.trim()) {
+        return 'Enter an amount';
+      }
+      if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+        return 'Enter an amount greater than 0';
       }
       if (transfer.isCrossCurrency) {
         const parsedTo = Number(values.convertedAmount);
@@ -86,7 +92,7 @@ export function useEditTransferModal(
           Number.isNaN(parsedTo) ||
           parsedTo <= 0
         ) {
-          return 'Enter a converted amount greater than zero.';
+          return 'Enter a converted amount greater than 0';
         }
       }
       return null;
@@ -95,13 +101,10 @@ export function useEditTransferModal(
     // actually converts, so it is only ever required in that case.
     requiredFields: (values, transfer) => {
       const missing: string[] = [];
-      if (!values.amount || Number(values.amount) <= 0) {
+      if (!values.amount.trim()) {
         missing.push('amount');
       }
-      if (
-        transfer.isCrossCurrency &&
-        (!values.convertedAmount || Number(values.convertedAmount) <= 0)
-      ) {
+      if (transfer.isCrossCurrency && !values.convertedAmount.trim()) {
         missing.push('convertedAmount');
       }
       return missing;

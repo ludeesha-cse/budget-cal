@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { formatDateString } from '../utils/date';
@@ -10,6 +10,7 @@ import type {
   InstallmentPlanRow,
 } from './useInstallmentPlansData';
 import {
+  useAllAccountBalances,
   usePayInstallment as usePayInstallmentMutation,
 } from './queries';
 
@@ -26,6 +27,10 @@ export interface UseInstallmentPayResult
   setAccountId: (value: string) => void;
   setDate: (value: string) => void;
   setAmount: (value: string) => void;
+  // The accounts that can pay THIS plan: open, payable, and holding the
+  // plan's currency. An account without the currency could only record
+  // money nobody can see, so it is not offered.
+  payingAccountOptions: InstallmentAccountRow[];
   // Which of the two things this sheet is currently doing. The sheet is
   // shared because everything except the amount is identical.
   isCustom: boolean;
@@ -69,21 +74,38 @@ export function useInstallmentPay(
   // hooks/queries/invalidation.ts). The call sites below are
   // unchanged — these hooks take the wrapped function's own arguments.
   const payInstallment = usePayInstallmentMutation();
+  const { data: allBalances } = useAllAccountBalances();
   const [isCustom, setIsCustom] = useState(false);
+  const accountsHolding = useCallback(
+    (currencyId: number) =>
+      activeAccounts.filter(account =>
+        (allBalances ?? []).some(
+          row => row.accountId === account.id && row.currencyId === currencyId,
+        ),
+      ),
+    [activeAccounts, allBalances],
+  );
   const modal = useTargetedModal<InstallmentPlanRow, PayInstallmentValues>({
-    initialValues: () => ({
-      accountId: activeAccounts[0] ? String(activeAccounts[0].id) : '',
+    operation: 'Pay installment',
+    // "Insufficient balance…" and "X doesn't hold LKR…" go under the
+    // Pay from picker.
+    inlineErrorFields: ['account'],
+    initialValues: plan => ({
+      accountId: String(accountsHolding(plan.currencyId)[0]?.id ?? ''),
       date: formatDateString(new Date()),
       amount: '',
     }),
     validate: values => {
       if (!values.accountId) {
-        return 'Choose which account is paying this installment.';
+        return 'Choose the account paying this installment';
       }
       if (isCustom) {
         const parsed = Number(values.amount);
-        if (!values.amount || Number.isNaN(parsed) || parsed <= 0) {
-          return 'Enter an amount greater than zero.';
+        if (!values.amount.trim()) {
+          return 'Enter an amount';
+        }
+        if (Number.isNaN(parsed) || parsed <= 0) {
+          return 'Enter an amount greater than 0';
         }
       }
       return null;
@@ -93,7 +115,7 @@ export function useInstallmentPay(
       if (!values.accountId) {
         missing.push('accountId');
       }
-      if (isCustom && (!values.amount || Number(values.amount) <= 0)) {
+      if (isCustom && !values.amount.trim()) {
         missing.push('amount');
       }
       return missing;
@@ -137,11 +159,17 @@ export function useInstallmentPay(
     [modalOpen],
   );
 
+  const payingAccountOptions = useMemo(
+    () => (modal.target ? accountsHolding(modal.target.currencyId) : []),
+    [modal.target, accountsHolding],
+  );
+
   return {
     ...modal,
     setAccountId,
     setDate,
     setAmount,
+    payingAccountOptions,
     isCustom,
     openScheduled,
     openCustom,

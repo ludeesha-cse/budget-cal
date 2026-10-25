@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react';
-import { useQueries } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   getMonthlyTotal,
   type BudgetWithCurrency,
@@ -54,6 +54,12 @@ export type DashboardBudgetCard = {
 
 export interface DashboardData {
   loading: boolean;
+  // True when one of the two queries the whole layout is keyed off
+  // (default currency, this month's budgets) FAILED — the screen shows a
+  // "Try again" state instead of a spinner that never stops.
+  loadFailed: boolean;
+  // Re-runs every query the screen is showing.
+  retry: () => void;
   // ONE number across both kinds of scheduled item — recurring-rule
   // occurrences and installment occurrences — because the banner is one
   // banner. See getPendingScheduledPayments for where the two are
@@ -132,10 +138,17 @@ export function useDashboardData(): DashboardData {
 
   useEnsureOccurrencesGenerated(today);
 
-  const { data: defaultCurrency, isPending: defaultCurrencyPending } =
-    useDefaultCurrency();
-  const { data: budgetsThisMonth, isPending: budgetsPending } =
-    useBudgetsForMonth(month);
+  const queryClient = useQueryClient();
+  const {
+    data: defaultCurrency,
+    isPending: defaultCurrencyPending,
+    isError: defaultCurrencyFailed,
+  } = useDefaultCurrency();
+  const {
+    data: budgetsThisMonth,
+    isPending: budgetsPending,
+    isError: budgetsFailed,
+  } = useBudgetsForMonth(month);
   const { data: cardDebt } = useTotalCreditCardDebt();
   const { data: pendingScheduled } = usePendingScheduledPayments();
   const { data: accounts } = useAccountList();
@@ -264,10 +277,18 @@ export function useDashboardData(): DashboardData {
   // loading state until the two queries the whole layout is keyed off
   // (which currency, and which budgets exist) have resolved at least
   // once. Everything else fills in around them.
-  const loading = defaultCurrencyPending || budgetsPending;
+  const loadFailed = defaultCurrencyFailed || budgetsFailed;
+  const loading = !loadFailed && (defaultCurrencyPending || budgetsPending);
+  const retry = useCallback(() => {
+    queryClient.refetchQueries({ type: 'active' }).catch(error => {
+      console.error('useDashboardData: retry failed', error);
+    });
+  }, [queryClient]);
 
   return {
     loading,
+    loadFailed,
+    retry,
     pendingScheduledCount: pendingScheduled?.length ?? 0,
     totalIncome: totalIncome ?? 0,
     budgetCards,
