@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../index';
 import { validationError } from '../../utils/appErrors';
-import { requireMoneyAccount } from './balanceGuard';
+import { guardBalancesWithin, requireMoneyAccount } from './balanceGuard';
 import { accounts, creditCardPayoffs } from '../schema';
 import {
   getAccounts,
@@ -150,33 +150,40 @@ export async function payOffCreditCard(
       currencyId: params.currencyId,
       requireActive: true,
     });
-    await db.transaction(async tx => {
-      // Paying down debt raises the card's stored balance toward zero
-      // (that balance is the negative of what's owed — see
-      // getStoredBalanceDelta above) and drains the paying account by the
-      // same amount, the same two-sided move settleLoan makes for a loan
-      // repayment.
-      await shiftAccountBaselineWithin(
+    await db.transaction(async tx =>
+      // Refused, and rolled back, if the paying account cannot cover it.
+      guardBalancesWithin(
         tx,
-        params.creditCardAccountId,
-        params.currencyId,
-        params.amount,
-      );
-      await shiftAccountBaselineWithin(
-        tx,
-        params.payingAccountId,
-        params.currencyId,
-        -params.amount,
-      );
-      await tx.insert(creditCardPayoffs).values({
-        creditCardAccountId: params.creditCardAccountId,
-        payingAccountId: params.payingAccountId,
-        amount: params.amount,
-        currencyId: params.currencyId,
-        date: params.date,
-        createdAt: Date.now(),
-      });
-    });
+        [{ accountId: params.payingAccountId, currencyId: params.currencyId }],
+        async () => {
+          // Paying down debt raises the card's stored balance toward zero
+          // (that balance is the negative of what's owed — see
+          // getStoredBalanceDelta above) and drains the paying account by the
+          // same amount, the same two-sided move settleLoan makes for a loan
+          // repayment.
+          await shiftAccountBaselineWithin(
+            tx,
+            params.creditCardAccountId,
+            params.currencyId,
+            params.amount,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            params.payingAccountId,
+            params.currencyId,
+            -params.amount,
+          );
+          await tx.insert(creditCardPayoffs).values({
+            creditCardAccountId: params.creditCardAccountId,
+            payingAccountId: params.payingAccountId,
+            amount: params.amount,
+            currencyId: params.currencyId,
+            date: params.date,
+            createdAt: Date.now(),
+          });
+        },
+      ),
+    );
   } catch (error) {
     console.error(
       `payOffCreditCard: failed to pay off ${params.amount} against credit card account id=${params.creditCardAccountId}`,

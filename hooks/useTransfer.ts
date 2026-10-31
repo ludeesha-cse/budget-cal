@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 import { getTransferableAccounts } from '../db/queries';
 import { formatDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { checkAmount } from '../utils/amountValidation';
-import { reportError } from '../utils/appErrors';
+import { hasSufficientBalance } from '../utils/balanceMath';
+import { INSUFFICIENT_FUNDS_MESSAGE, reportError } from '../utils/appErrors';
 import {
   convertAmount,
   getPairRate,
@@ -532,34 +532,19 @@ export function useTransfer(deps: UseTransferDeps): UseTransferResult {
       parsedToAmount = convertedCheck.value;
     }
     setError(null);
-    // Real accounts can go negative — this is a warning, not a hard
-    // block, per the Stage 11 spec. Computed from the same currentBalance
-    // already loaded for display, not a fresh query, and always against
-    // the FROM side, which is the only side money leaves.
+    // Money cannot leave a Cash, Bank or Crypto Wallet account that does
+    // not have it — and only those types can send a transfer. Checked
+    // against the balance already loaded for display; the query layer
+    // re-checks inside the write itself in case that figure is stale.
     const fromAccount = accounts.find(a => String(a.id) === fromAccountId);
-    const fromBalanceRow = fromAccount?.balances.find(
-      b => String(b.currencyId) === currencyId,
-    );
-    const fromBalance = fromBalanceRow?.currentBalance ?? 0;
-    const resultingBalance = fromBalance - parsedAmount;
-    fieldErrorsRef.current.reset();
-    if (resultingBalance < 0) {
-      Alert.alert(
-        'This will leave the account negative',
-        `This will leave ${fromAccount?.name ?? 'the account'} at ${formatAmount(
-          resultingBalance,
-          fromBalanceRow?.currencyCode ?? '',
-        )}. Continue?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Continue',
-            onPress: () => performTransfer(parsedAmount, parsedToAmount),
-          },
-        ],
-      );
+    if (
+      fromAccount &&
+      !hasSufficientBalance(fromAccount, Number(currencyId), parsedAmount)
+    ) {
+      setFromAccountError(INSUFFICIENT_FUNDS_MESSAGE);
       return;
     }
+    fieldErrorsRef.current.reset();
     performTransfer(parsedAmount, parsedToAmount);
   }, [
     submitting,

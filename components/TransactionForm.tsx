@@ -6,8 +6,13 @@ import { useReferenceData } from '../hooks/useReferenceData';
 import { useAccountCurrency } from '../hooks/useAccountCurrency';
 import { useAmountInput } from '../hooks/useAmountInput';
 import { useFieldErrors } from '../hooks/useFieldErrors';
+import { useAllAccountBalances } from '../hooks/queries';
 import { checkAmount } from '../utils/amountValidation';
-import { reportError } from '../utils/appErrors';
+import { hasSufficientBalance } from '../utils/balanceMath';
+import {
+  INSUFFICIENT_FUNDS_MESSAGE,
+  reportError,
+} from '../utils/appErrors';
 import CollapsiblePicker from './CollapsiblePicker';
 import SegmentedToggle, {
   type SegmentedToggleOption,
@@ -56,6 +61,15 @@ type TransactionFormProps = {
   // the user's input is kept.
   onSubmit: (values: TransactionFormSubmitValues) => Promise<void> | void;
   submitLabel?: string;
+  // The entry as it was before this edit, when editing. Its amount is
+  // already reflected in the account's balance, so the balance check
+  // only asks the account to cover what the edit adds.
+  originalEntry?: {
+    accountId: number;
+    currencyId: number;
+    amount: number;
+    entryType: 'Expense' | 'Income';
+  };
   // When true, hides the Expense/Income toggle and the form always
   // submits entryType: 'Expense'. The Add tab now has a dedicated Income
   // tab/form with no category picker at all, so the old in-form toggle
@@ -71,6 +85,7 @@ function TransactionForm({
   onSubmit,
   submitLabel = 'Save',
   lockToExpense = false,
+  originalEntry,
 }: TransactionFormProps): React.JSX.Element {
   const { colors } = useTheme();
   const [date, setDate] = useState(
@@ -99,6 +114,7 @@ function TransactionForm({
   );
   const { accountBalances, currencyId, setCurrencyId, balancesLoadedFor } =
     useAccountCurrency(accountId, initialValues?.currencyId);
+  const { data: allBalances } = useAllAccountBalances();
   const [error, setError] = useState<string | null>(null);
   // Sentences about the chosen account / currency themselves (see
   // AccountCurrencyPicker). Cleared the moment the account, currency or
@@ -183,6 +199,35 @@ function TransactionForm({
       return;
     }
     setError(null);
+
+    // Checked against the balance already on screen, so the user hears
+    // about it before anything is written. The query layer checks again
+    // inside the save itself (see guardBalancesWithin), which is what
+    // catches a balance that has gone stale since this screen loaded.
+    const account = accounts.find(a => a.id === accountId);
+    if (entryType === 'Expense' && account && allBalances) {
+      const sameHolding =
+        originalEntry != null &&
+        originalEntry.accountId === accountId &&
+        originalEntry.currencyId === currencyId;
+      const originalAmount = !sameHolding
+        ? 0
+        : originalEntry.entryType === 'Expense'
+          ? originalEntry.amount
+          : -originalEntry.amount;
+      const balances = allBalances.filter(row => row.accountId === accountId);
+      if (
+        !hasSufficientBalance(
+          { type: account.type, balances },
+          currencyId,
+          amountCheck.value,
+          originalAmount,
+        )
+      ) {
+        setAccountError(INSUFFICIENT_FUNDS_MESSAGE);
+        return;
+      }
+    }
 
     fieldErrors.reset();
     setSubmitting(true);

@@ -2,7 +2,7 @@ import { and, desc, eq, like, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
 import { validationError } from '../../utils/appErrors';
-import { requireMoneyAccount } from './balanceGuard';
+import { guardBalancesWithin, requireMoneyAccount } from './balanceGuard';
 import {
   accountBalances,
   accounts,
@@ -68,6 +68,19 @@ export type UpdateLoanAccountParams = LoanTerms & {
 // The drizzle transaction handle, so the balance helper below can run
 // inside the same transaction as the rest of a loan's writes.
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// The real account a loan write moves money through, as a balance-guard
+// side. See guardBalancesWithin: passing it in both directions is safe,
+// since borrowing only ever raises its balance.
+function counterpartSide(params: {
+  counterpartAccountId: number;
+  currencyId: number;
+}) {
+  return {
+    accountId: params.counterpartAccountId,
+    currencyId: params.currencyId,
+  };
+}
 
 function requirePrincipal(principal: number): void {
   if (!Number.isFinite(principal) || principal <= 0) {
@@ -327,46 +340,51 @@ export async function createLoanAccount(
       requireHolding: false,
     });
     const today = getCurrentDateString();
-    return await db.transaction(async tx => {
-      const [account] = await tx
-        .insert(accounts)
-        .values({
-          name: loanAccountName(params.type, params.counterpartyName.trim()),
-          type: params.type,
-          active: true,
-          createdAt: Date.now(),
-        })
-        .returning();
-      await tx.insert(loanDetails).values({
-        accountId: account.id,
-        counterpartyName: params.counterpartyName.trim(),
-        dateCreated: today,
-        lastAccrualAnchorDate: today,
-        dueDate: params.dueDate,
-        interestRate: params.interestRate,
-        interestPeriod: params.interestPeriod,
-        counterpartAccountId: params.counterpartAccountId,
-      });
-      await tx.insert(accountBalances).values({
-        accountId: account.id,
-        currencyId: params.currencyId,
-        balance: params.principal,
-      });
-      await shiftAccountBaselineWithin(
-        tx,
-        params.counterpartAccountId,
-        params.currencyId,
-        counterpartDeltaSign(params.type) * params.principal,
-      );
-      await recordLoanOriginationWithin(tx, {
-        loanAccountId: account.id,
-        counterpartAccountId: params.counterpartAccountId,
-        amount: params.principal,
-        currencyId: params.currencyId,
-        date: today,
-      });
-      return account;
-    });
+    // Lending takes money out of the counterpart account, so the whole
+    // creation is refused (and rolled back) if that account cannot cover
+    // it. Borrowing only adds money, which can never trip the check.
+    return await db.transaction(async tx =>
+      guardBalancesWithin(tx, [counterpartSide(params)], async () => {
+        const [account] = await tx
+          .insert(accounts)
+          .values({
+            name: loanAccountName(params.type, params.counterpartyName.trim()),
+            type: params.type,
+            active: true,
+            createdAt: Date.now(),
+          })
+          .returning();
+        await tx.insert(loanDetails).values({
+          accountId: account.id,
+          counterpartyName: params.counterpartyName.trim(),
+          dateCreated: today,
+          lastAccrualAnchorDate: today,
+          dueDate: params.dueDate,
+          interestRate: params.interestRate,
+          interestPeriod: params.interestPeriod,
+          counterpartAccountId: params.counterpartAccountId,
+        });
+        await tx.insert(accountBalances).values({
+          accountId: account.id,
+          currencyId: params.currencyId,
+          balance: params.principal,
+        });
+        await shiftAccountBaselineWithin(
+          tx,
+          params.counterpartAccountId,
+          params.currencyId,
+          counterpartDeltaSign(params.type) * params.principal,
+        );
+        await recordLoanOriginationWithin(tx, {
+          loanAccountId: account.id,
+          counterpartAccountId: params.counterpartAccountId,
+          amount: params.principal,
+          currencyId: params.currencyId,
+          date: today,
+        });
+        return account;
+      }),
+    );
   } catch (error) {
     console.error(
       `createLoanAccount: failed to create ${params.type} loan for counterparty="${params.counterpartyName}"`,
@@ -421,47 +439,49 @@ export async function reactivateLoanAccount(
     // Terms and balances are committed before the account is flipped back
     // to active, so a failure part-way leaves it closed and untouched
     // rather than active with a half-applied new loan on it.
-    await db.transaction(async tx => {
-      const updated = await tx
-        .update(loanDetails)
-        .set({
-          dateCreated: today,
-          lastAccrualAnchorDate: today,
-          dueDate: params.dueDate ?? null,
-          interestRate: params.interestRate ?? null,
-          interestPeriod: params.interestPeriod ?? null,
-          counterpartAccountId: params.counterpartAccountId,
-        })
-        .where(eq(loanDetails.accountId, params.accountId))
-        .returning();
-      if (updated.length === 0) {
-        throw validationError(
-          'This account has no loan details to reuse. Create a new loan account instead.',
-        );
-      }
-      // A settled loan's principal row is zeroed, not deleted, so this
-      // sets the new principal outright instead of adding to the old one.
-      await upsertAccountBalanceWithin(
-        tx,
-        params.accountId,
-        params.currencyId,
-        params.principal,
-      );
-      await shiftAccountBaselineWithin(
-        tx,
-        params.counterpartAccountId,
-        params.currencyId,
-        counterpartDeltaSign(existingAccount.type as LoanAccountType) *
+    await db.transaction(async tx =>
+      guardBalancesWithin(tx, [counterpartSide(params)], async () => {
+        const updated = await tx
+          .update(loanDetails)
+          .set({
+            dateCreated: today,
+            lastAccrualAnchorDate: today,
+            dueDate: params.dueDate ?? null,
+            interestRate: params.interestRate ?? null,
+            interestPeriod: params.interestPeriod ?? null,
+            counterpartAccountId: params.counterpartAccountId,
+          })
+          .where(eq(loanDetails.accountId, params.accountId))
+          .returning();
+        if (updated.length === 0) {
+          throw validationError(
+            'This account has no loan details to reuse. Create a new loan account instead.',
+          );
+        }
+        // A settled loan's principal row is zeroed, not deleted, so this
+        // sets the new principal outright instead of adding to the old one.
+        await upsertAccountBalanceWithin(
+          tx,
+          params.accountId,
+          params.currencyId,
           params.principal,
-      );
-      await recordLoanOriginationWithin(tx, {
-        loanAccountId: params.accountId,
-        counterpartAccountId: params.counterpartAccountId,
-        amount: params.principal,
-        currencyId: params.currencyId,
-        date: today,
-      });
-    });
+        );
+        await shiftAccountBaselineWithin(
+          tx,
+          params.counterpartAccountId,
+          params.currencyId,
+          counterpartDeltaSign(existingAccount.type as LoanAccountType) *
+            params.principal,
+        );
+        await recordLoanOriginationWithin(tx, {
+          loanAccountId: params.accountId,
+          counterpartAccountId: params.counterpartAccountId,
+          amount: params.principal,
+          currencyId: params.currencyId,
+          date: today,
+        });
+      }),
+    );
     return await reactivateAccount(params.accountId);
   } catch (error) {
     console.error(
@@ -578,35 +598,37 @@ export async function topUpLoanAccount(
       requireActive: true,
       requireHolding: false,
     });
-    await db.transaction(async tx => {
-      await upsertAccountBalanceWithin(
-        tx,
-        params.accountId,
-        params.currencyId,
-        totalOwed + params.amount,
-      );
-      await tx
-        .update(loanDetails)
-        .set({
-          lastAccrualAnchorDate: params.date,
+    await db.transaction(async tx =>
+      guardBalancesWithin(tx, [counterpartSide(params)], async () => {
+        await upsertAccountBalanceWithin(
+          tx,
+          params.accountId,
+          params.currencyId,
+          totalOwed + params.amount,
+        );
+        await tx
+          .update(loanDetails)
+          .set({
+            lastAccrualAnchorDate: params.date,
+            counterpartAccountId: params.counterpartAccountId,
+          })
+          .where(eq(loanDetails.accountId, params.accountId));
+        await shiftAccountBaselineWithin(
+          tx,
+          params.counterpartAccountId,
+          params.currencyId,
+          counterpartDeltaSign(loanAccount.type as LoanAccountType) *
+            params.amount,
+        );
+        await recordLoanOriginationWithin(tx, {
+          loanAccountId: params.accountId,
           counterpartAccountId: params.counterpartAccountId,
-        })
-        .where(eq(loanDetails.accountId, params.accountId));
-      await shiftAccountBaselineWithin(
-        tx,
-        params.counterpartAccountId,
-        params.currencyId,
-        counterpartDeltaSign(loanAccount.type as LoanAccountType) *
-          params.amount,
-      );
-      await recordLoanOriginationWithin(tx, {
-        loanAccountId: params.accountId,
-        counterpartAccountId: params.counterpartAccountId,
-        amount: params.amount,
-        currencyId: params.currencyId,
-        date: params.date,
-      });
-    });
+          amount: params.amount,
+          currencyId: params.currencyId,
+          date: params.date,
+        });
+      }),
+    );
   } catch (error) {
     console.error(
       `topUpLoanAccount: failed to add ${params.amount} to loan account id=${params.accountId}`,
@@ -703,92 +725,96 @@ export async function updateLoanAccount(
       requireHolding: false,
     });
 
-    await db.transaction(async tx => {
-      await tx
-        .update(accounts)
-        .set({ name: loanAccountName(type, params.counterpartyName.trim()) })
-        .where(eq(accounts.id, params.accountId));
-      await tx
-        .update(loanDetails)
-        .set({
-          counterpartyName: params.counterpartyName.trim(),
-          dueDate: params.dueDate ?? null,
-          interestRate: params.interestRate ?? null,
-          interestPeriod: params.interestPeriod ?? null,
-          counterpartAccountId: params.counterpartAccountId,
-        })
-        .where(eq(loanDetails.accountId, params.accountId));
+    // Checked on the account the loan's money now moves through: raising
+    // a lend, or moving it to another account, must be covered there.
+    await db.transaction(async tx =>
+      guardBalancesWithin(tx, [counterpartSide(params)], async () => {
+        await tx
+          .update(accounts)
+          .set({ name: loanAccountName(type, params.counterpartyName.trim()) })
+          .where(eq(accounts.id, params.accountId));
+        await tx
+          .update(loanDetails)
+          .set({
+            counterpartyName: params.counterpartyName.trim(),
+            dueDate: params.dueDate ?? null,
+            interestRate: params.interestRate ?? null,
+            interestPeriod: params.interestPeriod ?? null,
+            counterpartAccountId: params.counterpartAccountId,
+          })
+          .where(eq(loanDetails.accountId, params.accountId));
 
-      // A loan account holds exactly one currency, so switching currency
-      // means zeroing the old holding rather than leaving two live rows
-      // that would both be read as "the" principal.
-      if (oldCurrencyId !== params.currencyId) {
+        // A loan account holds exactly one currency, so switching currency
+        // means zeroing the old holding rather than leaving two live rows
+        // that would both be read as "the" principal.
+        if (oldCurrencyId !== params.currencyId) {
+          await upsertAccountBalanceWithin(
+            tx,
+            params.accountId,
+            oldCurrencyId,
+            0,
+          );
+        }
         await upsertAccountBalanceWithin(
           tx,
           params.accountId,
-          oldCurrencyId,
-          0,
+          params.currencyId,
+          params.principal,
         );
-      }
-      await upsertAccountBalanceWithin(
-        tx,
-        params.accountId,
-        params.currencyId,
-        params.principal,
-      );
 
-      if (crossedEdges) {
-        if (oldCounterpartAccountId != null) {
+        if (crossedEdges) {
+          if (oldCounterpartAccountId != null) {
+            await shiftAccountBaselineWithin(
+              tx,
+              oldCounterpartAccountId,
+              oldCurrencyId,
+              -sign * oldPrincipal,
+            );
+          }
           await shiftAccountBaselineWithin(
             tx,
-            oldCounterpartAccountId,
-            oldCurrencyId,
-            -sign * oldPrincipal,
+            params.counterpartAccountId,
+            params.currencyId,
+            sign * params.principal,
+          );
+        } else {
+          await shiftAccountBaselineWithin(
+            tx,
+            params.counterpartAccountId,
+            params.currencyId,
+            sign * (params.principal - oldPrincipal),
           );
         }
-        await shiftAccountBaselineWithin(
-          tx,
-          params.counterpartAccountId,
-          params.currencyId,
-          sign * params.principal,
-        );
-      } else {
-        await shiftAccountBaselineWithin(
-          tx,
-          params.counterpartAccountId,
-          params.currencyId,
-          sign * (params.principal - oldPrincipal),
-        );
-      }
 
-      const [latestOrigination] = await tx
-        .select()
-        .from(loanOriginations)
-        .where(eq(loanOriginations.loanAccountId, params.accountId))
-        .orderBy(
-          desc(loanOriginations.date),
-          desc(loanOriginations.createdAt),
-          desc(loanOriginations.id),
-        )
-        .limit(1);
-      if (latestOrigination) {
-        const corrected =
-          latestOrigination.amount + (params.principal - oldPrincipal);
-        await tx
-          .update(loanOriginations)
-          .set({
-            // A correction big enough to drive the recorded amount to or
-            // below zero means the delta rule has run out of room (the
-            // loan has been settled down past what this row recorded);
-            // falling back to the new principal keeps the row a real,
-            // non-negative figure instead of an impossible one.
-            amount: corrected > 0 ? corrected : params.principal,
-            currencyId: params.currencyId,
-            counterpartAccountId: params.counterpartAccountId,
-          })
-          .where(eq(loanOriginations.id, latestOrigination.id));
-      }
-    });
+        const [latestOrigination] = await tx
+          .select()
+          .from(loanOriginations)
+          .where(eq(loanOriginations.loanAccountId, params.accountId))
+          .orderBy(
+            desc(loanOriginations.date),
+            desc(loanOriginations.createdAt),
+            desc(loanOriginations.id),
+          )
+          .limit(1);
+        if (latestOrigination) {
+          const corrected =
+            latestOrigination.amount + (params.principal - oldPrincipal);
+          await tx
+            .update(loanOriginations)
+            .set({
+              // A correction big enough to drive the recorded amount to or
+              // below zero means the delta rule has run out of room (the
+              // loan has been settled down past what this row recorded);
+              // falling back to the new principal keeps the row a real,
+              // non-negative figure instead of an impossible one.
+              amount: corrected > 0 ? corrected : params.principal,
+              currencyId: params.currencyId,
+              counterpartAccountId: params.counterpartAccountId,
+            })
+            .where(eq(loanOriginations.id, latestOrigination.id));
+        }
+      }),
+    );
   } catch (error) {
     console.error(
       `updateLoanAccount: failed to update loan account id=${params.accountId}`,
@@ -840,61 +866,65 @@ export async function settleLoan(params: SettleLoanParams): Promise<void> {
       requireHolding: false,
     });
 
-    await db.transaction(async tx => {
-      if (isFullPayoff) {
-        // Set directly, computed by us moments ago — this bypasses
-        // closeAccount()'s zero-balance gate (and its user-facing prompt)
-        // on purpose, per the Stage 9b spec: there's nothing to ask about
-        // when we've just zeroed the balance ourselves in this same
-        // transaction.
-        await upsertAccountBalanceWithin(
+    // Repaying a liability takes money out of the counterpart account;
+    // refused, and rolled back, if that account cannot cover it.
+    await db.transaction(async tx =>
+      guardBalancesWithin(tx, [counterpartSide(params)], async () => {
+        if (isFullPayoff) {
+          // Set directly, computed by us moments ago — this bypasses
+          // closeAccount()'s zero-balance gate (and its user-facing prompt)
+          // on purpose, per the Stage 9b spec: there's nothing to ask about
+          // when we've just zeroed the balance ourselves in this same
+          // transaction.
+          await upsertAccountBalanceWithin(
+            tx,
+            params.loanAccountId,
+            params.currencyId,
+            0,
+          );
+          await tx
+            .update(accounts)
+            .set({ active: false })
+            .where(eq(accounts.id, params.loanAccountId));
+        } else {
+          // The new, smaller principal absorbs whatever interest wasn't
+          // covered by this payment — accrual then restarts from `date`
+          // against that new principal, not from the loan's original date,
+          // which is exactly what resetting lastAccrualAnchorDate does.
+          const newPrincipal = totalOwed - params.paymentAmount;
+          await upsertAccountBalanceWithin(
+            tx,
+            params.loanAccountId,
+            params.currencyId,
+            newPrincipal,
+          );
+          await tx
+            .update(loanDetails)
+            .set({ lastAccrualAnchorDate: params.date })
+            .where(eq(loanDetails.accountId, params.loanAccountId));
+        }
+        // Liability settlement pays down what you owe, so the counterpart
+        // account drains; Receivable settlement is someone paying you back,
+        // so it fills up — the exact opposite direction of
+        // counterpartDeltaSign at loan creation, since money is now flowing
+        // back across the same edge it originally crossed.
+        await shiftAccountBaselineWithin(
           tx,
-          params.loanAccountId,
+          params.counterpartAccountId,
           params.currencyId,
-          0,
+          -counterpartDeltaSign(loanAccount.type as LoanAccountType) *
+            params.paymentAmount,
         );
-        await tx
-          .update(accounts)
-          .set({ active: false })
-          .where(eq(accounts.id, params.loanAccountId));
-      } else {
-        // The new, smaller principal absorbs whatever interest wasn't
-        // covered by this payment — accrual then restarts from `date`
-        // against that new principal, not from the loan's original date,
-        // which is exactly what resetting lastAccrualAnchorDate does.
-        const newPrincipal = totalOwed - params.paymentAmount;
-        await upsertAccountBalanceWithin(
-          tx,
-          params.loanAccountId,
-          params.currencyId,
-          newPrincipal,
-        );
-        await tx
-          .update(loanDetails)
-          .set({ lastAccrualAnchorDate: params.date })
-          .where(eq(loanDetails.accountId, params.loanAccountId));
-      }
-      // Liability settlement pays down what you owe, so the counterpart
-      // account drains; Receivable settlement is someone paying you back,
-      // so it fills up — the exact opposite direction of
-      // counterpartDeltaSign at loan creation, since money is now flowing
-      // back across the same edge it originally crossed.
-      await shiftAccountBaselineWithin(
-        tx,
-        params.counterpartAccountId,
-        params.currencyId,
-        -counterpartDeltaSign(loanAccount.type as LoanAccountType) *
-          params.paymentAmount,
-      );
-      await tx.insert(loanPayments).values({
-        loanAccountId: params.loanAccountId,
-        counterpartAccountId: params.counterpartAccountId,
-        amount: params.paymentAmount,
-        currencyId: params.currencyId,
-        date: params.date,
-        createdAt: Date.now(),
-      });
-    });
+        await tx.insert(loanPayments).values({
+          loanAccountId: params.loanAccountId,
+          counterpartAccountId: params.counterpartAccountId,
+          amount: params.paymentAmount,
+          currencyId: params.currencyId,
+          date: params.date,
+          createdAt: Date.now(),
+        });
+      }),
+    );
   } catch (error) {
     console.error(
       `settleLoan: failed to settle a payment of ${params.paymentAmount} against loan account id=${params.loanAccountId}`,
@@ -989,48 +1019,61 @@ export async function updateLoanPayment(
       requireHolding: false,
     });
 
-    await db.transaction(async tx => {
-      await upsertAccountBalanceWithin(
+    // Measured across the reversal AND the re-application, so only the
+    // extra a corrected repayment takes out has to be covered.
+    await db.transaction(async tx =>
+      guardBalancesWithin(
         tx,
-        payment.loanAccountId,
-        payment.currencyId,
-        newOutstanding,
-      );
-      // A payment that closed the loan and is now smaller leaves debt
-      // behind, so the loan has to come back — and one edited UP to
-      // cover everything closes it, exactly as settleLoan would have.
-      await tx
-        .update(accounts)
-        .set({ active: newOutstanding > 0 })
-        .where(eq(accounts.id, payment.loanAccountId));
+        [
+          {
+            accountId: params.counterpartAccountId,
+            currencyId: payment.currencyId,
+          },
+        ],
+        async () => {
+          await upsertAccountBalanceWithin(
+            tx,
+            payment.loanAccountId,
+            payment.currencyId,
+            newOutstanding,
+          );
+          // A payment that closed the loan and is now smaller leaves debt
+          // behind, so the loan has to come back — and one edited UP to
+          // cover everything closes it, exactly as settleLoan would have.
+          await tx
+            .update(accounts)
+            .set({ active: newOutstanding > 0 })
+            .where(eq(accounts.id, payment.loanAccountId));
 
-      // The real account, in two moves rather than one, because the
-      // money may have been recorded against the wrong account as well
-      // as the wrong amount: take the original amount back out of
-      // wherever it was put, then apply the new amount where it belongs.
-      // When neither changed these cancel to nothing.
-      await shiftAccountBaselineWithin(
-        tx,
-        payment.counterpartAccountId,
-        payment.currencyId,
-        sign * payment.amount,
-      );
-      await shiftAccountBaselineWithin(
-        tx,
-        params.counterpartAccountId,
-        payment.currencyId,
-        -sign * params.paymentAmount,
-      );
+          // The real account, in two moves rather than one, because the
+          // money may have been recorded against the wrong account as well
+          // as the wrong amount: take the original amount back out of
+          // wherever it was put, then apply the new amount where it belongs.
+          // When neither changed these cancel to nothing.
+          await shiftAccountBaselineWithin(
+            tx,
+            payment.counterpartAccountId,
+            payment.currencyId,
+            sign * payment.amount,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            params.counterpartAccountId,
+            payment.currencyId,
+            -sign * params.paymentAmount,
+          );
 
-      await tx
-        .update(loanPayments)
-        .set({
-          amount: params.paymentAmount,
-          counterpartAccountId: params.counterpartAccountId,
-          date: params.date,
-        })
-        .where(eq(loanPayments.id, params.paymentId));
-    });
+          await tx
+            .update(loanPayments)
+            .set({
+              amount: params.paymentAmount,
+              counterpartAccountId: params.counterpartAccountId,
+              date: params.date,
+            })
+            .where(eq(loanPayments.id, params.paymentId));
+        },
+      ),
+    );
   } catch (error) {
     console.error(
       `updateLoanPayment: failed to update loan payment id=${params.paymentId}`,

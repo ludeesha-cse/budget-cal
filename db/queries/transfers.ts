@@ -12,6 +12,7 @@ import {
 import { getBalanceDelta } from '../../utils/balanceMath';
 import type { Account } from './accounts';
 import { shiftAccountBaselineWithin } from './loans';
+import { guardBalancesWithin } from './balanceGuard';
 
 const TRANSFERABLE_ACCOUNT_TYPES = ['Bank', 'Cash', 'CryptoWallet'];
 
@@ -293,11 +294,18 @@ export async function createTransfer(
     );
     let insertedId = 0;
     await db.transaction(async tx => {
-      insertedId = await insertTransferWithin(
+      // Refused, and rolled back, if it would take the source below
+      // zero — see guardBalancesWithin.
+      insertedId = await guardBalancesWithin(
         tx,
-        { ...params, toCurrencyId, toAmount },
-        fromAccount.type,
-        toAccount.type,
+        [{ accountId: params.fromAccountId, currencyId: params.currencyId }],
+        () =>
+          insertTransferWithin(
+            tx,
+            { ...params, toCurrencyId, toAmount },
+            fromAccount.type,
+            toAccount.type,
+          ),
       );
     });
     // Returned (this used to be void) so createSavingsTransfer can link
@@ -381,84 +389,97 @@ export async function updateTransfer(
       .limit(1);
     const originalTo = storedToSide(original);
 
-    await db.transaction(async tx => {
-      // Reverse the ORIGINAL transfer's effect first, using its own
-      // stored account/currency/amount fields on each side (these may
-      // differ from the new params if the user changed accounts or
-      // currency, not just the amount) — the negative of exactly what
-      // createTransfer/the previous updateTransfer applied.
-      const reverseFromDelta = -getBalanceDelta(
-        originalFromAccount?.type ?? 'Bank',
-        'Expense',
-        original.amount,
-      );
-      const reverseToDelta = -getBalanceDelta(
-        originalToAccount?.type ?? 'Bank',
-        'Income',
-        originalTo.toAmount,
-      );
-      await shiftAccountBaselineWithin(
+    await db.transaction(async tx =>
+      // The source side is measured before the reversal and after the
+      // re-application, so only the extra an edit takes out has to be
+      // covered — lowering a transfer always saves.
+      guardBalancesWithin(
         tx,
-        original.fromAccountId,
-        original.currencyId,
-        reverseFromDelta,
-      );
-      await shiftAccountBaselineWithin(
-        tx,
-        original.toAccountId,
-        originalTo.toCurrencyId,
-        reverseToDelta,
-      );
+        [{ accountId: params.fromAccountId, currencyId: params.currencyId }],
+        async () => {
+          // Reverse the ORIGINAL transfer's effect first, using its own
+          // stored account/currency/amount fields on each side (these may
+          // differ from the new params if the user changed accounts or
+          // currency, not just the amount) — the negative of exactly what
+          // createTransfer/the previous updateTransfer applied.
+          const reverseFromDelta = -getBalanceDelta(
+            originalFromAccount?.type ?? 'Bank',
+            'Expense',
+            original.amount,
+          );
+          const reverseToDelta = -getBalanceDelta(
+            originalToAccount?.type ?? 'Bank',
+            'Income',
+            originalTo.toAmount,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            original.fromAccountId,
+            original.currencyId,
+            reverseFromDelta,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            original.toAccountId,
+            originalTo.toCurrencyId,
+            reverseToDelta,
+          );
 
-      // Apply the new transfer's effect.
-      const newFromDelta = getBalanceDelta(
-        fromAccount.type,
-        'Expense',
-        params.amount,
-      );
-      const newToDelta = getBalanceDelta(toAccount.type, 'Income', toAmount);
-      await shiftAccountBaselineWithin(
-        tx,
-        params.fromAccountId,
-        params.currencyId,
-        newFromDelta,
-      );
-      await shiftAccountBaselineWithin(
-        tx,
-        params.toAccountId,
-        toCurrencyId,
-        newToDelta,
-      );
+          // Apply the new transfer's effect.
+          const newFromDelta = getBalanceDelta(
+            fromAccount.type,
+            'Expense',
+            params.amount,
+          );
+          const newToDelta = getBalanceDelta(
+            toAccount.type,
+            'Income',
+            toAmount,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            params.fromAccountId,
+            params.currencyId,
+            newFromDelta,
+          );
+          await shiftAccountBaselineWithin(
+            tx,
+            params.toAccountId,
+            toCurrencyId,
+            newToDelta,
+          );
 
-      await tx
-        .update(transfers)
-        .set({
-          fromAccountId: params.fromAccountId,
-          toAccountId: params.toAccountId,
-          amount: params.amount,
-          currencyId: params.currencyId,
-          toCurrencyId,
-          toAmount,
-          // Left alone when the caller doesn't pass one: the edit-transfer
-          // sheet only exposes amount and date, and a savings transfer's
-          // description is the goal's name — clobbering it to null there
-          // would strip the goal's name out of History as a side effect
-          // of correcting a typo in the amount.
-          ...(params.description !== undefined
-            ? { description: params.description }
-            : {}),
-          date: params.date,
-        })
-        .where(eq(transfers.id, id));
+          await tx
+            .update(transfers)
+            .set({
+              fromAccountId: params.fromAccountId,
+              toAccountId: params.toAccountId,
+              amount: params.amount,
+              currencyId: params.currencyId,
+              toCurrencyId,
+              toAmount,
+              // Left alone when the caller doesn't pass one: the edit-transfer
+              // sheet only exposes amount and date, and a savings transfer's
+              // description is the goal's name — clobbering it to null there
+              // would strip the goal's name out of History as a side effect
+              // of correcting a typo in the amount.
+              ...(params.description !== undefined
+                ? { description: params.description }
+                : {}),
+              date: params.date,
+            })
+            .where(eq(transfers.id, id));
 
-      // Keep the linked savings contribution in step with the money.
-      // The contribution is always denominated in the goal's currency,
-      // which is the transfer's TO side — so toAmount, never amount.
-      await tx
-        .update(savingsContributions)
-        .set({ amount: toAmount, date: params.date })
-        .where(eq(savingsContributions.transferId, id));
-    });
+          // Keep the linked savings contribution in step with the money.
+          // The contribution is always denominated in the goal's currency,
+          // which is the transfer's TO side — so toAmount, never amount.
+          await tx
+            .update(savingsContributions)
+            .set({ amount: toAmount, date: params.date })
+            .where(eq(savingsContributions.transferId, id));
+        },
+      ),
+    );
   } catch (error) {
     console.error(
       `updateTransfer: failed to update transfer id=${id}`,

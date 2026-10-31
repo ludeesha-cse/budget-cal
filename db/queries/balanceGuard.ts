@@ -1,7 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../index';
 import { accountBalances, accounts, currencies, transactions } from '../schema';
-import { AppError } from '../../utils/appErrors';
+import { AppError, insufficientFundsError } from '../../utils/appErrors';
+import { overdrawsAccount } from '../../utils/balanceMath';
 import { NON_TRANSACTABLE_ACCOUNT_TYPES } from '../../utils/accountTypes';
 
 // The query layer's half of two rules every money-moving write shares:
@@ -21,6 +22,8 @@ import { NON_TRANSACTABLE_ACCOUNT_TYPES } from '../../utils/accountTypes';
 
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type DbExecutor = Pick<typeof db, 'select'>;
+
+export type BalanceSide = { accountId: number; currencyId: number };
 
 // Current balance of an ordinary asset account (Cash/Bank/CryptoWallet)
 // in one currency: the stored baseline plus every Income minus every
@@ -58,6 +61,71 @@ export async function getAssetBalanceWithin(
       ),
     );
   return (baseline?.balance ?? 0) + Number(net?.total ?? 0);
+}
+
+// Runs `write` inside an already-open transaction and refuses it — by
+// throwing, which rolls the whole transaction back — if it took any of
+// the given (account, currency) holdings below zero. See
+// overdrawsAccount in utils/balanceMath.ts for the exact rule, and why
+// it is phrased as before/after.
+//
+// Pass every side money LEAVES. Passing a side money only arrives on is
+// harmless (its balance goes up, so it can never trip the rule), which is
+// what lets loan writes pass their counterpart account in both
+// directions without first working out which way the money flows.
+export async function guardBalancesWithin<T>(
+  tx: DbTransaction,
+  sides: BalanceSide[],
+  write: () => Promise<T>,
+): Promise<T> {
+  const unique = sides.filter(
+    (side, index) =>
+      sides.findIndex(
+        other =>
+          other.accountId === side.accountId &&
+          other.currencyId === side.currencyId,
+      ) === index,
+  );
+  const accountIds = Array.from(new Set(unique.map(side => side.accountId)));
+  const typeRows =
+    accountIds.length === 0
+      ? []
+      : await tx
+          .select({ id: accounts.id, type: accounts.type })
+          .from(accounts)
+          .where(inArray(accounts.id, accountIds));
+  const typeById = new Map(typeRows.map(row => [row.id, row.type]));
+
+  const checked: { side: BalanceSide; type: string; before: number }[] = [];
+  for (const side of unique) {
+    const type = typeById.get(side.accountId);
+    if (!type) {
+      continue;
+    }
+    const before = await getAssetBalanceWithin(
+      tx,
+      side.accountId,
+      side.currencyId,
+    );
+    checked.push({ side, type, before });
+  }
+
+  const result = await write();
+
+  for (const { side, type, before } of checked) {
+    const after = await getAssetBalanceWithin(
+      tx,
+      side.accountId,
+      side.currencyId,
+    );
+    if (overdrawsAccount(type, before, after)) {
+      console.warn(
+        `guardBalancesWithin: refused — account id=${side.accountId} currency id=${side.currencyId} would go from ${before} to ${after}`,
+      );
+      throw insufficientFundsError();
+    }
+  }
+  return result;
 }
 
 export type MoneyAccountCheck = {

@@ -66,3 +66,83 @@ export function getBalanceDelta(
 export function creditCardDebt(balance: number): number {
   return -balance;
 }
+
+// ---------------------------------------------------------------------
+// Insufficient-balance rule.
+//
+// Money may not leave a Cash, Bank or Crypto Wallet account that does not
+// hold it. A credit card is deliberately exempt (its balance is a debt
+// that is meant to grow when you spend), and so are Liability/Receivable
+// accounts, which ordinary spending never touches at all (see
+// NON_TRANSACTABLE_ACCOUNT_TYPES in utils/accountTypes.ts).
+//
+// The same rule is applied twice: by forms, against the balance already
+// on screen, so the user is told before anything is written; and by the
+// query layer inside the write's own transaction, so a balance that went
+// stale on screen cannot slip a payment through.
+// ---------------------------------------------------------------------
+
+export const BALANCE_CHECKED_ACCOUNT_TYPES = ['Cash', 'Bank', 'CryptoWallet'];
+
+export function isBalanceCheckedAccountType(accountType: string): boolean {
+  return BALANCE_CHECKED_ACCOUNT_TYPES.includes(accountType);
+}
+
+// Half a cent. Amounts are stored as floats, and 0.1 + 0.2 must not read
+// as "short by 0.00000000000000004".
+const BALANCE_TOLERANCE = 0.005;
+
+export type BalanceCheckAccount = {
+  type: string;
+  balances: ReadonlyArray<{ currencyId: number; currentBalance: number }>;
+};
+
+// Whether `account` can pay `amount` in `currencyId`.
+//
+// `originalAmount` is for EDITING an entry that already took money out of
+// this same account and currency: that money is already reflected in the
+// current balance, so only the extra (amount - originalAmount) needs to
+// be covered. Lowering an amount, or leaving it unchanged, therefore
+// always passes — even on an account that is already overdrawn. Pass a
+// NEGATIVE originalAmount when the entry being edited used to put money
+// IN (an Income being turned into an Expense), since that income is in
+// the balance too and is about to disappear.
+//
+// An account with no balance row in the currency is treated as holding
+// zero of it.
+export function hasSufficientBalance(
+  account: BalanceCheckAccount,
+  currencyId: number,
+  amount: number,
+  originalAmount = 0,
+): boolean {
+  if (!isBalanceCheckedAccountType(account.type)) {
+    return true;
+  }
+  const balance =
+    account.balances.find(row => row.currencyId === currencyId)
+      ?.currentBalance ?? 0;
+  const extra = amount - originalAmount;
+  if (extra <= BALANCE_TOLERANCE) {
+    return true;
+  }
+  return balance + BALANCE_TOLERANCE >= extra;
+}
+
+// The query layer's version of the same rule, phrased as a before/after
+// comparison because inside a write it is easier to read the balance on
+// either side of the write than to work out each write's own delta
+// (transfers, loans and payoffs all move money differently). A write is
+// refused only when it LOWERED the balance AND left it below zero — the
+// exact condition hasSufficientBalance tests from the form's side.
+export function overdrawsAccount(
+  accountType: string,
+  balanceBefore: number,
+  balanceAfter: number,
+): boolean {
+  if (!isBalanceCheckedAccountType(accountType)) {
+    return false;
+  }
+  const lowered = balanceAfter < balanceBefore - BALANCE_TOLERANCE;
+  return lowered && balanceAfter < -BALANCE_TOLERANCE;
+}

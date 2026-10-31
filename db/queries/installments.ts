@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
 import { db } from '../index';
 import { validationError } from '../../utils/appErrors';
-import { requireMoneyAccount } from './balanceGuard';
+import { guardBalancesWithin, requireMoneyAccount } from './balanceGuard';
 import {
   accounts,
   categories,
@@ -952,34 +952,42 @@ export async function payInstallment(
     // The occurrence bookkeeping below is a SIDE EFFECT of this having
     // succeeded and is deliberately outside this transaction — see its
     // own comment.
-    const paymentId = await db.transaction(async tx => {
-      const [transaction] = await tx
-        .insert(transactions)
-        .values({
-          accountId: params.accountId,
-          amount,
-          categoryId: plan.categoryId,
-          description,
-          date: params.date,
-          currencyId: plan.currencyId,
-          entryType: 'Expense',
-          createdAt: Date.now(),
-        })
-        .returning();
-      const [payment] = await tx
-        .insert(installmentPayments)
-        .values({
-          installmentPlanId: params.planId,
-          installmentNumber: nextInstallmentNumber,
-          accountId: params.accountId,
-          transactionId: transaction.id,
-          paidDate: params.date,
-          isCustomAmount,
-          createdAt: Date.now(),
-        })
-        .returning();
-      return payment.id;
-    });
+    const paymentId = await db.transaction(async tx =>
+      // Refused, and rolled back, if the paying account cannot cover
+      // the installment.
+      guardBalancesWithin(
+        tx,
+        [{ accountId: params.accountId, currencyId: plan.currencyId }],
+        async () => {
+          const [transaction] = await tx
+            .insert(transactions)
+            .values({
+              accountId: params.accountId,
+              amount,
+              categoryId: plan.categoryId,
+              description,
+              date: params.date,
+              currencyId: plan.currencyId,
+              entryType: 'Expense',
+              createdAt: Date.now(),
+            })
+            .returning();
+          const [payment] = await tx
+            .insert(installmentPayments)
+            .values({
+              installmentPlanId: params.planId,
+              installmentNumber: nextInstallmentNumber,
+              accountId: params.accountId,
+              transactionId: transaction.id,
+              paidDate: params.date,
+              isCustomAmount,
+              createdAt: Date.now(),
+            })
+            .returning();
+          return payment.id;
+        },
+      ),
+    );
 
     // Occurrence bookkeeping: mark the reminder this payment answered as
     // paid, then open next month's. Both are part of the same payment

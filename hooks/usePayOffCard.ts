@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
 import { formatDateString } from '../utils/date';
-import { creditCardDebt } from '../utils/balanceMath';
+import { creditCardDebt, hasSufficientBalance } from '../utils/balanceMath';
+import { insufficientFundsError } from '../utils/appErrors';
 import { useTargetedModal } from './useTargetedModal';
 import type { UseTargetedModalResult } from './useTargetedModal';
 import type { AccountBalanceRow, AccountWithBalances } from './useAccounts';
@@ -110,14 +111,30 @@ export function usePayOffCard(
       }
       return missing;
     },
-    onSubmit: (target, values) =>
-      payOffCreditCard({
+    onSubmit: (target, values) => {
+      // Checked against the balance on screen first; payOffCreditCard
+      // re-checks inside its own write in case that figure is stale.
+      const payingAccount = activeAccounts.find(
+        a => String(a.id) === values.payingAccountId,
+      );
+      if (
+        payingAccount &&
+        !hasSufficientBalance(
+          payingAccount,
+          target.currencyId,
+          Number(values.amount),
+        )
+      ) {
+        throw insufficientFundsError();
+      }
+      return payOffCreditCard({
         creditCardAccountId: target.accountId,
         payingAccountId: Number(values.payingAccountId),
         amount: Number(values.amount),
         currencyId: target.currencyId,
         date: values.date,
-      }),
+      });
+    },
     onSaved,
   });
 

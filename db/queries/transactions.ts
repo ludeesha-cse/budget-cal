@@ -9,7 +9,11 @@ import {
   transactions,
 } from '../schema';
 import { validationError } from '../../utils/appErrors';
-import { requireMoneyAccount, requirePositiveAmount } from './balanceGuard';
+import {
+  guardBalancesWithin,
+  requireMoneyAccount,
+  requirePositiveAmount,
+} from './balanceGuard';
 import { setTransactionTagsWithin } from './tags';
 
 type Transaction = typeof transactions.$inferSelect;
@@ -91,7 +95,13 @@ export async function addTransaction(data: NewTransaction) {
           })
           .returning();
       const inserted =
-        row.entryType === 'Expense' ? await insert() : await insert();
+        row.entryType === 'Expense'
+          ? await guardBalancesWithin(
+              tx,
+              [{ accountId: row.accountId, currencyId: row.currencyId }],
+              insert,
+            )
+          : await insert();
       if (tagIds && inserted[0]) {
         await setTransactionTagsWithin(tx, inserted[0].id, tagIds);
       }
@@ -479,7 +489,13 @@ export async function updateTransaction(
           .where(eq(transactions.id, id))
           .returning();
       const updated =
-        next.entryType === 'Expense' ? await update() : await update();
+        next.entryType === 'Expense'
+          ? await guardBalancesWithin(
+              tx,
+              [{ accountId: next.accountId, currencyId: next.currencyId }],
+              update,
+            )
+          : await update();
       if (tagIds) {
         await setTransactionTagsWithin(tx, id, tagIds);
       }

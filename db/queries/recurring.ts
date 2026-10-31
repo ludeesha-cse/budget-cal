@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../index';
 import { validationError } from '../../utils/appErrors';
-import { requireMoneyAccount } from './balanceGuard';
+import { guardBalancesWithin, requireMoneyAccount } from './balanceGuard';
 import {
   accounts,
   categories,
@@ -433,7 +433,11 @@ export async function confirmOccurrence(
           .returning();
       const [transaction] =
         rule.ruleType === 'Expense'
-          ? await insertTransaction()
+          ? await guardBalancesWithin(
+              tx,
+              [{ accountId: params.accountId, currencyId: rule.currencyId }],
+              insertTransaction,
+            )
           : await insertTransaction();
       await tx
         .update(recurringOccurrences)

@@ -116,6 +116,12 @@ function EditTransactionScreen({
           tagIds,
           excludeFromBudget: transaction.excludeFromBudget,
         }}
+        originalEntry={{
+          accountId: transaction.accountId,
+          currencyId: transaction.currencyId,
+          amount: transaction.amount,
+          entryType: transaction.entryType,
+        }}
         onSubmit={handleSubmit}
         submitLabel="Update"
       />

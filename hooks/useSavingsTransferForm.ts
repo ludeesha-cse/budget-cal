@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 import { getContributions } from '../db/queries';
 import { getCurrentDateString } from '../utils/date';
 import { formatAmount } from '../utils/formatAmount';
 import { checkAmount } from '../utils/amountValidation';
-import { reportError } from '../utils/appErrors';
+import { hasSufficientBalance } from '../utils/balanceMath';
+import { INSUFFICIENT_FUNDS_MESSAGE, reportError } from '../utils/appErrors';
 import { useAsyncAction } from './useAsyncAction';
 import { useConfirmDelete } from './useConfirmDelete';
 import { useFieldErrors } from './useFieldErrors';
@@ -208,26 +208,30 @@ export function useSavingsTransferForm(
       return;
     }
     setError(null);
-    // Same rule as an ordinary transfer: real accounts can go negative,
-    // so this warns rather than blocks.
+    // Money cannot leave an account that does not have it (every source
+    // here is a Cash, Bank or Crypto Wallet account). The query layer
+    // re-checks inside the write in case this figure is stale.
     const source = sourceOptions.find(a => String(a.id) === fromAccountId);
-    const available = source?.balanceByCurrencyId[goal.currencyId] ?? 0;
-    const resulting = available - amountCheck.value;
-    fieldErrorsRef.current.reset();
-    if (resulting < 0) {
-      Alert.alert(
-        'This will leave the account negative',
-        `This will leave ${source?.name ?? 'the account'} at ${formatAmount(
-          resulting,
-          goal.currencyCode,
-        )}. Continue?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue', onPress: () => perform(amountCheck.value, goal) },
-        ],
-      );
+    if (
+      source &&
+      !hasSufficientBalance(
+        {
+          type: source.type,
+          balances: [
+            {
+              currencyId: goal.currencyId,
+              currentBalance: source.balanceByCurrencyId[goal.currencyId] ?? 0,
+            },
+          ],
+        },
+        goal.currencyId,
+        amountCheck.value,
+      )
+    ) {
+      setFromAccountError(INSUFFICIENT_FUNDS_MESSAGE);
       return;
     }
+    fieldErrorsRef.current.reset();
     perform(amountCheck.value, goal);
   }, [
     goal,

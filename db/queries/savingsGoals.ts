@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '../index';
 import { validationError } from '../../utils/appErrors';
+import { guardBalancesWithin } from './balanceGuard';
 import {
   accountBalances,
   accounts,
@@ -431,20 +432,27 @@ export async function createSavingsTransfer(
     );
 
     await db.transaction(async tx => {
-      const transferId = await insertTransferWithin(
+      // Refused, and rolled back, if the source account cannot cover
+      // the contribution.
+      const transferId = await guardBalancesWithin(
         tx,
-        {
-          fromAccountId: params.fromAccountId,
-          toAccountId: goal.accountId as number,
-          amount: params.amount,
-          currencyId: goal.currencyId,
-          toCurrencyId: goal.currencyId,
-          toAmount: params.amount,
-          description: goal.name,
-          date: params.date,
-        },
-        fromAccount.type,
-        toAccount.type,
+        [{ accountId: params.fromAccountId, currencyId: goal.currencyId }],
+        () =>
+          insertTransferWithin(
+            tx,
+            {
+              fromAccountId: params.fromAccountId,
+              toAccountId: goal.accountId as number,
+              amount: params.amount,
+              currencyId: goal.currencyId,
+              toCurrencyId: goal.currencyId,
+              toAmount: params.amount,
+              description: goal.name,
+              date: params.date,
+            },
+            fromAccount.type,
+            toAccount.type,
+          ),
       );
       await tx.insert(savingsContributions).values({
         savingsGoalId: params.savingsGoalId,
